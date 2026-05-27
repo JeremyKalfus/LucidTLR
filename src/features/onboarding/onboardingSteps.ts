@@ -1,0 +1,331 @@
+import type { OnboardingStep } from "../../domain/forms";
+
+export const ONBOARDING_FORM_ID = "lucidcue-onboarding-v1";
+
+export const onboardingSteps: OnboardingStep[] = [
+  {
+    id: "welcome",
+    title: "Welcome",
+    purpose: "Set expectations without therapeutic claims.",
+    questions: [
+      {
+        id: "welcome_copy",
+        type: "info",
+        prompt:
+          "This app may help you induce lucid dreams using targeted lucidity reactivation. Results are not guaranteed. This is not a medical treatment.",
+      },
+    ],
+  },
+  {
+    id: "tlr_explanation",
+    title: "TLR explanation",
+    purpose: "Explain the cue-reactivation mechanism.",
+    questions: [
+      {
+        id: "tlr_mechanism_copy",
+        type: "info",
+        prompt:
+          "Before sleep, you learn a cue. During sleep, the same cue may play again. The cue is meant to reactivate a lucid mindset.",
+      },
+    ],
+  },
+  {
+    id: "mode_selection",
+    title: "Mode selection",
+    purpose: "Choose the sensing and cueing mode.",
+    questions: [
+      {
+        id: "mode",
+        type: "single_choice",
+        prompt: "Choose your mode.",
+        required: true,
+        options: [
+          {
+            value: "phone",
+            label: "Phone Mode",
+            note: "iPhone/Android, phone beside pillow.",
+          },
+          {
+            value: "watch",
+            label: "Watch Mode",
+            note: "iPhone + Apple Watch; watch senses, iPhone plays sound.",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "baseline_sleep",
+    title: "Baseline sleep profile",
+    purpose: "Record sleep timing and late-night REM feasibility context.",
+    questions: [
+      {
+        id: "typical_bedtime",
+        type: "time",
+        prompt: "What is your typical bedtime?",
+      },
+      {
+        id: "typical_wake_time",
+        type: "time",
+        prompt: "What is your typical wake time?",
+      },
+      {
+        id: "typical_sleep_duration_hours",
+        type: "single_choice",
+        prompt: "How long do you usually sleep?",
+        options: [
+          { value: "lt_6", label: "<6 hours" },
+          { value: "6_7", label: "6-7 hours" },
+          { value: "7_8", label: "7-8 hours" },
+          { value: "8_plus", label: "8+ hours" },
+        ],
+      },
+      {
+        id: "can_fall_back_asleep_after_waking",
+        type: "single_choice",
+        prompt: "If you wake during the night, can you fall back asleep?",
+        options: [
+          { value: "usually_yes", label: "Usually yes" },
+          { value: "sometimes", label: "Sometimes" },
+          { value: "rarely", label: "Rarely" },
+        ],
+      },
+      {
+        id: "sleep_schedule_regularity",
+        type: "single_choice",
+        prompt: "How regular is your sleep schedule?",
+        options: [
+          { value: "regular", label: "Regular" },
+          { value: "somewhat_regular", label: "Somewhat regular" },
+          { value: "irregular", label: "Irregular" },
+        ],
+      },
+      {
+        id: "sleep_guidance_copy",
+        type: "info",
+        prompt:
+          "TLR may work better if you sleep long enough to reach late-night REM. If sounds wake you and you cannot return to sleep, use caution.",
+      },
+    ],
+  },
+  {
+    id: "dream_profile",
+    title: "Dream/lucidity profile",
+    purpose: "Record dream recall and prior lucid-dream experience.",
+    questions: [
+      {
+        id: "dream_recall_frequency",
+        type: "single_choice",
+        prompt: "How often do you remember dreams?",
+        options: [
+          { value: "rarely", label: "Rarely" },
+          { value: "less_than_1_per_week", label: "Less than 1/week" },
+          { value: "1_2_per_week", label: "1-2/week" },
+          { value: "3_4_per_week", label: "3-4/week" },
+          { value: "most_mornings", label: "Most mornings" },
+        ],
+      },
+      {
+        id: "prior_lucid_dream_frequency",
+        type: "single_choice",
+        prompt: "How often have you had lucid dreams?",
+        options: [
+          { value: "never", label: "Never" },
+          { value: "once_ever", label: "Once ever" },
+          { value: "a_few_times_ever", label: "A few times ever" },
+          { value: "yearly", label: "Yearly" },
+          { value: "monthly", label: "Monthly" },
+          { value: "weekly_or_more", label: "Weekly or more" },
+        ],
+      },
+      {
+        id: "prior_lucid_dream_count",
+        type: "number",
+        prompt: "About how many lucid dreams have you had?",
+      },
+      {
+        id: "nightmare_or_bad_dream_frequency_optional",
+        type: "single_choice",
+        prompt: "Optional: how often do you have nightmares or bad dreams?",
+        options: [
+          { value: "prefer_not_to_answer", label: "Prefer not to answer" },
+          { value: "rarely", label: "Rarely" },
+          { value: "sometimes", label: "Sometimes" },
+          { value: "often", label: "Often" },
+        ],
+      },
+      {
+        id: "dream_journal_habit",
+        type: "single_choice",
+        prompt: "Do you keep a dream journal?",
+        options: [
+          { value: "never", label: "Never" },
+          { value: "sometimes", label: "Sometimes" },
+          { value: "regularly", label: "Regularly" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "sound_sensitivity",
+    title: "Sound sensitivity + sleep environment",
+    purpose: "Choose hidden sensitivity defaults without making protocol decisions in UI.",
+    questions: [
+      {
+        id: "sound_sensitivity",
+        type: "single_choice",
+        prompt: "How sensitive are you to sound while sleeping?",
+        options: [
+          { value: "very_sensitive_light_sleeper", label: "Very sensitive / light sleeper" },
+          { value: "average", label: "Average" },
+          { value: "hard_to_wake", label: "Hard to wake" },
+        ],
+      },
+      {
+        id: "hearing_difficulty",
+        type: "single_choice",
+        prompt: "Do you have hearing difficulty?",
+        options: [
+          { value: "no", label: "No" },
+          { value: "mild", label: "Mild" },
+          { value: "significant", label: "Significant" },
+        ],
+      },
+      {
+        id: "sleep_partner_present",
+        type: "single_choice",
+        prompt: "Do you usually sleep near a partner?",
+        options: [
+          { value: "yes", label: "Yes" },
+          { value: "no", label: "No" },
+        ],
+      },
+      {
+        id: "phone_placement_comfort",
+        type: "single_choice",
+        prompt: "Are you comfortable placing your phone beside your pillow?",
+        options: [
+          { value: "yes", label: "Yes" },
+          { value: "not_sure", label: "Not sure" },
+          { value: "no", label: "No" },
+        ],
+      },
+      {
+        id: "uses_sleep_audio",
+        type: "boolean",
+        prompt: "Do you usually use sleep audio?",
+      },
+    ],
+  },
+  {
+    id: "goals",
+    title: "Goals",
+    purpose: "Record goals without promising outcomes.",
+    questions: [
+      {
+        id: "goals",
+        type: "multi_choice",
+        prompt: "What are your goals?",
+        options: [
+          { value: "lucid_dreaming", label: "Lucid dreaming" },
+          { value: "dream_recall", label: "Dream recall" },
+          { value: "curiosity", label: "Curiosity" },
+          { value: "creativity", label: "Creativity" },
+          { value: "self_exploration", label: "Self-exploration" },
+          { value: "research_contribution", label: "Research contribution" },
+          { value: "nightmare_related_interest", label: "Nightmare-related interest" },
+          { value: "other", label: "Other" },
+        ],
+      },
+      {
+        id: "nightmare_claims_copy",
+        type: "info",
+        prompt: "This app is not a nightmare treatment or medical device.",
+      },
+    ],
+  },
+  {
+    id: "consent_privacy",
+    title: "Consent/privacy",
+    purpose: "Keep participation and upload choices explicit.",
+    questions: [
+      {
+        id: "accepted_app_terms",
+        type: "boolean",
+        prompt: "I accept the app terms.",
+        required: true,
+        defaultValue: false,
+      },
+      {
+        id: "accepted_research_info",
+        type: "boolean",
+        prompt: "I have read the research information.",
+        defaultValue: false,
+      },
+      {
+        id: "structured_research_upload_consent",
+        type: "boolean",
+        prompt: "Allow deidentified structured research upload.",
+        defaultValue: false,
+      },
+      {
+        id: "dream_journal_upload_consent",
+        type: "boolean",
+        prompt: "Allow dream journal text/audio research upload.",
+        defaultValue: false,
+      },
+      {
+        id: "future_contact_consent",
+        type: "boolean",
+        prompt: "Allow future contact if contact info is added later.",
+        defaultValue: false,
+        disabled: true,
+      },
+      {
+        id: "privacy_copy",
+        type: "info",
+        prompt:
+          "Participation is voluntary. You can stop at any time. The primary risk is sleep disruption. Basic use is local-only by default. Dream text/audio requires separate consent.",
+      },
+    ],
+  },
+  {
+    id: "permissions",
+    title: "Permissions",
+    purpose: "Request only permissions needed for the selected mode.",
+    questions: [
+      {
+        id: "phone_permissions",
+        type: "permission_summary",
+        mode: "phone",
+        prompt: "Phone Mode needs audio, motion, and notifications if needed.",
+      },
+      {
+        id: "watch_permissions",
+        type: "permission_summary",
+        mode: "watch",
+        prompt:
+          "Watch Mode needs audio, motion, HealthKit, WatchConnectivity/watch app setup, and notifications if needed.",
+      },
+      {
+        id: "excluded_permissions_copy",
+        type: "info",
+        prompt:
+          "LucidCue does not request location, contacts, texts, or advertising ID.",
+      },
+    ],
+  },
+  {
+    id: "ready",
+    title: "Ready",
+    purpose: "Confirm setup and start the first TLR session.",
+    questions: [
+      {
+        id: "ready_summary",
+        type: "info",
+        prompt:
+          "Review selected mode, cue sound, and local-only or research-upload status before starting your first TLR session.",
+      },
+    ],
+  },
+];

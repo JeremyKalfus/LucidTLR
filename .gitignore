@@ -1,0 +1,11 @@
+.DS_Store
+node_modules/
+.expo/
+.env
+.env.*
+dist/
+build/
+coverage/
+
+# Keep bundled study PDFs local unless explicitly approved for public release.
+*.pdf
