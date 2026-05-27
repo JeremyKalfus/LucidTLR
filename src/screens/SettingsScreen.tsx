@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import React from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 
 import {
@@ -52,6 +53,8 @@ function ModeButton({
 }
 
 export function SettingsScreen() {
+  const [isResetting, setIsResetting] = React.useState(false);
+  const [resetError, setResetError] = React.useState<string | null>(null);
   const {
     consentChoices,
     participantId,
@@ -60,18 +63,37 @@ export function SettingsScreen() {
     setSelectedMode,
   } = useAppState();
 
-  const confirmReset = () => {
-    const reset = () => {
-      resetAppData().then(() => router.replace("/onboarding"));
-    };
+  const reset = React.useCallback(async () => {
+    setIsResetting(true);
+    setResetError(null);
 
+    try {
+      await resetAppData();
+      router.replace("/onboarding");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Reset failed. Please try again.";
+
+      setResetError(message);
+
+      if (process.env.EXPO_OS !== "web") {
+        Alert.alert("Reset failed", message);
+      }
+    } finally {
+      setIsResetting(false);
+    }
+  }, [resetAppData]);
+
+  const confirmReset = () => {
     if (process.env.EXPO_OS === "web" && globalThis.confirm) {
       if (
         globalThis.confirm(
           "Reset app and delete local data? This clears local onboarding, sleep, and journal data on this device.",
         )
       ) {
-        reset();
+        void reset();
       }
 
       return;
@@ -85,7 +107,9 @@ export function SettingsScreen() {
         {
           text: "Reset",
           style: "destructive",
-          onPress: reset,
+          onPress: () => {
+            void reset();
+          },
         },
       ],
     );
@@ -160,8 +184,21 @@ export function SettingsScreen() {
           Reset app and delete local data clears this device. Full remote
           deletion is not implemented yet.
         </Text>
+        {resetError ? (
+          <Text
+            selectable
+            style={{
+              color: colors.textSecondary,
+              fontSize: typography.body.fontSize,
+              lineHeight: typography.body.lineHeight,
+            }}
+          >
+            {resetError}
+          </Text>
+        ) : null}
         <PrimaryPillButton
-          label="Reset app and delete local data"
+          disabled={isResetting}
+          label={isResetting ? "Resetting..." : "Reset app and delete local data"}
           onPress={confirmReset}
         />
       </Card>

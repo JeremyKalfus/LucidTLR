@@ -44,6 +44,32 @@ export function getSupabaseConfigFromEnv(): SupabaseClientConfig | null {
   return url && anonKey ? { url, anonKey } : null;
 }
 
+function getNetworkErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return "Network request failed.";
+}
+
+const quietSupabaseFetch: typeof fetch = async (input, init) => {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        message: getNetworkErrorMessage(error),
+      }),
+      {
+        status: 503,
+        headers: {
+          "content-type": "application/json",
+        },
+      },
+    );
+  }
+};
+
 export function createSupabaseClientAdapter(
   config: SupabaseClientConfig,
   storage: SupabaseAuthStorage,
@@ -56,6 +82,9 @@ export function createSupabaseClientAdapter(
       detectSessionInUrl: false,
       persistSession: true,
       storage,
+    },
+    global: {
+      fetch: quietSupabaseFetch,
     },
   });
 

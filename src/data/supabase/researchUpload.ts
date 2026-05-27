@@ -82,25 +82,13 @@ export async function prepareAnonymousResearchUpload(input: {
   });
 }
 
-export async function signOutAndClearSupabaseSession(
+export async function clearSupabaseSessionForLocalReset(
   db: LocalDb,
 ): Promise<void> {
-  const config = getSupabaseConfigFromEnv();
-
-  try {
-    if (config) {
-      const client = createSupabaseClientAdapter(
-        config,
-        createSupabaseSettingsStorage(db),
-      );
-
-      await client.signOut();
-    }
-  } catch {
-    // Local reset still clears the persisted session below if auth sign-out fails.
-  }
-
   // TODO: implement full remote deletion if CNL/IRB scope requires it.
+  // This reset is intentionally local-only, so avoid remote sign-out here.
+  // Supabase's network sign-out can fail offline and should not block deletion
+  // of local app data or navigation back to onboarding.
   await deleteAppSettingsWithPrefix(db, SUPABASE_AUTH_SETTING_PREFIX);
   await deleteAppSettingsWithPrefix(db, SUPABASE_USER_ID_SETTING);
 }

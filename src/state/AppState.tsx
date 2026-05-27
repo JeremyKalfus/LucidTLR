@@ -16,7 +16,7 @@ import {
   upsertLocalParticipant,
 } from "@/src/data/local/repositories";
 import { createLocalUploadQueueStore } from "@/src/data/local/uploadQueueStore";
-import { prepareAnonymousResearchUpload, signOutAndClearSupabaseSession } from "@/src/data/supabase/researchUpload";
+import { clearSupabaseSessionForLocalReset, prepareAnonymousResearchUpload } from "@/src/data/supabase/researchUpload";
 import { enqueueIfAllowed } from "@/src/data/supabase/syncEngine";
 import type {
   AppMode,
@@ -359,7 +359,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const resetAppData = React.useCallback(async () => {
     const db = await getLocalDb();
 
-    await signOutAndClearSupabaseSession(db);
+    await clearSupabaseSessionForLocalReset(db);
     await clearAllLocalData(db);
 
     setParticipantId(createId("participant"));
