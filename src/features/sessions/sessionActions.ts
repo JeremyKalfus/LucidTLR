@@ -47,7 +47,7 @@ export function applySessionEvent(
     nextSession.trainingEndedAt = timestamp;
   }
 
-  if (event === "start_cueing") {
+  if (event === "start_cueing" && session.sessionType === "tlr") {
     nextSession.cueingStartedAt = timestamp;
   }
 
