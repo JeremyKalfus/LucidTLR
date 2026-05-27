@@ -57,7 +57,11 @@ export function BottomNavigator() {
           <Pressable
             accessibilityRole="button"
             key={item.href}
-            onPress={() => router.push(item.href)}
+            onPress={() => {
+              if (!active) {
+                router.replace(item.href);
+              }
+            }}
             style={({ pressed }) => ({
               width: 58,
               height: 58,
