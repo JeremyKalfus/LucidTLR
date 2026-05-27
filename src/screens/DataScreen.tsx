@@ -63,8 +63,8 @@ export function DataScreen() {
             lineHeight: typography.body.lineHeight,
           }}
         >
-          This screen shows local session placeholders only. No Supabase sync,
-          REM classifier, or native watch/overnight data path is active yet.
+          This screen shows local session placeholders only. No cloud sync, REM
+          classifier, or native watch/overnight data path is active yet.
         </Text>
       </Card>
     </Screen>

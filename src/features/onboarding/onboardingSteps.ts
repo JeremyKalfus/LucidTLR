@@ -1,6 +1,9 @@
 import type { OnboardingStep } from "../../domain/forms";
 
 export const ONBOARDING_FORM_ID = "lucidcue-onboarding-v1";
+export const STUDY_PARTICIPATION_QUESTION_ID = "study_participation";
+export const STUDY_OPT_IN_VALUE = "opt_in";
+export const STUDY_OPT_OUT_VALUE = "opt_out";
 
 export const onboardingSteps: OnboardingStep[] = [
   {
@@ -246,39 +249,33 @@ export const onboardingSteps: OnboardingStep[] = [
   },
   {
     id: "consent_privacy",
-    title: "Consent/privacy",
-    purpose: "Keep participation and upload choices explicit.",
+    title: "Study participation",
+    purpose: "Keep study participation optional and explicit.",
     questions: [
       {
-        id: "accepted_app_terms",
-        type: "boolean",
-        prompt: "I accept the app terms.",
+        id: STUDY_PARTICIPATION_QUESTION_ID,
+        type: "single_choice",
+        prompt:
+          "LucidCue can be used privately. You can also choose to anonymously share structured app data with CNL at Northwestern University to support lucid dreaming research.",
         required: true,
-        defaultValue: false,
-      },
-      {
-        id: "accepted_research_info",
-        type: "boolean",
-        prompt: "I have read the research information.",
-        defaultValue: false,
-      },
-      {
-        id: "structured_research_upload_consent",
-        type: "boolean",
-        prompt: "Allow deidentified structured research upload.",
-        defaultValue: false,
-      },
-      {
-        id: "dream_journal_upload_consent",
-        type: "boolean",
-        prompt: "Allow dream journal text/audio research upload.",
-        defaultValue: false,
+        options: [
+          {
+            value: STUDY_OPT_IN_VALUE,
+            label: "Opt in to the study",
+            note: "Anonymously share my data with CNL at Northwestern University",
+          },
+          {
+            value: STUDY_OPT_OUT_VALUE,
+            label: "Opt out of the study",
+            note: "Keep all of my data local",
+          },
+        ],
       },
       {
         id: "privacy_copy",
         type: "info",
         prompt:
-          "Participation is voluntary. You can stop at any time. The primary risk is sleep disruption. Basic use is local-only by default. Dream text/audio requires separate consent.",
+          "You can change this later in Settings.\nThe main risk is possible sleep disruption.\nResults are not guaranteed.\nThis is not a medical treatment.",
       },
     ],
   },

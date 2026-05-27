@@ -1,6 +1,6 @@
 import { router } from "expo-router";
-import { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Animated, Pressable, Text, TextInput, View } from "react-native";
 
 import {
   Card,
@@ -13,7 +13,10 @@ import type {
   OnboardingQuestion,
   OnboardingStepId,
 } from "@/src/domain/forms";
-import { onboardingSteps } from "@/src/features/onboarding/onboardingSteps";
+import {
+  onboardingSteps,
+  STUDY_PARTICIPATION_QUESTION_ID,
+} from "@/src/features/onboarding/onboardingSteps";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
@@ -33,11 +36,13 @@ function ChoiceButton({
   label,
   note,
   active,
+  large = false,
   onPress,
 }: {
   label: string;
   note?: string;
   active: boolean;
+  large?: boolean;
   onPress: () => void;
 }) {
   return (
@@ -48,8 +53,10 @@ function ChoiceButton({
         borderWidth: borders.hairline,
         borderColor: active ? colors.textMuted : colors.cardBorder,
         borderRadius: radii.card,
-        padding: 12,
-        gap: 4,
+        minHeight: large ? 86 : undefined,
+        justifyContent: "center",
+        padding: large ? 18 : 12,
+        gap: large ? 8 : 4,
         backgroundColor: colors.card,
         opacity: pressed ? 0.72 : 1,
       })}
@@ -58,8 +65,10 @@ function ChoiceButton({
         selectable
         style={{
           color: active ? colors.textPrimary : colors.textSecondary,
-          fontSize: typography.body.fontSize,
-          lineHeight: typography.body.lineHeight,
+          fontSize: large ? typography.title.fontSize : typography.body.fontSize,
+          lineHeight: large
+            ? typography.title.lineHeight
+            : typography.body.lineHeight,
         }}
       >
         {label}
@@ -90,7 +99,6 @@ function QuestionRenderer({
   const {
     onboardingAnswers,
     selectedMode,
-    setConsentChoice,
     setOnboardingAnswer,
   } = useAppState();
   const answer = onboardingAnswers.find(
@@ -139,6 +147,7 @@ function QuestionRenderer({
             label={option.label}
             note={option.note}
             active={value === option.value}
+            large={question.id === STUDY_PARTICIPATION_QUESTION_ID}
             onPress={() =>
               setOnboardingAnswer({
                 stepId,
@@ -201,7 +210,6 @@ function QuestionRenderer({
         label={question.prompt}
         active={active}
         onPress={() => {
-          setConsentChoice(question.id, !active);
           setOnboardingAnswer({
             stepId,
             questionId: question.id,
@@ -253,79 +261,154 @@ function QuestionRenderer({
   );
 }
 
+function hasAnswer(value: OnboardingAnswerValue | undefined): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  return value !== undefined && value !== null;
+}
+
 export function OnboardingWizardScreen() {
   const [stepIndex, setStepIndex] = useState(0);
-  const { completeOnboarding } = useAppState();
+  const [completionError, setCompletionError] = useState<string | null>(null);
+  const fadeValue = useRef(new Animated.Value(1)).current;
+  const {
+    completeOnboarding,
+    isCompletingOnboarding,
+    onboardingAnswers,
+    selectedMode,
+  } = useAppState();
   const step = onboardingSteps[stepIndex];
-  const isConsentStep = step.id === "consent_privacy";
   const isLastStep = stepIndex === onboardingSteps.length - 1;
+  const canContinue = useMemo(
+    () =>
+      step.questions.every((question) => {
+        if (!question.required || (question.mode && question.mode !== selectedMode)) {
+          return true;
+        }
+
+        const answer = onboardingAnswers.find(
+          (candidate) =>
+            candidate.stepId === step.id &&
+            candidate.questionId === question.id,
+        );
+
+        return hasAnswer(answer?.value ?? question.defaultValue);
+      }),
+    [onboardingAnswers, selectedMode, step],
+  );
+
+  useEffect(() => {
+    fadeValue.setValue(0);
+    Animated.timing(fadeValue, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: process.env.EXPO_OS !== "web",
+    }).start();
+  }, [fadeValue, stepIndex]);
 
   return (
-    <Screen>
-      <View style={{ gap: 4 }}>
-        <SectionTitle>{step.title}</SectionTitle>
-        <Text
-          selectable
-          style={{
-            color: colors.textMuted,
-            fontSize: typography.label.fontSize,
-            lineHeight: typography.label.lineHeight,
-          }}
-        >
-          Step {stepIndex + 1} of {onboardingSteps.length}
-        </Text>
-      </View>
-
-      {isConsentStep ? (
-        <Card>
+    <Screen bottomNav={false} centered>
+      <Animated.View
+        style={{
+          width: "100%",
+          maxWidth: 560,
+          alignSelf: "center",
+          gap: 18,
+          opacity: fadeValue,
+          transform: [
+            {
+              translateY: fadeValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [8, 0],
+              }),
+            },
+          ],
+        }}
+      >
+        <View style={{ gap: 4 }}>
+          <SectionTitle>{step.title}</SectionTitle>
           <Text
             selectable
             style={{
-              color: colors.textPrimary,
-              fontSize: typography.body.fontSize,
-              lineHeight: typography.body.lineHeight,
+              color: colors.textMuted,
+              fontSize: typography.label.fontSize,
+              lineHeight: typography.label.lineHeight,
             }}
           >
-            Consent and privacy choices are explicit. Basic app use stays local,
-            and upload choices do not create Supabase auth in this shell.
+            Step {stepIndex + 1} of {onboardingSteps.length}
           </Text>
-        </Card>
-      ) : null}
+        </View>
 
-      <View style={{ gap: 12 }}>
-        {step.questions.map((question) => (
-          <QuestionRenderer
-            key={question.id}
-            question={question}
-            stepId={step.id}
-          />
-        ))}
-      </View>
+        <View style={{ gap: 12 }}>
+          {step.questions.map((question) => (
+            <QuestionRenderer
+              key={question.id}
+              question={question}
+              stepId={step.id}
+            />
+          ))}
+        </View>
 
-      <View style={{ flexDirection: "row", gap: 12 }}>
-        {stepIndex > 0 ? (
+        {completionError ? (
+          <Card compact>
+            <Text
+              selectable
+              style={{
+                color: colors.textSecondary,
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+              }}
+            >
+              {completionError}
+            </Text>
+          </Card>
+        ) : null}
+
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          {stepIndex > 0 ? (
+            <View style={{ flex: 1 }}>
+              <PrimaryPillButton
+                label="Back"
+                disabled={isCompletingOnboarding}
+                onPress={() => {
+                  setCompletionError(null);
+                  setStepIndex((index) => index - 1);
+                }}
+              />
+            </View>
+          ) : null}
           <View style={{ flex: 1 }}>
             <PrimaryPillButton
-              label="Back"
-              onPress={() => setStepIndex((index) => index - 1)}
+              label={isLastStep ? "Finish" : "Next"}
+              disabled={!canContinue || isCompletingOnboarding}
+              onPress={() => {
+                setCompletionError(null);
+
+                if (isLastStep) {
+                  completeOnboarding()
+                    .then(() => router.replace("/"))
+                    .catch((error: unknown) => {
+                      setCompletionError(
+                        error instanceof Error
+                          ? error.message
+                          : "Could not complete onboarding.",
+                      );
+                    });
+                  return;
+                }
+
+                setStepIndex((index) => index + 1);
+              }}
             />
           </View>
-        ) : null}
-        <View style={{ flex: 1 }}>
-          <PrimaryPillButton
-            label={isLastStep ? "Finish" : "Next"}
-            onPress={() => {
-              if (isLastStep) {
-                completeOnboarding();
-                router.replace("/");
-                return;
-              }
-
-              setStepIndex((index) => index + 1);
-            }}
-          />
         </View>
-      </View>
+      </Animated.View>
     </Screen>
   );
 }

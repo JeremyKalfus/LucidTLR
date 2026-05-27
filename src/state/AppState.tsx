@@ -1,18 +1,42 @@
 import type { ReactNode } from "react";
 import React from "react";
 
+import { getLocalDb } from "@/src/data/local/expoSqliteDb";
+import {
+  buildQuestionnaireResponsePayload,
+  clearAllLocalData,
+  getAppSetting,
+  getLocalParticipant,
+  loadOnboardingResponses,
+  ONBOARDING_COMPLETED_AT_SETTING,
+  ONBOARDING_VERSION_SETTING,
+  replaceStructuredConsent,
+  saveOnboardingResponses,
+  setAppSetting,
+  upsertLocalParticipant,
+} from "@/src/data/local/repositories";
+import { createLocalUploadQueueStore } from "@/src/data/local/uploadQueueStore";
+import { prepareAnonymousResearchUpload, signOutAndClearSupabaseSession } from "@/src/data/supabase/researchUpload";
+import { enqueueIfAllowed } from "@/src/data/supabase/syncEngine";
 import type {
   AppMode,
   ConsentState,
   DreamJournalEntry,
   NightSession,
   SessionType,
+  UploadStatus,
 } from "@/src/domain/types";
 import type {
   OnboardingAnswer,
   OnboardingAnswerValue,
   OnboardingStepId,
 } from "@/src/domain/forms";
+import {
+  ONBOARDING_FORM_ID,
+  STUDY_OPT_IN_VALUE,
+  STUDY_OPT_OUT_VALUE,
+  STUDY_PARTICIPATION_QUESTION_ID,
+} from "@/src/features/onboarding/onboardingSteps";
 import { buildOnboardingAnswer, updateOnboardingAnswer } from "@/src/features/onboarding/onboardingSurvey";
 import { createLocalDreamJournalEntry } from "@/src/features/journal/journalTypes";
 import { createNightSession, applySessionEvent } from "@/src/features/sessions/sessionActions";
@@ -20,13 +44,14 @@ import type { SessionEvent } from "@/src/features/sessions/sessionStateMachine";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
 
 interface AppConsentChoices {
-  acceptedAppTerms: boolean;
-  acceptedResearchInfo: boolean;
   structuredResearchUploadConsent: boolean;
   dreamJournalUploadConsent: boolean;
 }
 
 interface AppStateValue {
+  isHydrated: boolean;
+  hydrationError: string | null;
+  isCompletingOnboarding: boolean;
   participantId: string;
   selectedMode: AppMode;
   onboardingComplete: boolean;
@@ -42,8 +67,8 @@ interface AppStateValue {
     questionId: string;
     value: OnboardingAnswerValue;
   }) => void;
-  setConsentChoice: (questionId: string, value: boolean) => void;
-  completeOnboarding: () => void;
+  completeOnboarding: () => Promise<void>;
+  resetAppData: () => Promise<void>;
   startSession: (sessionType: SessionType) => NightSession;
   sendSessionEvent: (event: SessionEvent) => void;
   addJournalEntry: (text: string) => void;
@@ -53,6 +78,17 @@ const AppStateContext = React.createContext<AppStateValue | null>(null);
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function emptyConsentChoices(): AppConsentChoices {
+  return {
+    structuredResearchUploadConsent: false,
+    dreamJournalUploadConsent: false,
+  };
+}
+
+function isAppMode(value: string | null): value is AppMode {
+  return value === "phone" || value === "watch";
 }
 
 function toConsentState(consentChoices: AppConsentChoices): ConsentState {
@@ -65,19 +101,50 @@ function toConsentState(consentChoices: AppConsentChoices): ConsentState {
   };
 }
 
+function studyChoiceFromAnswers(
+  answers: OnboardingAnswer[],
+): typeof STUDY_OPT_IN_VALUE | typeof STUDY_OPT_OUT_VALUE | null {
+  const value = answers.find(
+    (answer) => answer.questionId === STUDY_PARTICIPATION_QUESTION_ID,
+  )?.value;
+
+  if (value === STUDY_OPT_IN_VALUE || value === STUDY_OPT_OUT_VALUE) {
+    return value;
+  }
+
+  return null;
+}
+
+function consentChoicesFromStudyChoice(
+  studyChoice: typeof STUDY_OPT_IN_VALUE | typeof STUDY_OPT_OUT_VALUE,
+): AppConsentChoices {
+  return {
+    structuredResearchUploadConsent: studyChoice === STUDY_OPT_IN_VALUE,
+    dreamJournalUploadConsent: false,
+  };
+}
+
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [participantId] = React.useState(() => createId("participant"));
+  const [isHydrated, setIsHydrated] = React.useState(false);
+  const [hydrationError, setHydrationError] = React.useState<string | null>(null);
+  const [isCompletingOnboarding, setIsCompletingOnboarding] =
+    React.useState(false);
+  const [participantId, setParticipantId] = React.useState(() =>
+    createId("participant"),
+  );
+  const [appInstallId, setAppInstallId] = React.useState(() =>
+    createId("install"),
+  );
+  const [participantCreatedAt, setParticipantCreatedAt] = React.useState(() =>
+    new Date().toISOString(),
+  );
   const [selectedMode, setSelectedMode] = React.useState<AppMode>("phone");
   const [onboardingComplete, setOnboardingComplete] = React.useState(false);
   const [onboardingAnswers, setOnboardingAnswers] = React.useState<
     OnboardingAnswer[]
   >([]);
-  const [consentChoices, setConsentChoices] = React.useState<AppConsentChoices>({
-    acceptedAppTerms: false,
-    acceptedResearchInfo: false,
-    structuredResearchUploadConsent: false,
-    dreamJournalUploadConsent: false,
-  });
+  const [consentChoices, setConsentChoices] =
+    React.useState<AppConsentChoices>(emptyConsentChoices);
   const [activeSession, setActiveSession] = React.useState<NightSession | null>(
     null,
   );
@@ -85,6 +152,67 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [journalEntries, setJournalEntries] = React.useState<
     DreamJournalEntry[]
   >([]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function hydrate(): Promise<void> {
+      try {
+        const db = await getLocalDb();
+        const participant = await getLocalParticipant(db);
+        const completedAt = await getAppSetting<string>(
+          db,
+          ONBOARDING_COMPLETED_AT_SETTING,
+        );
+        const onboardingVersion = await getAppSetting<string>(
+          db,
+          ONBOARDING_VERSION_SETTING,
+        );
+        const persistedAnswers = participant
+          ? await loadOnboardingResponses(db, participant.id)
+          : [];
+
+        if (cancelled) {
+          return;
+        }
+
+        if (participant) {
+          setParticipantId(participant.id);
+          setAppInstallId(participant.app_install_id);
+          setParticipantCreatedAt(participant.created_at);
+          setConsentChoices({
+            structuredResearchUploadConsent:
+              participant.structured_upload_consent === 1,
+            dreamJournalUploadConsent: participant.dream_upload_consent === 1,
+          });
+
+          if (isAppMode(participant.selected_mode)) {
+            setSelectedMode(participant.selected_mode);
+          }
+        }
+
+        setOnboardingAnswers(persistedAnswers);
+        setOnboardingComplete(Boolean(completedAt && onboardingVersion));
+      } catch (error) {
+        if (!cancelled) {
+          setHydrationError(
+            error instanceof Error ? error.message : "Failed to load app data.",
+          );
+          setOnboardingComplete(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHydrated(true);
+        }
+      }
+    }
+
+    hydrate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const setOnboardingAnswer = React.useCallback(
     (input: {
@@ -122,40 +250,128 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         ];
       });
 
-      if (input.questionId === "mode" && (input.value === "phone" || input.value === "watch")) {
+      if (
+        input.questionId === "mode" &&
+        (input.value === "phone" || input.value === "watch")
+      ) {
         setSelectedMode(input.value);
+      }
+
+      if (
+        input.questionId === STUDY_PARTICIPATION_QUESTION_ID &&
+        (input.value === STUDY_OPT_IN_VALUE ||
+          input.value === STUDY_OPT_OUT_VALUE)
+      ) {
+        setConsentChoices(consentChoicesFromStudyChoice(input.value));
       }
     },
     [participantId],
   );
 
-  const setConsentChoice = React.useCallback(
-    (questionId: string, value: boolean) => {
-      setConsentChoices((choices) => {
-        if (questionId === "accepted_app_terms") {
-          return { ...choices, acceptedAppTerms: value };
-        }
+  const completeOnboarding = React.useCallback(async () => {
+    const studyChoice = studyChoiceFromAnswers(onboardingAnswers);
 
-        if (questionId === "accepted_research_info") {
-          return { ...choices, acceptedResearchInfo: value };
-        }
+    if (!studyChoice) {
+      throw new Error("Choose whether to opt in or opt out of the study.");
+    }
 
-        if (questionId === "structured_research_upload_consent") {
-          return { ...choices, structuredResearchUploadConsent: value };
-        }
+    const now = new Date().toISOString();
+    const nextConsentChoices = consentChoicesFromStudyChoice(studyChoice);
+    const nextConsentState = toConsentState(nextConsentChoices);
+    const uploadStatus: UploadStatus =
+      nextConsentChoices.structuredResearchUploadConsent
+        ? "pending"
+        : "local_only";
+    const db = await getLocalDb();
 
-        if (questionId === "dream_journal_upload_consent") {
-          return { ...choices, dreamJournalUploadConsent: value };
-        }
+    setIsCompletingOnboarding(true);
 
-        return choices;
+    try {
+      await upsertLocalParticipant({
+        db,
+        participantId,
+        appInstallId,
+        createdAt: participantCreatedAt,
+        selectedMode,
+        structuredResearchUploadAccepted:
+          nextConsentChoices.structuredResearchUploadConsent,
+        dreamJournalUploadAccepted: false,
       });
-    },
-    [],
-  );
+      await replaceStructuredConsent({
+        db,
+        consentId: createId("consent"),
+        participantId,
+        consentVersion: ONBOARDING_FORM_ID,
+        acceptedAt: nextConsentChoices.structuredResearchUploadConsent
+          ? now
+          : null,
+        appVersion: "0.1.0",
+      });
 
-  const completeOnboarding = React.useCallback(() => {
-    setOnboardingComplete(true);
+      if (nextConsentChoices.structuredResearchUploadConsent) {
+        await prepareAnonymousResearchUpload({
+          db,
+          participantId,
+          consentVersion: ONBOARDING_FORM_ID,
+          acceptedAt: now,
+        });
+      }
+
+      await saveOnboardingResponses({
+        db,
+        answers: onboardingAnswers,
+        uploadStatus,
+      });
+
+      if (nextConsentChoices.structuredResearchUploadConsent) {
+        const queue = createLocalUploadQueueStore(db);
+
+        for (const answer of onboardingAnswers) {
+          await enqueueIfAllowed({
+            queue,
+            consents: nextConsentState,
+            item: {
+              id: `upload-${answer.id}`,
+              entityType: "questionnaire_response",
+              entityId: answer.id,
+              payload: buildQuestionnaireResponsePayload(answer),
+              createdAt: now,
+            },
+          });
+        }
+      }
+
+      await setAppSetting(db, ONBOARDING_COMPLETED_AT_SETTING, now, now);
+      await setAppSetting(db, ONBOARDING_VERSION_SETTING, ONBOARDING_FORM_ID, now);
+      setConsentChoices(nextConsentChoices);
+      setOnboardingComplete(true);
+    } finally {
+      setIsCompletingOnboarding(false);
+    }
+  }, [
+    appInstallId,
+    onboardingAnswers,
+    participantCreatedAt,
+    participantId,
+    selectedMode,
+  ]);
+
+  const resetAppData = React.useCallback(async () => {
+    const db = await getLocalDb();
+
+    await signOutAndClearSupabaseSession(db);
+    await clearAllLocalData(db);
+
+    setParticipantId(createId("participant"));
+    setAppInstallId(createId("install"));
+    setParticipantCreatedAt(new Date().toISOString());
+    setSelectedMode("phone");
+    setOnboardingComplete(false);
+    setOnboardingAnswers([]);
+    setConsentChoices(emptyConsentChoices());
+    setActiveSession(null);
+    setSessionHistory([]);
+    setJournalEntries([]);
   }, []);
 
   const startSession = React.useCallback(
@@ -182,7 +398,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const sendSessionEvent = React.useCallback((event: SessionEvent) => {
     setActiveSession((session) => {
-      if (!session || !canTransitionSession(session.sessionType, session.status, event)) {
+      if (
+        !session ||
+        !canTransitionSession(session.sessionType, session.status, event)
+      ) {
         return session;
       }
 
@@ -218,6 +437,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const value = React.useMemo<AppStateValue>(
     () => ({
+      isHydrated,
+      hydrationError,
+      isCompletingOnboarding,
       participantId,
       selectedMode,
       onboardingComplete,
@@ -229,8 +451,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       journalEntries,
       setSelectedMode,
       setOnboardingAnswer,
-      setConsentChoice,
       completeOnboarding,
+      resetAppData,
       startSession,
       sendSessionEvent,
       addJournalEntry,
@@ -240,13 +462,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       addJournalEntry,
       completeOnboarding,
       consentChoices,
+      hydrationError,
+      isCompletingOnboarding,
+      isHydrated,
       journalEntries,
       onboardingAnswers,
       onboardingComplete,
       participantId,
+      resetAppData,
       selectedMode,
       sendSessionEvent,
-      setConsentChoice,
       setOnboardingAnswer,
       startSession,
     ],

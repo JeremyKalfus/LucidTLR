@@ -1,8 +1,10 @@
-import { Pressable, Text, View } from "react-native";
+import { router } from "expo-router";
+import { Alert, Pressable, Text, View } from "react-native";
 
 import {
   Card,
   InfoRow,
+  PrimaryPillButton,
   Screen,
   SectionTitle,
 } from "@/src/components/ui";
@@ -53,9 +55,41 @@ export function SettingsScreen() {
   const {
     consentChoices,
     participantId,
+    resetAppData,
     selectedMode,
     setSelectedMode,
   } = useAppState();
+
+  const confirmReset = () => {
+    const reset = () => {
+      resetAppData().then(() => router.replace("/onboarding"));
+    };
+
+    if (process.env.EXPO_OS === "web" && globalThis.confirm) {
+      if (
+        globalThis.confirm(
+          "Reset app and delete local data? This clears local onboarding, sleep, and journal data on this device.",
+        )
+      ) {
+        reset();
+      }
+
+      return;
+    }
+
+    Alert.alert(
+      "Reset app and delete local data?",
+      "This clears local onboarding, sleep, and journal data on this device.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: reset,
+        },
+      ],
+    );
+  };
 
   return (
     <Screen>
@@ -91,7 +125,6 @@ export function SettingsScreen() {
         <InfoRow label="sensitivity preset" value="placeholder" />
         <InfoRow label="structured upload" value={consentChoices.structuredResearchUploadConsent ? "enabled" : "off"} />
         <InfoRow label="dream upload" value={consentChoices.dreamJournalUploadConsent ? "enabled" : "off"} />
-        <InfoRow label="Supabase auth" value="not created in this shell" />
       </Card>
 
       <Card>
@@ -110,9 +143,27 @@ export function SettingsScreen() {
           }}
         >
           Settings are local React state placeholders for the first runnable
-          shell. No upload, account creation, native sensing, or audio behavior
-          is connected here.
+          shell. Native sensing and overnight audio behavior are not connected
+          here.
         </Text>
+      </Card>
+
+      <Card>
+        <Text
+          selectable
+          style={{
+            color: colors.textSecondary,
+            fontSize: typography.body.fontSize,
+            lineHeight: typography.body.lineHeight,
+          }}
+        >
+          Reset app and delete local data clears this device. Full remote
+          deletion is not implemented yet.
+        </Text>
+        <PrimaryPillButton
+          label="Reset app and delete local data"
+          onPress={confirmReset}
+        />
       </Card>
     </Screen>
   );

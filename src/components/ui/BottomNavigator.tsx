@@ -12,7 +12,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: "guide", href: "/onboarding", icon: BookOpen },
+  { label: "guide", href: "/guide", icon: BookOpen },
   { label: "data", href: "/data", icon: BarChart3 },
   { label: "home", href: "/", icon: House },
   { label: "journal", href: "/journal", icon: NotebookPen },

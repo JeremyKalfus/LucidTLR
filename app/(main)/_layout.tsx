@@ -1,11 +1,10 @@
-import { Redirect } from "expo-router";
+import { Redirect, Stack } from "expo-router";
 import { Text, View } from "react-native";
 
-import { OnboardingWizardScreen } from "@/src/screens/OnboardingWizardScreen";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
-function LoadingOnboardingGate() {
+function LoadingGate() {
   return (
     <View
       style={{
@@ -31,16 +30,25 @@ function LoadingOnboardingGate() {
   );
 }
 
-export default function OnboardingRoute() {
+export default function MainLayout() {
   const { isHydrated, onboardingComplete } = useAppState();
 
   if (!isHydrated) {
-    return <LoadingOnboardingGate />;
+    return <LoadingGate />;
   }
 
-  if (onboardingComplete) {
-    return <Redirect href="/" />;
+  if (!onboardingComplete) {
+    return <Redirect href="/onboarding" />;
   }
 
-  return <OnboardingWizardScreen />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        animation: "none",
+        gestureEnabled: false,
+        contentStyle: { backgroundColor: colors.background },
+      }}
+    />
+  );
 }
