@@ -50,17 +50,41 @@ These papers are included as full PDFs in the repo. You may also refer to Jeremy
 
 ## Onboarding
 
-- Explain lucid dreaming.
-- Explain TLR: a cue is paired with a lucid mindset before sleep, then replayed during sleep.
-- Ask user to choose Phone Mode or Watch Mode.
-- Present consent / terms.
-- Ask required permissions:
+Use a single data-driven `OnboardingWizard`, not separate standalone intro,
+consent, and setup screens. Store answers in generic questionnaire responses so
+future CNL questionnaires do not force schema churn.
+
+Wizard steps:
+
+1. Welcome.
+2. TLR explanation.
+3. Mode selection.
+4. Baseline sleep profile.
+5. Dream/lucidity profile.
+6. Sound sensitivity + sleep environment.
+7. Goals.
+8. Consent/privacy.
+9. Permissions.
+10. Ready.
+
+Consent remains explicit within the wizard. Structured research upload and dream
+journal upload are separate opt-ins, and dream journal upload defaults off.
+Permission requests are mode-specific:
+
+- Phone Mode:
   - audio,
   - motion,
-  - local notifications if needed,
-  - HealthKit / Apple Watch permissions for Watch Mode.
-- Tell users the app may help induce lucid dreams.
-- Do not claim guaranteed induction or medical treatment.
+  - local notifications if needed.
+- Watch Mode:
+  - audio,
+  - motion,
+  - HealthKit,
+  - WatchConnectivity / watch app setup,
+  - local notifications if needed.
+
+Do not request location, contacts, texts, or advertising IDs. Tell users the app
+may help induce lucid dreams, but do not claim guaranteed induction or medical
+treatment.
 
 ## Presleep Training
 

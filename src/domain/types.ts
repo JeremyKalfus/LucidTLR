@@ -23,8 +23,7 @@ export type ConsentType =
   | "app_terms"
   | "research_info"
   | "structured_research_upload"
-  | "dream_journal_upload"
-  | "future_contact";
+  | "dream_journal_upload";
 
 export type EntityType =
   | "participant"

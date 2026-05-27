@@ -6,6 +6,3 @@ node_modules/
 dist/
 build/
 coverage/
-
-# Keep bundled study PDFs local unless explicitly approved for public release.
-*.pdf

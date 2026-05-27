@@ -7,6 +7,15 @@ export interface MorningReportField {
   required: boolean;
 }
 
+export const MORNING_LUCIDITY_DETAIL_FORM_ID =
+  "morning-lucidity-detail-v1";
+
+export const MORNING_REPORT_OPTIONAL_LUCIDITY_STORAGE = {
+  table: "questionnaire_responses",
+  formId: MORNING_LUCIDITY_DETAIL_FORM_ID,
+  sessionLinked: true,
+} as const;
+
 export const MORNING_REPORT_CORE_FIELDS: MorningReportField[] = [
   {
     id: "remembered_dream",

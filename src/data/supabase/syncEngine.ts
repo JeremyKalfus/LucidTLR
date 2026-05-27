@@ -22,7 +22,7 @@ export interface SyncQueueStore {
 export async function enqueueIfAllowed(input: {
   queue: SyncQueueStore;
   consents: ConsentState;
-  item: Omit<UploadQueueItem, "status" | "attemptCount">;
+  item: Omit<UploadQueueItem, "status" | "attemptCount" | "consentTypeRequired">;
 }): Promise<boolean> {
   if (!canUploadEntity(input.item.entityType, input.consents)) {
     return false;

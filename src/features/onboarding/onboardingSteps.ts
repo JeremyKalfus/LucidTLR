@@ -275,13 +275,6 @@ export const onboardingSteps: OnboardingStep[] = [
         defaultValue: false,
       },
       {
-        id: "future_contact_consent",
-        type: "boolean",
-        prompt: "Allow future contact if contact info is added later.",
-        defaultValue: false,
-        disabled: true,
-      },
-      {
         id: "privacy_copy",
         type: "info",
         prompt:

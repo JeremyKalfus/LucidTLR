@@ -17,6 +17,3 @@ This is not a medical device or treatment, and results are not guaranteed.
 - Local SQLite and Supabase schemas are scaffolded.
 - Upload decisions are centralized and consent-gated.
 - Native overnight behavior is represented by TypeScript adapter interfaces.
-
-Study PDFs used for local project reference are intentionally not committed to
-the public repository by default.

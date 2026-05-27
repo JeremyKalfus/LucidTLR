@@ -5,6 +5,10 @@ export const LOCAL_MIGRATIONS = [
     id: "001_initial",
     filename: "001_initial.sql",
   },
+  {
+    id: "002_indexes",
+    filename: "002_indexes.sql",
+  },
 ] as const;
 
 export const LOCAL_TABLES = [
