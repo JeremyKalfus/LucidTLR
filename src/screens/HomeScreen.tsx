@@ -47,6 +47,7 @@ export function HomeScreen() {
 
       <PrimaryPillButton
         label="Begin TLR"
+        variant="large"
         onPress={() => {
           startSession("tlr");
           router.push("/presleep-training");

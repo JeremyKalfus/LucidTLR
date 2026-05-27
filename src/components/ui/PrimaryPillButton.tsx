@@ -6,11 +6,15 @@ export function PrimaryPillButton({
   label,
   onPress,
   disabled = false,
+  variant = "normal",
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  variant?: "normal" | "large";
 }) {
+  const isLarge = variant === "large";
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -19,22 +23,29 @@ export function PrimaryPillButton({
       style={({ pressed }) => ({
         alignItems: "center",
         justifyContent: "center",
-        minHeight: 78,
-        borderRadius: radii.primaryPill,
+        minHeight: isLarge ? 78 : 44,
+        borderRadius: isLarge ? radii.primaryPill : radii.button,
         borderWidth: borders.hairline,
         borderColor: colors.cardBorder,
         backgroundColor: colors.card,
+        paddingHorizontal: isLarge ? 18 : 16,
         opacity: disabled ? 0.45 : pressed ? 0.72 : 1,
-        boxShadow: disabled ? undefined : shadows.primaryGlow,
+        boxShadow: isLarge && !disabled ? shadows.primaryGlow : undefined,
       })}
     >
       <Text
         selectable
         style={{
           color: colors.textPrimary,
-          fontSize: typography.title.fontSize,
-          lineHeight: typography.title.lineHeight,
-          letterSpacing: typography.title.letterSpacing,
+          fontSize: isLarge
+            ? typography.title.fontSize
+            : typography.body.fontSize,
+          lineHeight: isLarge
+            ? typography.title.lineHeight
+            : typography.body.lineHeight,
+          letterSpacing: isLarge
+            ? typography.title.letterSpacing
+            : typography.body.letterSpacing,
           fontWeight: "400",
         }}
       >

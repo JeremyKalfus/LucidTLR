@@ -40,6 +40,7 @@ export const typography = {
 
 export const radii = {
   card: 16,
+  button: 22,
   primaryPill: 39,
   secondaryPill: 36,
   bottomNav: 35,
