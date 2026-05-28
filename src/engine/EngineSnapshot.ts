@@ -4,7 +4,11 @@ import type {
   EngineSnapshot,
   ScoreBreakdown,
 } from "./CueDecisionTypes";
-import { formatReason } from "./CueDecisionTypes";
+import { emptyScoreBreakdown, formatReason } from "./CueDecisionTypes";
+import { buildCueBudgetState } from "./CueBudgetController";
+import { buildMovementGateState } from "./MovementGate";
+import { buildSleepTimingPrior } from "./SleepTimingPrior";
+import { buildVolumeState } from "./VolumeController";
 
 function formatDateTime(value: string | undefined): string {
   if (!value) {
@@ -68,6 +72,10 @@ function formatWindow(start: string, end: string): string {
 }
 
 function formatStatus(decision: CueDecision): string {
+  if (decision.action === "idle") {
+    return "engine idle";
+  }
+
   if (decision.action === "play_cue") {
     return "cue eligible";
   }
@@ -81,6 +89,26 @@ function formatStatus(decision: CueDecision): string {
   }
 
   return `suppressed: ${formatReason(decision.reason)}`;
+}
+
+function formatInactiveStatus(context: CueDecisionContext): string {
+  if (!context.session) {
+    return "engine idle";
+  }
+
+  if (context.session.sessionType === "sleep_log") {
+    return "sleep log only";
+  }
+
+  if (context.session.status === "setup") {
+    return "setup";
+  }
+
+  if (context.session.status === "training") {
+    return "training";
+  }
+
+  return "engine idle";
 }
 
 export function buildEngineSnapshot(input: {
@@ -148,6 +176,56 @@ export function buildEngineSnapshot(input: {
     )} / next ${formatSeconds(
       Math.max(0, (Date.parse(decision.nextCheckAt) - Date.parse(context.now)) / 1000),
     )}`,
+  };
+}
+
+export function buildInactiveEngineSnapshot(input: {
+  context: CueDecisionContext;
+}): EngineSnapshot {
+  const { context } = input;
+  const trainingEndedAt = context.session?.trainingEndedAt ?? context.now;
+  const sleepTiming = buildSleepTimingPrior({
+    trainingEndedAt,
+    settings: context.settings,
+  });
+  const decision: CueDecision = {
+    action: "idle",
+    reason: "none",
+    opportunityScore: 0,
+    scoreBreakdown: emptyScoreBreakdown(),
+    nextCheckAt: context.now,
+    sleepTiming,
+    movement: buildMovementGateState(context),
+    budget: buildCueBudgetState(context),
+    volume: buildVolumeState(context),
+    metadata: {
+      protocolVersion: context.session?.protocolVersion ?? null,
+      mode: context.mode,
+      threshold: null,
+    },
+  };
+  const snapshot = buildEngineSnapshot({ context, decision });
+  const hasTrainingEnd = Boolean(context.session?.trainingEndedAt);
+
+  return {
+    ...snapshot,
+    currentValues: {
+      ...snapshot.currentValues,
+      estimatedSleepOnset: hasTrainingEnd
+        ? snapshot.currentValues.estimatedSleepOnset
+        : "not available",
+      expectedWakeTime: hasTrainingEnd
+        ? snapshot.currentValues.expectedWakeTime
+        : "not available",
+      nextOrActiveCueWindow: hasTrainingEnd
+        ? snapshot.currentValues.nextOrActiveCueWindow
+        : "not scheduled",
+      currentEngineStatus: formatInactiveStatus(context),
+      latestDecisionReason: "none",
+      nextCheckTime: "not scheduled",
+      suppressionReason: "none",
+    },
+    decisionLogLine: "",
   };
 }
 

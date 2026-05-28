@@ -38,9 +38,9 @@ export function DataScreen() {
       <SectionTitle>Data</SectionTitle>
 
       <Card>
-        <InfoRow label="last decision" value={decision.action.replaceAll("_", " ")} />
+        <InfoRow label="engine status" value={latestEngineSnapshot.currentValues.currentEngineStatus} />
         <InfoRow label="decision reason" value={latestEngineSnapshot.currentValues.latestDecisionReason} />
-        <InfoRow label="opportunity score" value={decision.opportunityScore.toFixed(2)} />
+        <InfoRow label="opportunity score" value={showDecisionLog ? decision.opportunityScore.toFixed(2) : "not running"} />
         <InfoRow label="next check" value={latestEngineSnapshot.currentValues.nextCheckTime} />
         <InfoRow label="suppression reason" value={latestEngineSnapshot.currentValues.suppressionReason} />
       </Card>

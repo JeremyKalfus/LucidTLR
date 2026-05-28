@@ -4,9 +4,15 @@ export type SoundSensitivityProfile = "sensitive" | "standard" | "hard_to_wake";
 
 export type WatchSensorQuality = "good" | "degraded" | "missing" | "bad";
 
-export type CueDecisionAction = "play_cue" | "suppress" | "pause" | "wait";
+export type CueDecisionAction =
+  | "idle"
+  | "play_cue"
+  | "suppress"
+  | "pause"
+  | "wait";
 
 export type CueDecisionReason =
+  | "none"
   | "before_training_finished"
   | "before_cue_window"
   | "outside_sleep_opportunity"

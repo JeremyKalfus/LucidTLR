@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { NightSession, SoundSensitivityProfile } from "@/src/domain/types";
 import {
   buildEngineSnapshot,
+  buildInactiveEngineSnapshot,
   buildSleepTimingPrior,
   createDefaultEngineSettings,
   evaluateCueDecision,
@@ -358,5 +359,19 @@ describe("Sleep timing prior and snapshots", () => {
     expect(snapshot.scoreRows.map((row) => row.label)).toContain(
       "time opportunity",
     );
+  });
+
+  it("shows idle state without a cue-decision reason when no overnight run is active", () => {
+    const context = makeContext({
+      session: null,
+    });
+    const snapshot = buildInactiveEngineSnapshot({ context });
+
+    expect(snapshot.decision.action).toBe("idle");
+    expect(snapshot.decision.reason).toBe("none");
+    expect(snapshot.currentValues.currentEngineStatus).toBe("engine idle");
+    expect(snapshot.currentValues.latestDecisionReason).toBe("none");
+    expect(snapshot.currentValues.nextCheckTime).toBe("not scheduled");
+    expect(snapshot.decisionLogLine).toBe("");
   });
 });

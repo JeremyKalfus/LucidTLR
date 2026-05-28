@@ -44,6 +44,7 @@ import type { SessionEvent } from "@/src/features/sessions/sessionStateMachine";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
 import {
   buildEngineSnapshot,
+  buildInactiveEngineSnapshot,
   createDefaultEngineSettings,
   ENGINE_SETTINGS_KEY,
   evaluateCueDecision,
@@ -653,10 +654,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [activeSession, engineNowMs, engineSettings, selectedMode],
   );
   const latestEngineSnapshot = React.useMemo(() => {
-    const decision = evaluateCueDecision(engineContext);
+    if (!shouldRecordEngineDecisions) {
+      return buildInactiveEngineSnapshot({ context: engineContext });
+    }
 
+    const decision = evaluateCueDecision(engineContext);
     return buildEngineSnapshot({ context: engineContext, decision });
-  }, [engineContext]);
+  }, [engineContext, shouldRecordEngineDecisions]);
 
   React.useEffect(() => {
     if (!shouldRecordEngineDecisions) {
