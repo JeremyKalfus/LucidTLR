@@ -17,6 +17,12 @@ function nightSessionStartedAt(session: NightSession): string {
   return session.startedAt;
 }
 
+function runningSessionLabel(session: NightSession): string {
+  return session.sessionType === "tlr"
+    ? "TLR session running"
+    : "Sleep log running";
+}
+
 export function ActiveNightSessionScreen() {
   const { activeSession, sendSessionEvent } = useAppState();
   const canEnd =
@@ -32,7 +38,10 @@ export function ActiveNightSessionScreen() {
   if (activeSession && canEnd) {
     return (
       <Screen bottomNav={false} centered>
-        <RunningSessionClock startedAt={nightSessionStartedAt(activeSession)} />
+        <RunningSessionClock
+          label={runningSessionLabel(activeSession)}
+          startedAt={nightSessionStartedAt(activeSession)}
+        />
         <PrimaryPillButton
           label="Stop Session"
           onPress={() => sendSessionEvent("end_session")}
@@ -43,7 +52,7 @@ export function ActiveNightSessionScreen() {
 
   if (activeSession?.status === "ended") {
     return (
-      <Screen centered>
+      <Screen bottomNav={false} centered>
         <PrimaryPillButton
           label="Morning Review"
           onPress={() => router.push("/morning-review")}

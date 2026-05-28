@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Text, View } from "react-native";
 
-import { colors } from "@/src/theme/tokens";
+import { colors, typography } from "@/src/theme/tokens";
 
 function elapsedSecondsSince(startedAt: string | undefined, nowMs: number): number {
   if (!startedAt) {
@@ -32,8 +32,10 @@ function formatElapsedTime(totalSeconds: number): string {
 }
 
 export function RunningSessionClock({
+  label,
   startedAt,
 }: {
+  label?: string;
   startedAt: string | undefined;
 }) {
   const [nowMs, setNowMs] = React.useState(() => Date.now());
@@ -56,6 +58,7 @@ export function RunningSessionClock({
         alignItems: "center",
         justifyContent: "center",
         minHeight: 180,
+        gap: 8,
       }}
     >
       <Text
@@ -72,6 +75,20 @@ export function RunningSessionClock({
       >
         {formatElapsedTime(elapsedSeconds)}
       </Text>
+      {label ? (
+        <Text
+          selectable
+          style={{
+            color: colors.textMuted,
+            fontSize: typography.label.fontSize,
+            lineHeight: typography.label.lineHeight,
+            letterSpacing: typography.label.letterSpacing,
+            fontWeight: "400",
+          }}
+        >
+          {label}
+        </Text>
+      ) : null}
     </View>
   );
 }

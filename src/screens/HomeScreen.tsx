@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import type { LucideIcon } from "lucide-react-native";
-import { Moon, NotebookPen, Settings } from "lucide-react-native";
+import { Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
 
 import {
@@ -15,6 +15,11 @@ import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, shadows, spacing, typography } from "@/src/theme/tokens";
 
 const labelToCardGap = 6;
+const primaryActionFlex = 1.8;
+const primaryActionFontSize = 20;
+const primaryActionLineHeight = 22;
+const sideActionFlex = 1.1;
+const sideActionHorizontalPadding = 6;
 const sideActionTextScale = 0.75;
 
 function HomeSectionLabel({ children }: { children: string }) {
@@ -64,7 +69,7 @@ function HomeActionButton({
         borderWidth: borders.hairline,
         borderColor: colors.cardBorder,
         backgroundColor: colors.card,
-        paddingHorizontal: primary ? 12 : 8,
+        paddingHorizontal: primary ? 12 : sideActionHorizontalPadding,
         opacity: pressed ? 0.72 : 1,
         boxShadow: primary ? shadows.primaryGlow : undefined,
       })}
@@ -75,10 +80,16 @@ function HomeActionButton({
           minWidth: 0,
           alignItems: "center",
           justifyContent: "center",
-          gap: primary ? 0 : 5,
+          gap: Icon ? (primary ? 4 : 5) : 0,
         }}
       >
-        {Icon ? <Icon color={colors.textMuted} size={24} strokeWidth={1.8} /> : null}
+        {Icon ? (
+          <Icon
+            color={colors.textMuted}
+            size={primary ? 22 : 24}
+            strokeWidth={1.8}
+          />
+        ) : null}
         <Text
           selectable
           adjustsFontSizeToFit
@@ -87,10 +98,10 @@ function HomeActionButton({
           style={{
             color: primary ? colors.textPrimary : colors.textMuted,
             fontSize: primary
-              ? typography.title.fontSize
+              ? primaryActionFontSize
               : typography.label.fontSize * sideActionTextScale,
             lineHeight: primary
-              ? typography.title.lineHeight
+              ? primaryActionLineHeight
               : typography.label.lineHeight * sideActionTextScale,
             letterSpacing: primary
               ? typography.title.letterSpacing
@@ -140,7 +151,7 @@ export function HomeScreen() {
 
       <View style={{ flexDirection: "row", gap: 10 }}>
         <HomeActionButton
-          flex={1}
+          flex={sideActionFlex}
           icon={Moon}
           label="Log Sleep Only"
           onPress={() => {
@@ -149,7 +160,8 @@ export function HomeScreen() {
           }}
         />
         <HomeActionButton
-          flex={2}
+          flex={primaryActionFlex}
+          icon={Sparkles}
           label="Begin TLR"
           primary
           onPress={() => {
@@ -158,7 +170,7 @@ export function HomeScreen() {
           }}
         />
         <HomeActionButton
-          flex={1}
+          flex={sideActionFlex}
           icon={NotebookPen}
           label="Record Dream"
           onPress={() => router.push("/journal")}

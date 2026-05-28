@@ -52,5 +52,5 @@ export const borders = {
 } as const;
 
 export const shadows = {
-  primaryGlow: "0 0 18px rgba(50, 50, 50, 0.85)",
+  primaryGlow: "0 0 12px rgba(50, 50, 50, 0.55)",
 } as const;
