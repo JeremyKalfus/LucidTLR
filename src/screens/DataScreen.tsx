@@ -11,6 +11,15 @@ import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
+function isOvernightEngineStatus(status: string): boolean {
+  return (
+    status === "waiting_for_cue_window" ||
+    status === "cueing" ||
+    status === "paused_for_movement" ||
+    status === "paused_after_awakening"
+  );
+}
+
 export function DataScreen() {
   const { engineDecisionLog, latestEngineSnapshot, sessionHistory } =
     useAppState();
@@ -20,6 +29,9 @@ export function DataScreen() {
     typeof decision.metadata.threshold === "number"
       ? decision.metadata.threshold
       : undefined;
+  const showDecisionLog = isOvernightEngineStatus(
+    latestEngineSnapshot.sessionStatus,
+  );
 
   return (
     <Screen>
@@ -119,7 +131,9 @@ export function DataScreen() {
         <InfoRow label="cue history" value="no native cue playback connected" />
         <InfoRow label="movement events" value="no native movement stream connected" />
         <InfoRow label="watch epochs" value="no native watch stream connected" />
-        {engineDecisionLog.length === 0 ? (
+        {!showDecisionLog ? (
+          <InfoRow label="latest entries" value="no active overnight engine log" />
+        ) : engineDecisionLog.length === 0 ? (
           <InfoRow label="latest entries" value="none yet" />
         ) : (
           engineDecisionLog.slice(0, 8).map((line) => (

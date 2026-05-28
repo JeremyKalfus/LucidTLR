@@ -47,6 +47,7 @@ import {
   createDefaultEngineSettings,
   ENGINE_SETTINGS_KEY,
   evaluateCueDecision,
+  isCueingSessionActive,
   normalizeEngineSettings,
   type CueDecisionContext,
   type CueDecisionSettings,
@@ -306,6 +307,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
   const [engineNowMs, setEngineNowMs] = React.useState(() => Date.now());
   const [engineDecisionLog, setEngineDecisionLog] = React.useState<string[]>([]);
+  const shouldRecordEngineDecisions = isCueingSessionActive(activeSession);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -376,7 +378,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   React.useEffect(() => {
-    if (!activeSession) {
+    if (!shouldRecordEngineDecisions) {
       return undefined;
     }
 
@@ -385,7 +387,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }, 30000);
 
     return () => clearInterval(intervalId);
-  }, [activeSession?.id]);
+  }, [shouldRecordEngineDecisions]);
 
   const setOnboardingAnswer = React.useCallback(
     (input: {
@@ -657,7 +659,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [engineContext]);
 
   React.useEffect(() => {
-    if (!activeSession) {
+    if (!shouldRecordEngineDecisions) {
       return;
     }
 
@@ -672,8 +674,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       );
     });
   }, [
-    activeSession,
     latestEngineSnapshot.decisionLogLine,
+    shouldRecordEngineDecisions,
   ]);
 
   const value = React.useMemo<AppStateValue>(
