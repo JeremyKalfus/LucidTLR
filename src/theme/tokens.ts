@@ -14,6 +14,7 @@ export const colors = {
 
 export const spacing = {
   screenMargin: 20,
+  screenTopPadding: 78,
   titleOffset: 24,
   cardGap: 14,
   controlGap: 14,

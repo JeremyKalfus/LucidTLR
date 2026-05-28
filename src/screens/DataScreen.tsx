@@ -6,6 +6,7 @@ import {
   Screen,
   SectionTitle,
 } from "@/src/components/ui";
+import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -37,6 +38,7 @@ export function DataScreen() {
               <InfoRow label="session" value={session.sessionType} />
               <InfoRow label="mode" value={session.mode ?? "none"} />
               <InfoRow label="status" value={session.status.replaceAll("_", " ")} />
+              <InfoRow label="length" value={formatSessionLength(session)} />
               <InfoRow
                 label="started"
                 value={new Date(session.startedAt).toLocaleString()}

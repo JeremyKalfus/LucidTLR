@@ -6,6 +6,7 @@ import {
   Card,
   InfoRow,
   PrimaryPillButton,
+  RunningSessionClock,
   Screen,
   SectionTitle,
 } from "@/src/components/ui";
@@ -24,6 +25,23 @@ export function PresleepTrainingScreen() {
   const canFinish =
     session?.status === "training" &&
     canTransitionSession("tlr", session.status, "finish_training");
+
+  if (canFinish) {
+    return (
+      <Screen bottomNav={false} centered>
+        <RunningSessionClock
+          startedAt={session.trainingStartedAt ?? session.startedAt}
+        />
+        <PrimaryPillButton
+          label="Skip"
+          onPress={() => {
+            sendSessionEvent("finish_training");
+            router.push("/active-night-session");
+          }}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -86,16 +104,6 @@ export function PresleepTrainingScreen() {
         <PrimaryPillButton
           label="Start Training"
           onPress={() => sendSessionEvent("start_training")}
-        />
-      ) : null}
-
-      {canFinish ? (
-        <PrimaryPillButton
-          label="Finish Training"
-          onPress={() => {
-            sendSessionEvent("finish_training");
-            router.push("/active-night-session");
-          }}
         />
       ) : null}
 

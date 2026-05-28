@@ -1,3 +1,4 @@
+import * as React from "react";
 import type { ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 
@@ -13,14 +14,23 @@ export function Screen({
   bottomNav?: boolean;
   centered?: boolean;
 }) {
+  const [viewportHeight, setViewportHeight] = React.useState(0);
+  const [contentHeight, setContentHeight] = React.useState(0);
+  const scrollEnabled = contentHeight > viewportHeight + 1;
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
+        alwaysBounceVertical={scrollEnabled}
+        contentInsetAdjustmentBehavior="never"
+        onContentSizeChange={(_, height) => setContentHeight(height)}
+        onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}
+        scrollEnabled={scrollEnabled}
+        showsVerticalScrollIndicator={scrollEnabled}
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{
           flexGrow: 1,
-          paddingTop: 54,
+          paddingTop: spacing.screenTopPadding,
           paddingHorizontal: spacing.screenMargin,
           paddingBottom: bottomNav ? 130 : 42,
           gap: spacing.cardGap,
