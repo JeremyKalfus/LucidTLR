@@ -135,8 +135,16 @@ export interface ScoreBreakdown {
   timeOpportunityScore: number;
   movementStabilityScore: number;
   noInteractionScore: number;
+  sleepPriorScore: number;
   userToleranceScore: number;
   cueBudgetScore: number;
+}
+
+export interface WatchScoreBreakdown {
+  normalizedRemScore: number;
+  sleepProbabilityScore: number;
+  watchMovementStabilityScore: number;
+  sleepPriorScore: number;
 }
 
 export interface MovementGateState {
@@ -187,6 +195,8 @@ export interface WatchDecisionState {
   persistentRemSuppressionActive: boolean;
   connectivityState: WatchConnectivityState;
   watchBatteryLevel?: number;
+  opportunityScore?: number;
+  scoreBreakdown?: WatchScoreBreakdown;
 }
 
 export interface CueDecision {
@@ -320,6 +330,11 @@ export function normalizeEngineSettings(
     minInterval,
     Math.round(settings.cueIntervalRangeSeconds[1]),
   );
+  const volumeStartLevel = clamp(settings.volumeStartLevel, 0, 1);
+  const volumeRampPerCue =
+    settings.volumeRampPerCue > 0.02
+      ? settings.volumeRampPerCue / 100
+      : settings.volumeRampPerCue;
 
   return {
     ...settings,
@@ -370,9 +385,9 @@ export function normalizeEngineSettings(
       1,
       Math.round(settings.watchLikelyRemSuppressionEpochs),
     ),
-    volumeStartLevel: clamp(settings.volumeStartLevel, 0, 1),
-    volumeRampPerCue: clamp(settings.volumeRampPerCue, 0, 1),
-    volumeCap: clamp(settings.volumeCap, settings.volumeStartLevel, 1),
+    volumeStartLevel,
+    volumeRampPerCue: clamp(volumeRampPerCue, 0, 1),
+    volumeCap: clamp(settings.volumeCap, volumeStartLevel, 1),
     maxPhoneCuesPerBlock: Math.max(1, Math.round(settings.maxPhoneCuesPerBlock)),
     maxPhoneBlockDurationMinutes: Math.max(
       1,
@@ -400,6 +415,7 @@ export function emptyScoreBreakdown(): ScoreBreakdown {
     timeOpportunityScore: 0,
     movementStabilityScore: 0,
     noInteractionScore: 0,
+    sleepPriorScore: 0,
     userToleranceScore: 0,
     cueBudgetScore: 0,
   };

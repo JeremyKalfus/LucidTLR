@@ -3,7 +3,7 @@ import type {
   ScoreBreakdown,
   SleepTimingPrior,
 } from "./CueDecisionTypes";
-import { clamp } from "./CueDecisionTypes";
+import { addSeconds, clamp } from "./CueDecisionTypes";
 import type { CueBudgetState } from "./CueDecisionTypes";
 import type { MovementGateState } from "./CueDecisionTypes";
 
@@ -49,6 +49,16 @@ function scoreUserTolerance(context: CueDecisionContext): number {
   return context.userFeedback.cueWokeUser ? 0.6 : 1;
 }
 
+function scoreSleepPrior(now: string, timing: SleepTimingPrior): number {
+  const nowMs = Date.parse(now);
+  const expectedWakeCutoff = addSeconds(timing.expectedWakeAt, -20 * 60);
+
+  return nowMs >= Date.parse(timing.estimatedSleepOnsetAt) &&
+    nowMs < Date.parse(expectedWakeCutoff)
+    ? 1
+    : 0;
+}
+
 export function scorePhoneOpportunity(input: {
   context: CueDecisionContext;
   timing: SleepTimingPrior;
@@ -70,6 +80,7 @@ export function scorePhoneOpportunity(input: {
       1,
     ),
     noInteractionScore: movement.userInteractionSuppressionActive ? 0 : 1,
+    sleepPriorScore: scoreSleepPrior(context.now, timing),
     userToleranceScore: scoreUserTolerance(context),
     cueBudgetScore: clamp(
       budget.cuesRemainingTonight / Math.max(1, budget.maxCuesTonight),
@@ -78,12 +89,11 @@ export function scorePhoneOpportunity(input: {
     ),
   };
   const score =
-    (breakdown.timeOpportunityScore +
-      breakdown.movementStabilityScore +
-      breakdown.noInteractionScore +
-      breakdown.userToleranceScore +
-      breakdown.cueBudgetScore) /
-    5;
+    breakdown.timeOpportunityScore * 0.4 +
+    breakdown.movementStabilityScore * 0.25 +
+    breakdown.sleepPriorScore * 0.15 +
+    breakdown.userToleranceScore * 0.1 +
+    breakdown.cueBudgetScore * 0.1;
 
   return { score, breakdown };
 }

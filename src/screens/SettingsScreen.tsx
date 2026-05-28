@@ -11,6 +11,7 @@ import {
 } from "@/src/components/ui";
 import type { AppMode } from "@/src/domain/types";
 import {
+  formatEnginePercent,
   getProfileDefaults,
   type CueDecisionSettings,
   type SoundSensitivityProfile,
@@ -387,6 +388,10 @@ export function SettingsScreen() {
           settingKey="volumeRampPerCue"
           settings={engineSettings}
           updateEngineSettings={updateEngineSettings}
+        />
+        <InfoRow
+          label="volume ramp display"
+          value={formatEnginePercent(engineSettings.volumeRampPerCue)}
         />
         <NumericSettingInput
           label="volume cap"

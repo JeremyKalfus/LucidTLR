@@ -23,8 +23,8 @@ export const phoneCueing = {
   cueAssociatedMovementWindowSeconds: 30,
   cueAssociatedMovementPauseSeconds: 180,
   userReportedAwakeningPauseSeconds: 45 * 60,
-  defaultVolumeRampPerCuePercent: 0.16,
-  slowVolumeRampPerCuePercent: 0.08,
+  defaultVolumeRampPerCue: 0.0016,
+  slowVolumeRampPerCue: 0.0008,
 } as const;
 
 export const watchCueing = {
@@ -54,17 +54,17 @@ export const cueBudget = {
 export const volumeProfiles = {
   sensitive: {
     startLevel: 0.08,
-    rampPerCue: phoneCueing.slowVolumeRampPerCuePercent,
+    rampPerCue: phoneCueing.slowVolumeRampPerCue,
     cap: 0.32,
   },
   standard: {
     startLevel: 0.16,
-    rampPerCue: phoneCueing.defaultVolumeRampPerCuePercent,
+    rampPerCue: phoneCueing.defaultVolumeRampPerCue,
     cap: 0.64,
   },
   hard_to_wake: {
     startLevel: 0.16,
-    rampPerCue: phoneCueing.defaultVolumeRampPerCuePercent,
+    rampPerCue: phoneCueing.defaultVolumeRampPerCue,
     cap: 0.8,
   },
 } as const;

@@ -1,15 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import type { NightSession, SoundSensitivityProfile } from "@/src/domain/types";
+import type {
+  NightSession,
+  SoundSensitivityProfile,
+  WatchSensorQuality,
+} from "@/src/domain/types";
 import {
   buildEngineSnapshot,
   buildInactiveEngineSnapshot,
   buildSleepTimingPrior,
   createDefaultEngineSettings,
   evaluateCueDecision,
+  formatEnginePercent,
+  normalizeEngineSettings,
   type CueDecisionContext,
   type CueDecisionSettings,
 } from "@/src/engine";
+import { buildCueBudgetState } from "@/src/engine/CueBudgetController";
 
 const trainingEndedAt = "2026-01-01T23:00:00.000Z";
 const cueWindowStart = "2026-01-02T05:00:00.000Z";
@@ -190,6 +197,26 @@ describe("CueDecisionEngine hard gates", () => {
 });
 
 describe("Phone Mode scoring", () => {
+  it("uses normalized volume ramp defaults and percent display", () => {
+    const standard = createDefaultEngineSettings("standard");
+    const sensitive = createDefaultEngineSettings("sensitive");
+
+    expect(standard.volumeRampPerCue).toBe(0.0016);
+    expect(sensitive.volumeRampPerCue).toBe(0.0008);
+    expect(formatEnginePercent(standard.volumeRampPerCue)).toBe("0.16%");
+    expect(formatEnginePercent(sensitive.volumeRampPerCue)).toBe("0.08%");
+    expect(formatEnginePercent(standard.volumeStartLevel)).toBe("16%");
+  });
+
+  it("normalizes old persisted volume ramp settings", () => {
+    const normalized = normalizeEngineSettings({
+      ...createDefaultEngineSettings("standard"),
+      volumeRampPerCue: 0.16,
+    });
+
+    expect(normalized.volumeRampPerCue).toBe(0.0016);
+  });
+
   it("plays a cue 6 hours after training with stable movement", () => {
     const decision = evaluateCueDecision(makeContext());
 
@@ -197,6 +224,30 @@ describe("Phone Mode scoring", () => {
     expect(decision.reason).toBe("phone_late_rem_opportunity");
     expect(decision.opportunityScore).toBeGreaterThanOrEqual(0.7);
     expect(decision.scoreBreakdown.timeOpportunityScore).toBe(1);
+  });
+
+  it("uses the weighted phone score formula with a visible sleep prior", () => {
+    const settings = makeSettings();
+    const decision = evaluateCueDecision(
+      makeContext({
+        settings,
+        cueHistory: {
+          previousCues: [],
+          numberOfCuesTonight: 30,
+          numberOfCuesInCurrentBlock: 0,
+          latestVolumeLevel: settings.volumeStartLevel,
+        },
+        userFeedback: {
+          cueWokeUser: true,
+        },
+      }),
+    );
+    const expectedScore =
+      0.4 * 1 + 0.25 * 1 + 0.15 * 1 + 0.1 * 0.6 + 0.1 * 0.5;
+
+    expect(decision.scoreBreakdown.sleepPriorScore).toBe(1);
+    expect(decision.scoreBreakdown.noInteractionScore).toBe(1);
+    expect(decision.opportunityScore).toBeCloseTo(expectedScore);
   });
 
   it("becomes eligible after cue-associated pause ends and movement is stable", () => {
@@ -222,6 +273,26 @@ describe("Phone Mode scoring", () => {
 
     expect(decision.action).toBe("play_cue");
     expect(decision.reason).toBe("phone_late_rem_opportunity");
+  });
+
+  it("resumes after a cue block rest without an external counter reset", () => {
+    const context = makeContext({
+      now: "2026-01-02T05:21:00.000Z",
+      cueHistory: {
+        previousCues: [],
+        lastCueTime: "2026-01-02T05:00:00.000Z",
+        numberOfCuesTonight: 15,
+        numberOfCuesInCurrentBlock: 15,
+        currentBlockStartedAt: "2026-01-02T04:50:00.000Z",
+      },
+    });
+    const budget = buildCueBudgetState(context);
+    const decision = evaluateCueDecision(context);
+
+    expect(budget.cuesInCurrentBlock).toBe(0);
+    expect(budget.isBlockBudgetExhausted).toBe(false);
+    expect(budget.isBlockResting).toBe(false);
+    expect(decision.action).toBe("play_cue");
   });
 
   it("uses lower sensitive volume and budget than standard", () => {
@@ -270,6 +341,75 @@ describe("Watch Mode opportunity", () => {
     expect(decision.reason).toBe("watch_likely_rem");
   });
 
+  it("can cue on likely REM before the phone cue window", () => {
+    const decision = evaluateCueDecision(
+      watchContext({
+        now: "2026-01-02T04:00:00.000Z",
+        watchSignal: {
+          epochStart: "2026-01-02T04:00:00.000Z",
+          epochEnd: "2026-01-02T04:00:30.000Z",
+          remProbability: 0.3,
+          sleepProbability: 0.8,
+          sensorQuality: "good",
+          stableLowMovementSeconds: 60,
+          consecutiveLikelyRemEpochs: 1,
+          connectivityState: "connected",
+        },
+      }),
+    );
+
+    expect(decision.action).toBe("play_cue");
+    expect(decision.reason).toBe("watch_likely_rem");
+  });
+
+  it("pauses when the watch epoch has unstable movement", () => {
+    const decision = evaluateCueDecision(
+      watchContext({
+        watchSignal: {
+          epochStart: "2026-01-02T05:00:00.000Z",
+          epochEnd: "2026-01-02T05:00:30.000Z",
+          remProbability: 0.3,
+          sleepProbability: 0.8,
+          sensorQuality: "good",
+          stableLowMovementSeconds: 0,
+          consecutiveLikelyRemEpochs: 1,
+          connectivityState: "connected",
+        },
+      }),
+    );
+
+    expect(decision.action).toBe("pause");
+    expect(decision.reason).toBe("movement");
+  });
+
+  it("exposes non-stub watch opportunity scoring", () => {
+    const context = watchContext({
+      watchSignal: {
+        epochStart: "2026-01-02T05:00:00.000Z",
+        epochEnd: "2026-01-02T05:00:30.000Z",
+        remProbability: 0.26,
+        sleepProbability: 0.75,
+        sensorQuality: "good",
+        stableLowMovementSeconds: 60,
+        consecutiveLikelyRemEpochs: 1,
+        connectivityState: "connected",
+      },
+    });
+    const decision = evaluateCueDecision(context);
+    const snapshot = buildEngineSnapshot({ context, decision });
+
+    expect(decision.opportunityScore).toBeGreaterThan(0);
+    expect(decision.opportunityScore).toBeLessThan(1);
+    expect(decision.watch?.scoreBreakdown?.sleepProbabilityScore).toBe(0.75);
+    expect(snapshot.scoreRows.map((row) => row.label)).toEqual([
+      "watch REM",
+      "watch sleep probability",
+      "watch movement stability",
+      "sleep prior",
+      "watch opportunity",
+    ]);
+  });
+
   it("suppresses below the REM threshold", () => {
     const decision = evaluateCueDecision(
       watchContext({
@@ -310,25 +450,28 @@ describe("Watch Mode opportunity", () => {
     expect(decision.reason).toBe("rem_persistent_suppression");
   });
 
-  it("suppresses missing sensor quality", () => {
-    const decision = evaluateCueDecision(
-      watchContext({
-        watchSignal: {
-          epochStart: "2026-01-02T05:00:00.000Z",
-          epochEnd: "2026-01-02T05:00:30.000Z",
-          remProbability: 0.3,
-          sleepProbability: 0.8,
-          sensorQuality: "missing",
-          stableLowMovementSeconds: 60,
-          consecutiveLikelyRemEpochs: 1,
-          connectivityState: "disconnected",
-        },
-      }),
-    );
+  it.each(["missing", "bad"] as WatchSensorQuality[])(
+    "suppresses %s sensor quality",
+    (sensorQuality) => {
+      const decision = evaluateCueDecision(
+        watchContext({
+          watchSignal: {
+            epochStart: "2026-01-02T05:00:00.000Z",
+            epochEnd: "2026-01-02T05:00:30.000Z",
+            remProbability: 0.3,
+            sleepProbability: 0.8,
+            sensorQuality,
+            stableLowMovementSeconds: 60,
+            consecutiveLikelyRemEpochs: 1,
+            connectivityState: "disconnected",
+          },
+        }),
+      );
 
-    expect(decision.action).toBe("suppress");
-    expect(decision.reason).toBe("sensor_quality_bad");
-  });
+      expect(decision.action).toBe("suppress");
+      expect(decision.reason).toBe("sensor_quality_bad");
+    },
+  );
 });
 
 describe("Sleep timing prior and snapshots", () => {

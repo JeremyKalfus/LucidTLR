@@ -23,7 +23,13 @@ function formatPercent(value: number | undefined): string {
     return "not available";
   }
 
-  return `${Math.round(value * 100)}%`;
+  const percent = value * 100;
+  const precision = percent > 0 && percent < 1 ? 2 : 1;
+  const formatted = percent.toFixed(Number.isInteger(percent) ? 0 : precision);
+
+  return `${formatted.includes(".")
+    ? formatted.replace(/0+$/, "").replace(/\.$/, "")
+    : formatted}%`;
 }
 
 function formatSeconds(value: number): string {
@@ -42,7 +48,7 @@ function formatScore(value: number): string {
   return value.toFixed(2);
 }
 
-function formatScoreRows(breakdown: ScoreBreakdown) {
+function formatPhoneScoreRows(breakdown: ScoreBreakdown) {
   return [
     {
       label: "time opportunity",
@@ -57,6 +63,10 @@ function formatScoreRows(breakdown: ScoreBreakdown) {
       value: formatScore(breakdown.noInteractionScore),
     },
     {
+      label: "sleep prior",
+      value: formatScore(breakdown.sleepPriorScore),
+    },
+    {
       label: "user tolerance",
       value: formatScore(breakdown.userToleranceScore),
     },
@@ -65,6 +75,37 @@ function formatScoreRows(breakdown: ScoreBreakdown) {
       value: formatScore(breakdown.cueBudgetScore),
     },
   ];
+}
+
+function formatScoreRows(decision: CueDecision) {
+  if (decision.watch?.scoreBreakdown) {
+    return [
+      {
+        label: "watch REM",
+        value: formatScore(decision.watch.scoreBreakdown.normalizedRemScore),
+      },
+      {
+        label: "watch sleep probability",
+        value: formatScore(decision.watch.scoreBreakdown.sleepProbabilityScore),
+      },
+      {
+        label: "watch movement stability",
+        value: formatScore(
+          decision.watch.scoreBreakdown.watchMovementStabilityScore,
+        ),
+      },
+      {
+        label: "sleep prior",
+        value: formatScore(decision.watch.scoreBreakdown.sleepPriorScore),
+      },
+      {
+        label: "watch opportunity",
+        value: formatScore(decision.watch.opportunityScore ?? 0),
+      },
+    ];
+  }
+
+  return formatPhoneScoreRows(decision.scoreBreakdown);
 }
 
 function formatWindow(start: string, end: string): string {
@@ -170,7 +211,7 @@ export function buildEngineSnapshot(input: {
           : "none",
       healthHistoryCalibrationStatus: "not connected",
     },
-    scoreRows: formatScoreRows(decision.scoreBreakdown),
+    scoreRows: formatScoreRows(decision),
     decisionLogLine: `${formatDateTime(context.now)}: ${decision.action} / ${formatReason(
       decision.reason,
     )} / next ${formatSeconds(

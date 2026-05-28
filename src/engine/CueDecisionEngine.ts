@@ -137,7 +137,10 @@ export function evaluateCueDecision(context: CueDecisionContext): CueDecision {
     });
   }
 
-  if (Date.parse(context.now) < Date.parse(timing.likelyPhoneCueWindowStart)) {
+  if (
+    context.mode === "phone" &&
+    Date.parse(context.now) < Date.parse(timing.likelyPhoneCueWindowStart)
+  ) {
     return buildDecision({
       context,
       action: "suppress",
@@ -189,16 +192,19 @@ export function evaluateCueDecision(context: CueDecisionContext): CueDecision {
   }
 
   if (context.mode === "watch") {
-    const watch = evaluateWatchOpportunity(context);
+    const watch = evaluateWatchOpportunity(context, timing);
 
     if (!watch.eligible) {
       return buildDecision({
         context,
-        action: "suppress",
+        action: watch.action,
         reason: watch.reason,
         timing,
         movement: movementState,
         watch: watch.state,
+        opportunityScore: watch.score,
+        nextCheckAt: watch.nextCheckAt,
+        activePauseUntil: watch.activePauseUntil,
       });
     }
 
@@ -209,9 +215,12 @@ export function evaluateCueDecision(context: CueDecisionContext): CueDecision {
       timing,
       movement: movementState,
       watch: watch.state,
-      opportunityScore: 1,
+      opportunityScore: watch.score,
       cue: true,
-      nextCheckAt: addSeconds(context.now, context.settings.cueIntervalRangeSeconds[0]),
+      nextCheckAt: addSeconds(
+        context.now,
+        context.settings.cueIntervalRangeSeconds[0],
+      ),
     });
   }
 
@@ -233,7 +242,10 @@ export function evaluateCueDecision(context: CueDecisionContext): CueDecision {
       scoreBreakdown: breakdown,
       opportunityScore: score,
       cue: true,
-      nextCheckAt: addSeconds(context.now, context.settings.cueIntervalRangeSeconds[0]),
+      nextCheckAt: addSeconds(
+        context.now,
+        context.settings.cueIntervalRangeSeconds[0],
+      ),
     });
   }
 

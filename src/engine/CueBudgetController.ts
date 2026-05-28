@@ -14,6 +14,7 @@ export interface CueBudgetGateResult {
 
 export function buildCueBudgetState(context: CueDecisionContext): CueBudgetState {
   const { cueHistory, now, settings } = context;
+  const nowMs = Date.parse(now);
   const cuesRemainingTonight = Math.max(
     0,
     settings.maxCuesPerNight - cueHistory.numberOfCuesTonight,
@@ -23,28 +24,44 @@ export function buildCueBudgetState(context: CueDecisionContext): CueBudgetState
   const blockEndsAt = blockStartedAt
     ? addSeconds(blockStartedAt, settings.maxPhoneBlockDurationMinutes * 60)
     : undefined;
-  const isBlockBudgetExhausted =
-    cueHistory.numberOfCuesInCurrentBlock >= settings.maxPhoneCuesPerBlock ||
-    Boolean(blockEndsAt && Date.parse(now) >= Date.parse(blockEndsAt));
+  const cueCountExhausted =
+    cueHistory.numberOfCuesInCurrentBlock >= settings.maxPhoneCuesPerBlock;
+  const durationExhausted = Boolean(
+    blockEndsAt && nowMs >= Date.parse(blockEndsAt),
+  );
+  let restStartedAt: string | undefined;
+
+  if (cueCountExhausted && cueHistory.lastCueTime) {
+    restStartedAt = cueHistory.lastCueTime;
+  } else if (durationExhausted) {
+    restStartedAt = blockEndsAt;
+  }
+
   const blockRestUntil =
-    cueHistory.lastCueTime && isBlockBudgetExhausted
+    restStartedAt
       ? addSeconds(
-          cueHistory.lastCueTime,
+          restStartedAt,
           settings.minRestBetweenCueBlocksMinutes * 60,
         )
       : undefined;
   const isBlockResting =
-    Boolean(blockRestUntil) && Date.parse(blockRestUntil ?? now) > Date.parse(now);
+    Boolean(blockRestUntil) && Date.parse(blockRestUntil ?? now) > nowMs;
+  const hasCompletedBlockRest =
+    Boolean(blockRestUntil) && Date.parse(blockRestUntil ?? now) <= nowMs;
+  const isBlockBudgetExhausted =
+    !hasCompletedBlockRest && (cueCountExhausted || durationExhausted);
 
   return {
     cuesTonight: cueHistory.numberOfCuesTonight,
     maxCuesTonight: settings.maxCuesPerNight,
     cuesRemainingTonight,
-    cuesInCurrentBlock: cueHistory.numberOfCuesInCurrentBlock,
+    cuesInCurrentBlock: hasCompletedBlockRest
+      ? 0
+      : cueHistory.numberOfCuesInCurrentBlock,
     maxCuesPerBlock: settings.maxPhoneCuesPerBlock,
-    blockStartedAt,
-    blockEndsAt,
-    blockRestUntil,
+    blockStartedAt: hasCompletedBlockRest ? undefined : blockStartedAt,
+    blockEndsAt: hasCompletedBlockRest ? undefined : blockEndsAt,
+    blockRestUntil: hasCompletedBlockRest ? undefined : blockRestUntil,
     isNightlyBudgetExhausted: cuesRemainingTonight <= 0,
     isBlockBudgetExhausted,
     isBlockResting,
@@ -56,17 +73,16 @@ export function evaluateCueBudgetGate(
 ): CueBudgetGateResult | null {
   const state = buildCueBudgetState(context);
 
-  if (
-    state.isNightlyBudgetExhausted ||
-    state.isBlockResting ||
-    state.isBlockBudgetExhausted
-  ) {
+  if (state.isNightlyBudgetExhausted || state.isBlockResting) {
     return {
       blocked: true,
       reason: "cue_budget_exhausted",
       nextCheckAt:
         state.blockRestUntil ??
-        addSeconds(context.now, context.settings.minRestBetweenCueBlocksMinutes * 60),
+        addSeconds(
+          context.now,
+          context.settings.minRestBetweenCueBlocksMinutes * 60,
+        ),
       state,
     };
   }
