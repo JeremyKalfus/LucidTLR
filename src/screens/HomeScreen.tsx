@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import type { LucideIcon } from "lucide-react-native";
-import { Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
+import { AlarmClock, Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
 
 import {
@@ -15,12 +15,8 @@ import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, shadows, spacing, typography } from "@/src/theme/tokens";
 
 const labelToCardGap = 6;
-const primaryActionFlex = 1.8;
-const primaryActionFontSize = 20;
-const primaryActionLineHeight = 22;
-const sideActionFlex = 1.1;
+const actionRowGap = 10;
 const sideActionHorizontalPadding = 6;
-const sideActionTextScale = 0.75;
 
 function HomeSectionLabel({ children }: { children: string }) {
   return (
@@ -46,7 +42,7 @@ function HomeActionButton({
   onPress,
   primary = false,
 }: {
-  flex: number;
+  flex?: number;
   icon?: LucideIcon;
   label: string;
   onPress: () => void;
@@ -58,11 +54,15 @@ function HomeActionButton({
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => ({
-        flexGrow: flex,
-        flexShrink: 1,
-        flexBasis: 0,
+        ...(flex === undefined
+          ? { width: "100%" }
+          : {
+              flexGrow: flex,
+              flexShrink: 1,
+              flexBasis: 0,
+            }),
         minWidth: 0,
-        minHeight: 78,
+        minHeight: primary ? 78 : 72,
         alignItems: "center",
         justifyContent: "center",
         borderRadius: radii.primaryPill,
@@ -86,7 +86,7 @@ function HomeActionButton({
         {Icon ? (
           <Icon
             color={colors.textMuted}
-            size={primary ? 22 : 24}
+            size={24}
             strokeWidth={1.8}
           />
         ) : null}
@@ -97,12 +97,8 @@ function HomeActionButton({
           numberOfLines={primary ? 1 : 2}
           style={{
             color: primary ? colors.textPrimary : colors.textMuted,
-            fontSize: primary
-              ? primaryActionFontSize
-              : typography.label.fontSize * sideActionTextScale,
-            lineHeight: primary
-              ? primaryActionLineHeight
-              : typography.label.lineHeight * sideActionTextScale,
+            fontSize: typography.label.fontSize,
+            lineHeight: typography.label.lineHeight,
             letterSpacing: primary
               ? typography.title.letterSpacing
               : typography.label.letterSpacing,
@@ -169,18 +165,8 @@ export function HomeScreen() {
         </Card>
       </View>
 
-      <View style={{ flexDirection: "row", gap: 10 }}>
+      <View style={{ gap: actionRowGap }}>
         <HomeActionButton
-          flex={sideActionFlex}
-          icon={Moon}
-          label="Log Sleep Only"
-          onPress={() => {
-            startSession("sleep_log");
-            router.push("/active-night-session");
-          }}
-        />
-        <HomeActionButton
-          flex={primaryActionFlex}
           icon={Sparkles}
           label="Begin TLR"
           primary
@@ -189,12 +175,29 @@ export function HomeScreen() {
             router.push("/presleep-training");
           }}
         />
-        <HomeActionButton
-          flex={sideActionFlex}
-          icon={NotebookPen}
-          label="Record Dream"
-          onPress={() => router.push("/journal")}
-        />
+        <View style={{ flexDirection: "row", gap: actionRowGap }}>
+          <HomeActionButton
+            flex={1}
+            icon={AlarmClock}
+            label="set alarm"
+            onPress={() => router.push("/settings")}
+          />
+          <HomeActionButton
+            flex={1}
+            icon={Moon}
+            label="no TLR"
+            onPress={() => {
+              startSession("sleep_log");
+              router.push("/active-night-session");
+            }}
+          />
+          <HomeActionButton
+            flex={1}
+            icon={NotebookPen}
+            label="journal"
+            onPress={() => router.push("/journal")}
+          />
+        </View>
       </View>
 
       <View style={{ gap: labelToCardGap, marginTop: spacing.cardGap - labelToCardGap }}>
