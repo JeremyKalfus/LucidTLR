@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, Text, TextInput, View } from "react-native";
 
@@ -90,9 +91,11 @@ function ChoiceButton({
 }
 
 function QuestionRenderer({
+  plain = false,
   question,
   stepId,
 }: {
+  plain?: boolean;
   question: OnboardingQuestion;
   stepId: OnboardingStepId;
 }) {
@@ -112,6 +115,22 @@ function QuestionRenderer({
   }
 
   if (question.type === "info" || question.type === "permission_summary") {
+    if (plain) {
+      return (
+        <Text
+          selectable
+          style={{
+            color: colors.textPrimary,
+            fontSize: typography.body.fontSize,
+            lineHeight: typography.body.lineHeight,
+            paddingHorizontal: 2,
+          }}
+        >
+          {question.prompt}
+        </Text>
+      );
+    }
+
     return (
       <Card compact>
         <Text
@@ -273,9 +292,54 @@ function hasAnswer(value: OnboardingAnswerValue | undefined): boolean {
   return value !== undefined && value !== null;
 }
 
+function StaggeredWelcomeItem({
+  children,
+  playKey,
+}: {
+  children: ReactNode;
+  playKey: number;
+}) {
+  const value = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    value.setValue(0);
+
+    const animation = Animated.timing(value, {
+      toValue: 1,
+      duration: 950,
+      useNativeDriver: process.env.EXPO_OS !== "web",
+    });
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [playKey, value]);
+
+  return (
+    <Animated.View
+      style={{
+        opacity: value,
+        transform: [
+          {
+            translateY: value.interpolate({
+              inputRange: [0, 1],
+              outputRange: [24, 0],
+            }),
+          },
+        ],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 export function OnboardingWizardScreen() {
   const [stepIndex, setStepIndex] = useState(0);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [welcomeVisibleItemCount, setWelcomeVisibleItemCount] = useState(0);
   const fadeValue = useRef(new Animated.Value(1)).current;
   const {
     completeOnboarding,
@@ -284,6 +348,7 @@ export function OnboardingWizardScreen() {
     selectedMode,
   } = useAppState();
   const step = onboardingSteps[stepIndex];
+  const isWelcomeStep = step.id === "welcome";
   const isLastStep = stepIndex === onboardingSteps.length - 1;
   const canContinue = useMemo(
     () =>
@@ -307,10 +372,54 @@ export function OnboardingWizardScreen() {
     fadeValue.setValue(0);
     Animated.timing(fadeValue, {
       toValue: 1,
-      duration: 180,
+      duration: isWelcomeStep ? 1 : 180,
       useNativeDriver: process.env.EXPO_OS !== "web",
     }).start();
-  }, [fadeValue, stepIndex]);
+  }, [fadeValue, isWelcomeStep, stepIndex]);
+
+  useEffect(() => {
+    if (!isWelcomeStep) {
+      setWelcomeVisibleItemCount(Number.MAX_SAFE_INTEGER);
+      return;
+    }
+
+    const itemCount = step.questions.length + 2;
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
+
+    setWelcomeVisibleItemCount(0);
+
+    for (let index = 0; index < itemCount; index += 1) {
+      timeouts.push(
+        setTimeout(() => {
+          setWelcomeVisibleItemCount(index + 1);
+        }, 420 + index * 1050),
+      );
+    }
+
+    return () => {
+      timeouts.forEach(clearTimeout);
+    };
+  }, [isWelcomeStep, step.questions.length, stepIndex]);
+
+  const renderWelcomeItem = (
+    children: ReactNode,
+    index: number,
+    itemKey?: string,
+  ) => {
+    if (!isWelcomeStep) {
+      return children;
+    }
+
+    if (index >= welcomeVisibleItemCount) {
+      return null;
+    }
+
+    return (
+      <StaggeredWelcomeItem key={itemKey} playKey={stepIndex}>
+        {children}
+      </StaggeredWelcomeItem>
+    );
+  };
 
   return (
     <Screen bottomNav={false} centered>
@@ -320,39 +429,51 @@ export function OnboardingWizardScreen() {
           maxWidth: 560,
           alignSelf: "center",
           gap: 18,
-          opacity: fadeValue,
+          opacity: isWelcomeStep ? 1 : fadeValue,
           transform: [
             {
               translateY: fadeValue.interpolate({
                 inputRange: [0, 1],
-                outputRange: [8, 0],
+                outputRange: isWelcomeStep ? [0, 0] : [8, 0],
               }),
             },
           ],
         }}
       >
-        <View style={{ gap: 4 }}>
-          <SectionTitle>{step.title}</SectionTitle>
-          <Text
-            selectable
-            style={{
-              color: colors.textMuted,
-              fontSize: typography.label.fontSize,
-              lineHeight: typography.label.lineHeight,
-            }}
-          >
-            Step {stepIndex + 1} of {onboardingSteps.length}
-          </Text>
-        </View>
+        {renderWelcomeItem(
+          <View style={{ gap: 4 }}>
+            <SectionTitle>{step.title}</SectionTitle>
+            <Text
+              selectable
+              style={{
+                color: colors.textMuted,
+                fontSize: typography.label.fontSize,
+                lineHeight: typography.label.lineHeight,
+              }}
+            >
+              Step {stepIndex + 1} of {onboardingSteps.length}
+            </Text>
+          </View>,
+          0,
+        )}
 
         <View style={{ gap: 12 }}>
-          {step.questions.map((question) => (
-            <QuestionRenderer
-              key={question.id}
-              question={question}
-              stepId={step.id}
-            />
-          ))}
+          {step.questions.map((question, questionIndex) =>
+            renderWelcomeItem(
+              <QuestionRenderer
+                key={question.id}
+                plain={
+                  step.id !== "welcome" &&
+                  question.type === "info" &&
+                  questionIndex === step.questions.length - 1
+                }
+                question={question}
+                stepId={step.id}
+              />,
+              questionIndex + 1,
+              question.id,
+            ),
+          )}
         </View>
 
         {completionError ? (
@@ -370,44 +491,47 @@ export function OnboardingWizardScreen() {
           </Card>
         ) : null}
 
-        <View style={{ flexDirection: "row", gap: 12 }}>
-          {stepIndex > 0 ? (
+        {renderWelcomeItem(
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            {stepIndex > 0 ? (
+              <View style={{ flex: 1 }}>
+                <PrimaryPillButton
+                  label="Back"
+                  disabled={isCompletingOnboarding}
+                  onPress={() => {
+                    setCompletionError(null);
+                    setStepIndex((index) => index - 1);
+                  }}
+                />
+              </View>
+            ) : null}
             <View style={{ flex: 1 }}>
               <PrimaryPillButton
-                label="Back"
-                disabled={isCompletingOnboarding}
+                label={isLastStep ? "Finish" : "Next"}
+                disabled={!canContinue || isCompletingOnboarding}
                 onPress={() => {
                   setCompletionError(null);
-                  setStepIndex((index) => index - 1);
+
+                  if (isLastStep) {
+                    completeOnboarding()
+                      .then(() => router.replace("/"))
+                      .catch((error: unknown) => {
+                        setCompletionError(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not complete onboarding.",
+                        );
+                      });
+                    return;
+                  }
+
+                  setStepIndex((index) => index + 1);
                 }}
               />
             </View>
-          ) : null}
-          <View style={{ flex: 1 }}>
-            <PrimaryPillButton
-              label={isLastStep ? "Finish" : "Next"}
-              disabled={!canContinue || isCompletingOnboarding}
-              onPress={() => {
-                setCompletionError(null);
-
-                if (isLastStep) {
-                  completeOnboarding()
-                    .then(() => router.replace("/"))
-                    .catch((error: unknown) => {
-                      setCompletionError(
-                        error instanceof Error
-                          ? error.message
-                          : "Could not complete onboarding.",
-                      );
-                    });
-                  return;
-                }
-
-                setStepIndex((index) => index + 1);
-              }}
-            />
-          </View>
-        </View>
+          </View>,
+          step.questions.length + 1,
+        )}
       </Animated.View>
     </Screen>
   );

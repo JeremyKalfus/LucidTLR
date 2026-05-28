@@ -118,7 +118,13 @@ function HomeActionButton({
 }
 
 export function HomeScreen() {
-  const { selectedMode, sessionHistory, startSession } = useAppState();
+  const {
+    latestEngineSnapshot,
+    selectedMode,
+    sessionHistory,
+    startSession,
+  } = useAppState();
+  const engineValues = latestEngineSnapshot.currentValues;
   const tlrNights = sessionHistory.filter(
     (session) => session.sessionType === "tlr",
   ).length;
@@ -146,6 +152,20 @@ export function HomeScreen() {
           <InfoRow label="mode" value={selectedMode === "phone" ? "phone only" : "watch"} />
           <InfoRow label="sound" value={cueAudio.defaultCueId.replaceAll("-", " ")} />
           <InfoRow label="nights with TLR" value={String(tlrNights)} />
+          <InfoRow label="sensitivity" value={engineValues.sensitivityProfile.replaceAll("_", " ")} />
+          <InfoRow label="cues tonight" value={engineValues.cueCountTonight} />
+        </Card>
+      </View>
+
+      <View style={{ gap: labelToCardGap }}>
+        <HomeSectionLabel>Engine state</HomeSectionLabel>
+        <Card compact>
+          <InfoRow label="cue window" value={engineValues.nextOrActiveCueWindow} />
+          <InfoRow label="status" value={engineValues.currentEngineStatus} />
+          <InfoRow label="reason" value={engineValues.latestDecisionReason} />
+          <InfoRow label="last cue" value={engineValues.lastCueTime} />
+          <InfoRow label="next check" value={engineValues.nextCheckTime} />
+          <InfoRow label="volume" value={engineValues.currentVolumeLevel} />
         </Card>
       </View>
 

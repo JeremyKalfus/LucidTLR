@@ -12,31 +12,12 @@ import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
 export function DreamJournalScreen() {
-  const { addJournalEntry, consentChoices, journalEntries } = useAppState();
+  const { addJournalEntry, journalEntries } = useAppState();
   const [text, setText] = useState("");
 
   return (
     <Screen>
       <SectionTitle>Dream journal</SectionTitle>
-
-      <Card>
-        <Text
-          selectable
-          style={{
-            color: colors.textSecondary,
-            fontSize: typography.body.fontSize,
-            lineHeight: typography.body.lineHeight,
-          }}
-        >
-          Dream journal entries stay local in this shell. Text/audio upload is
-          not enabled unless separate dream journal research consent is accepted
-          in a future sync flow.
-        </Text>
-        <InfoRow
-          label="dream upload consent"
-          value={consentChoices.dreamJournalUploadConsent ? "enabled" : "off"}
-        />
-      </Card>
 
       <TextInput
         multiline

@@ -15,20 +15,31 @@ export const onboardingSteps: OnboardingStep[] = [
         id: "welcome_copy",
         type: "info",
         prompt:
-          "This app may help you induce lucid dreams using targeted lucidity reactivation. Results are not guaranteed. This is not a medical treatment.",
+          "LucidCue is a dream-training app built around targeted lucidity reactivation, or TLR. Before sleep, you practice a cue while rehearsing the idea of noticing that you are dreaming.",
       },
-    ],
-  },
-  {
-    id: "tlr_explanation",
-    title: "TLR explanation",
-    purpose: "Explain the cue-reactivation mechanism.",
-    questions: [
       {
-        id: "tlr_mechanism_copy",
+        id: "welcome_tlr_copy",
         type: "info",
         prompt:
-          "Before sleep, you learn a cue. During sleep, the same cue may play again. The cue is meant to reactivate a lucid mindset.",
+          "Later in the night, LucidCue may play that learned cue again. The goal is to gently reactivate the lucid-dreaming mindset during sleep.",
+      },
+      {
+        id: "welcome_modes_copy",
+        type: "info",
+        prompt:
+          "Phone Mode uses your phone beside the bed. Watch Mode can use Apple Watch sensing while the iPhone remains the sound source.",
+      },
+      {
+        id: "welcome_setup_copy",
+        type: "info",
+        prompt:
+          "This setup asks about sleep timing, dream recall, sound sensitivity, goals, and whether you want to use LucidCue privately or anonymously share structured app data for research.",
+      },
+      {
+        id: "welcome_expectations_copy",
+        type: "info",
+        prompt:
+          "Results are not guaranteed. The main risk is possible sleep disruption. LucidCue is not a medical treatment.",
       },
     ],
   },
@@ -40,20 +51,52 @@ export const onboardingSteps: OnboardingStep[] = [
       {
         id: "mode",
         type: "single_choice",
-        prompt: "Choose your mode.",
+        prompt:
+          "Choose your mode. Using an Apple Watch adds sleep-sensing context, which may help LucidCue time cues during likely REM periods. Results are not guaranteed.",
         required: true,
         options: [
           {
             value: "phone",
-            label: "Phone Mode",
+            label: "Phone only",
             note: "iPhone/Android, phone beside pillow.",
           },
           {
             value: "watch",
-            label: "Watch Mode",
-            note: "iPhone + Apple Watch; watch senses, iPhone plays sound.",
+            label: "Phone + Apple Watch",
+            note: "Apple Watch adds sensing; iPhone plays sound.",
           },
         ],
+      },
+    ],
+  },
+  {
+    id: "consent_privacy",
+    title: "Study participation",
+    purpose: "Keep study participation optional and explicit.",
+    questions: [
+      {
+        id: STUDY_PARTICIPATION_QUESTION_ID,
+        type: "single_choice",
+        prompt:
+          "LucidCue can be used privately. You can also choose to anonymously share structured app data with CNL at Northwestern University to support lucid dreaming research.",
+        required: true,
+        options: [
+          {
+            value: STUDY_OPT_IN_VALUE,
+            label: "Opt in to the study",
+            note: "Anonymously share my data with CNL at Northwestern University",
+          },
+          {
+            value: STUDY_OPT_OUT_VALUE,
+            label: "Opt out of the study",
+            note: "Keep all of my data local",
+          },
+        ],
+      },
+      {
+        id: "privacy_copy",
+        type: "info",
+        prompt: "You can change this later in Settings.",
       },
     ],
   },
@@ -215,8 +258,12 @@ export const onboardingSteps: OnboardingStep[] = [
       },
       {
         id: "uses_sleep_audio",
-        type: "boolean",
+        type: "single_choice",
         prompt: "Do you usually use sleep audio?",
+        options: [
+          { value: "yes", label: "Yes" },
+          { value: "no", label: "No" },
+        ],
       },
     ],
   },
@@ -248,38 +295,6 @@ export const onboardingSteps: OnboardingStep[] = [
     ],
   },
   {
-    id: "consent_privacy",
-    title: "Study participation",
-    purpose: "Keep study participation optional and explicit.",
-    questions: [
-      {
-        id: STUDY_PARTICIPATION_QUESTION_ID,
-        type: "single_choice",
-        prompt:
-          "LucidCue can be used privately. You can also choose to anonymously share structured app data with CNL at Northwestern University to support lucid dreaming research.",
-        required: true,
-        options: [
-          {
-            value: STUDY_OPT_IN_VALUE,
-            label: "Opt in to the study",
-            note: "Anonymously share my data with CNL at Northwestern University",
-          },
-          {
-            value: STUDY_OPT_OUT_VALUE,
-            label: "Opt out of the study",
-            note: "Keep all of my data local",
-          },
-        ],
-      },
-      {
-        id: "privacy_copy",
-        type: "info",
-        prompt:
-          "You can change this later in Settings.\nThe main risk is possible sleep disruption.\nResults are not guaranteed.\nThis is not a medical treatment.",
-      },
-    ],
-  },
-  {
     id: "permissions",
     title: "Permissions",
     purpose: "Request only permissions needed for the selected mode.",
@@ -302,19 +317,6 @@ export const onboardingSteps: OnboardingStep[] = [
         type: "info",
         prompt:
           "LucidCue does not request location, contacts, texts, or advertising ID.",
-      },
-    ],
-  },
-  {
-    id: "ready",
-    title: "Ready",
-    purpose: "Confirm setup and start the first TLR session.",
-    questions: [
-      {
-        id: "ready_summary",
-        type: "info",
-        prompt:
-          "Review selected mode, cue sound, and local-only or research-upload status before starting your first TLR session.",
       },
     ],
   },

@@ -56,7 +56,7 @@ const quietSupabaseFetch: typeof fetch = async (input, init) => {
   try {
     return await fetch(input, init);
   } catch (error) {
-    return new Response(
+    const response = new Response(
       JSON.stringify({
         message: getNetworkErrorMessage(error),
       }),
@@ -67,6 +67,12 @@ const quietSupabaseFetch: typeof fetch = async (input, init) => {
         },
       },
     );
+
+    Object.defineProperty(response, "message", {
+      value: getNetworkErrorMessage(error),
+    });
+
+    return response;
   }
 };
 

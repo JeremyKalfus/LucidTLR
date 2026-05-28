@@ -1,5 +1,27 @@
 export type AppMode = "phone" | "watch";
 
+export type SoundSensitivityProfile = "sensitive" | "standard" | "hard_to_wake";
+
+export type WatchSensorQuality = "good" | "degraded" | "missing" | "bad";
+
+export type CueDecisionAction = "play_cue" | "suppress" | "pause" | "wait";
+
+export type CueDecisionReason =
+  | "before_training_finished"
+  | "before_cue_window"
+  | "outside_sleep_opportunity"
+  | "recent_cue"
+  | "movement"
+  | "cue_associated_movement"
+  | "user_interaction"
+  | "post_awakening_pause"
+  | "cue_budget_exhausted"
+  | "phone_late_rem_opportunity"
+  | "watch_likely_rem"
+  | "rem_persistent_suppression"
+  | "sensor_quality_bad"
+  | "session_not_active";
+
 export type SessionType = "tlr" | "sleep_log";
 
 export type SessionStatus =
@@ -120,6 +142,8 @@ export interface WatchEpoch {
   epochEnd: string;
   heartRateSummary?: number;
   motionSummary?: number;
+  sensorQuality?: WatchSensorQuality;
+  sleepProbability?: number;
   elapsedSessionSeconds: number;
   remProbability?: number;
   remLabel?: "likely_rem" | "not_likely_rem" | "unknown";

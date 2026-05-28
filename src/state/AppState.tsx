@@ -42,6 +42,17 @@ import { createLocalDreamJournalEntry } from "@/src/features/journal/journalType
 import { createNightSession, applySessionEvent } from "@/src/features/sessions/sessionActions";
 import type { SessionEvent } from "@/src/features/sessions/sessionStateMachine";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
+import {
+  buildEngineSnapshot,
+  createDefaultEngineSettings,
+  ENGINE_SETTINGS_KEY,
+  evaluateCueDecision,
+  normalizeEngineSettings,
+  type CueDecisionContext,
+  type CueDecisionSettings,
+  type EngineSnapshot,
+  type SoundSensitivityProfile,
+} from "@/src/engine";
 
 interface AppConsentChoices {
   structuredResearchUploadConsent: boolean;
@@ -61,7 +72,11 @@ interface AppStateValue {
   activeSession: NightSession | null;
   sessionHistory: NightSession[];
   journalEntries: DreamJournalEntry[];
+  engineSettings: CueDecisionSettings;
+  latestEngineSnapshot: EngineSnapshot;
+  engineDecisionLog: string[];
   setSelectedMode: (mode: AppMode) => void;
+  updateEngineSettings: (patch: Partial<CueDecisionSettings>) => Promise<void>;
   setOnboardingAnswer: (input: {
     stepId: OnboardingStepId;
     questionId: string;
@@ -124,6 +139,140 @@ function consentChoicesFromStudyChoice(
   };
 }
 
+const RESEARCH_UPLOAD_PREPARE_PENDING_SETTING =
+  "research_upload_prepare_pending";
+const ENGINE_DECISION_LOG_LIMIT = 24;
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return "Research upload preparation is pending.";
+}
+
+function answerValue(
+  answers: OnboardingAnswer[],
+  questionId: string,
+): OnboardingAnswerValue | undefined {
+  return answers.find((answer) => answer.questionId === questionId)?.value;
+}
+
+function soundSensitivityFromAnswers(
+  answers: OnboardingAnswer[],
+): SoundSensitivityProfile {
+  const value = answerValue(answers, "sound_sensitivity");
+
+  if (value === "very_sensitive_light_sleeper") {
+    return "sensitive";
+  }
+
+  if (value === "hard_to_wake") {
+    return "hard_to_wake";
+  }
+
+  return "standard";
+}
+
+function sleepDurationHoursFromAnswer(value: OnboardingAnswerValue | undefined) {
+  if (value === "lt_6") {
+    return 5.5;
+  }
+
+  if (value === "6_7") {
+    return 6.5;
+  }
+
+  if (value === "7_8") {
+    return 7.5;
+  }
+
+  if (value === "8_plus") {
+    return 8.5;
+  }
+
+  return undefined;
+}
+
+function buildEngineSettingsFromAnswers(
+  answers: OnboardingAnswer[],
+): CueDecisionSettings {
+  const soundSensitivity = soundSensitivityFromAnswers(answers);
+  const defaults = createDefaultEngineSettings(soundSensitivity);
+  const typicalBedtime = answerValue(answers, "typical_bedtime");
+  const typicalWakeTime = answerValue(answers, "typical_wake_time");
+  const typicalSleepDurationHours = sleepDurationHoursFromAnswer(
+    answerValue(answers, "typical_sleep_duration_hours"),
+  );
+
+  return normalizeEngineSettings({
+    ...defaults,
+    typicalBedtime:
+      typeof typicalBedtime === "string" && typicalBedtime.trim()
+        ? typicalBedtime
+        : defaults.typicalBedtime,
+    typicalWakeTime:
+      typeof typicalWakeTime === "string" && typicalWakeTime.trim()
+        ? typicalWakeTime
+        : defaults.typicalWakeTime,
+    typicalSleepDurationHours:
+      typicalSleepDurationHours ?? defaults.typicalSleepDurationHours,
+  });
+}
+
+function mergePersistedEngineSettings(
+  answers: OnboardingAnswer[],
+  persisted: CueDecisionSettings | null,
+): CueDecisionSettings {
+  if (!persisted) {
+    return buildEngineSettingsFromAnswers(answers);
+  }
+
+  const soundSensitivity =
+    persisted.soundSensitivity === "sensitive" ||
+    persisted.soundSensitivity === "standard" ||
+    persisted.soundSensitivity === "hard_to_wake"
+      ? persisted.soundSensitivity
+      : "standard";
+
+  return normalizeEngineSettings({
+    ...createDefaultEngineSettings(soundSensitivity),
+    ...persisted,
+    soundSensitivity,
+  });
+}
+
+function buildEngineContext(input: {
+  now: string;
+  selectedMode: AppMode;
+  activeSession: NightSession | null;
+  engineSettings: CueDecisionSettings;
+}): CueDecisionContext {
+  const mode = input.activeSession?.mode ?? input.selectedMode;
+
+  return {
+    now: input.now,
+    mode: mode ?? input.selectedMode,
+    session: input.activeSession,
+    settings: input.engineSettings,
+    cueHistory: {
+      previousCues: [],
+      numberOfCuesTonight: 0,
+      numberOfCuesInCurrentBlock: 0,
+      latestVolumeLevel: input.engineSettings.volumeStartLevel,
+    },
+    movement: {
+      recentMovementIntensity: 0,
+      stableLowMovementSeconds:
+        input.engineSettings.stableLowMovementRequiredSeconds,
+      phonePickedUpRecently: false,
+      orientationChangedRecently: false,
+      largeMovementEvents: [],
+    },
+    userFeedback: {},
+  };
+}
+
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = React.useState(false);
   const [hydrationError, setHydrationError] = React.useState<string | null>(null);
@@ -152,6 +301,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [journalEntries, setJournalEntries] = React.useState<
     DreamJournalEntry[]
   >([]);
+  const [engineSettings, setEngineSettings] = React.useState(() =>
+    createDefaultEngineSettings("standard"),
+  );
+  const [engineNowMs, setEngineNowMs] = React.useState(() => Date.now());
+  const [engineDecisionLog, setEngineDecisionLog] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -171,6 +325,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const persistedAnswers = participant
           ? await loadOnboardingResponses(db, participant.id)
           : [];
+        const persistedEngineSettings =
+          await getAppSetting<CueDecisionSettings>(db, ENGINE_SETTINGS_KEY);
+        const nextEngineSettings = mergePersistedEngineSettings(
+          persistedAnswers,
+          persistedEngineSettings,
+        );
 
         if (cancelled) {
           return;
@@ -192,6 +352,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
 
         setOnboardingAnswers(persistedAnswers);
+        setEngineSettings(nextEngineSettings);
         setOnboardingComplete(Boolean(completedAt && onboardingVersion));
       } catch (error) {
         if (!cancelled) {
@@ -213,6 +374,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (!activeSession) {
+      return undefined;
+    }
+
+    const intervalId = setInterval(() => {
+      setEngineNowMs(Date.now());
+    }, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [activeSession?.id]);
 
   const setOnboardingAnswer = React.useCallback(
     (input: {
@@ -278,6 +451,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const now = new Date().toISOString();
     const nextConsentChoices = consentChoicesFromStudyChoice(studyChoice);
     const nextConsentState = toConsentState(nextConsentChoices);
+    const nextEngineSettings = buildEngineSettingsFromAnswers(onboardingAnswers);
     const uploadStatus: UploadStatus =
       nextConsentChoices.structuredResearchUploadConsent
         ? "pending"
@@ -309,12 +483,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       });
 
       if (nextConsentChoices.structuredResearchUploadConsent) {
-        await prepareAnonymousResearchUpload({
-          db,
-          participantId,
-          consentVersion: ONBOARDING_FORM_ID,
-          acceptedAt: now,
-        });
+        try {
+          await prepareAnonymousResearchUpload({
+            db,
+            participantId,
+            consentVersion: ONBOARDING_FORM_ID,
+            acceptedAt: now,
+          });
+        } catch (error) {
+          await setAppSetting(
+            db,
+            RESEARCH_UPLOAD_PREPARE_PENDING_SETTING,
+            {
+              failedAt: now,
+              message: getErrorMessage(error),
+            },
+            now,
+          );
+        }
       }
 
       await saveOnboardingResponses({
@@ -343,6 +529,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       await setAppSetting(db, ONBOARDING_COMPLETED_AT_SETTING, now, now);
       await setAppSetting(db, ONBOARDING_VERSION_SETTING, ONBOARDING_FORM_ID, now);
+      await setAppSetting(db, ENGINE_SETTINGS_KEY, nextEngineSettings, now);
+      setEngineSettings(nextEngineSettings);
       setConsentChoices(nextConsentChoices);
       setOnboardingComplete(true);
     } finally {
@@ -372,7 +560,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setActiveSession(null);
     setSessionHistory([]);
     setJournalEntries([]);
+    setEngineSettings(createDefaultEngineSettings("standard"));
+    setEngineDecisionLog([]);
   }, []);
+
+  const updateEngineSettings = React.useCallback(
+    async (patch: Partial<CueDecisionSettings>) => {
+      const nextSettings = normalizeEngineSettings({
+        ...engineSettings,
+        ...patch,
+      });
+      const db = await getLocalDb();
+      const now = new Date().toISOString();
+
+      await setAppSetting(db, ENGINE_SETTINGS_KEY, nextSettings, now);
+      setEngineSettings(nextSettings);
+    },
+    [engineSettings],
+  );
 
   const startSession = React.useCallback(
     (sessionType: SessionType) => {
@@ -435,6 +640,42 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setJournalEntries((entries) => [entry, ...entries]);
   }, [activeSession?.id]);
 
+  const engineContext = React.useMemo(
+    () =>
+      buildEngineContext({
+        now: new Date(engineNowMs).toISOString(),
+        selectedMode,
+        activeSession,
+        engineSettings,
+      }),
+    [activeSession, engineNowMs, engineSettings, selectedMode],
+  );
+  const latestEngineSnapshot = React.useMemo(() => {
+    const decision = evaluateCueDecision(engineContext);
+
+    return buildEngineSnapshot({ context: engineContext, decision });
+  }, [engineContext]);
+
+  React.useEffect(() => {
+    if (!activeSession) {
+      return;
+    }
+
+    setEngineDecisionLog((log) => {
+      if (log[0] === latestEngineSnapshot.decisionLogLine) {
+        return log;
+      }
+
+      return [latestEngineSnapshot.decisionLogLine, ...log].slice(
+        0,
+        ENGINE_DECISION_LOG_LIMIT,
+      );
+    });
+  }, [
+    activeSession,
+    latestEngineSnapshot.decisionLogLine,
+  ]);
+
   const value = React.useMemo<AppStateValue>(
     () => ({
       isHydrated,
@@ -449,7 +690,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeSession,
       sessionHistory,
       journalEntries,
+      engineSettings,
+      latestEngineSnapshot,
+      engineDecisionLog,
       setSelectedMode,
+      updateEngineSettings,
       setOnboardingAnswer,
       completeOnboarding,
       resetAppData,
@@ -462,10 +707,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       addJournalEntry,
       completeOnboarding,
       consentChoices,
+      engineDecisionLog,
+      engineSettings,
       hydrationError,
       isCompletingOnboarding,
       isHydrated,
       journalEntries,
+      latestEngineSnapshot,
       onboardingAnswers,
       onboardingComplete,
       participantId,
@@ -474,6 +722,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       sendSessionEvent,
       setOnboardingAnswer,
       startSession,
+      updateEngineSettings,
     ],
   );
 

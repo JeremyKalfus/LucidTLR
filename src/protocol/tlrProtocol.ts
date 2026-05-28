@@ -16,6 +16,9 @@ export const presleepTraining = {
 export const phoneCueing = {
   cueStartDelayHoursAfterTraining: 6,
   cueIntervalRangeSeconds: [20, 40],
+  minimumSecondsSinceLastCue: 20,
+  userInteractionSuppressionSeconds: 120,
+  stableLowMovementRequiredSeconds: 60,
   standardMovementPauseSeconds: 60,
   cueAssociatedMovementWindowSeconds: 30,
   cueAssociatedMovementPauseSeconds: 180,
@@ -26,10 +29,44 @@ export const phoneCueing = {
 
 export const watchCueing = {
   epochSeconds: 30,
+  defaultRemThreshold: 0.24,
+  minimumSleepProbability: 0.7,
   consecutiveLikelyRemSuppressionThreshold: 5,
+  minimumSecondsSinceLastCue: 20,
+  userInteractionSuppressionSeconds: 120,
+  stableLowMovementRequiredSeconds: 60,
   standardMovementPauseSeconds: 60,
   cueAssociatedMovementWindowSeconds: 30,
   cueAssociatedMovementPauseSeconds: 180,
+} as const;
+
+export const cueBudget = {
+  maxPhoneCuesPerBlock: 15,
+  maxPhoneBlockDurationMinutes: 12,
+  minRestBetweenCueBlocksMinutes: 20,
+  maxCuesPerNight: {
+    sensitive: 30,
+    standard: 60,
+    hard_to_wake: 80,
+  },
+} as const;
+
+export const volumeProfiles = {
+  sensitive: {
+    startLevel: 0.08,
+    rampPerCue: phoneCueing.slowVolumeRampPerCuePercent,
+    cap: 0.32,
+  },
+  standard: {
+    startLevel: 0.16,
+    rampPerCue: phoneCueing.defaultVolumeRampPerCuePercent,
+    cap: 0.64,
+  },
+  hard_to_wake: {
+    startLevel: 0.16,
+    rampPerCue: phoneCueing.defaultVolumeRampPerCuePercent,
+    cap: 0.8,
+  },
 } as const;
 
 export const remClassifier = {
