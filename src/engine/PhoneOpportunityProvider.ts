@@ -15,11 +15,24 @@ function scoreTimeOpportunity(
   const nowMs = Date.parse(now);
   const trainingEndMs = Date.parse(trainingEndedAt);
   const hoursAfterTraining = (nowMs - trainingEndMs) / 3600000;
+  const cueWindowStartMs = Date.parse(timing.likelyPhoneCueWindowStart);
   const expectedWakeMs = Date.parse(timing.expectedWakeAt);
   const minutesUntilWake = (expectedWakeMs - nowMs) / 60000;
 
   if (minutesUntilWake <= 20) {
     return 0;
+  }
+
+  if (nowMs < cueWindowStartMs) {
+    return 0;
+  }
+
+  if (
+    timing.source === "historical_sleep" &&
+    cueWindowStartMs < trainingEndMs + 6 * 3600000 &&
+    hoursAfterTraining < 6
+  ) {
+    return 0.6;
   }
 
   if (hoursAfterTraining < 5.5) {

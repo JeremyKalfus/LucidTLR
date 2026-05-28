@@ -301,6 +301,23 @@ describe("Phone Mode scoring", () => {
     expect(inside.opportunityScore).toBeGreaterThan(outside.opportunityScore);
   });
 
+  it("uses a predicted historical REM window to cue before the default 6-hour window", () => {
+    const decision = evaluateCueDecision(
+      makeContext({
+        now: "2026-01-02T04:55:00.000Z",
+        historicalSleepPrior: makeHistoricalPrior(),
+      }),
+    );
+
+    expect(decision.sleepTiming.likelyPhoneCueWindowStart).toBe(
+      "2026-01-02T04:50:00.000Z",
+    );
+    expect(decision.scoreBreakdown.timeOpportunityScore).toBe(0.6);
+    expect(decision.scoreBreakdown.historicalRemWindowScore).toBeCloseTo(0.9);
+    expect(decision.action).toBe("play_cue");
+    expect(decision.reason).toBe("phone_late_rem_opportunity");
+  });
+
   it("keeps default phone behavior close when no historical prior exists", () => {
     const decision = evaluateCueDecision(makeContext());
 
@@ -574,6 +591,30 @@ describe("Sleep timing prior and snapshots", () => {
     });
     expect(timing.confidence).toBe("low");
     expect(timing.source).toBe("default");
+  });
+
+  it("bounds an early historical Phone Mode cue window at 4 hours after training", () => {
+    const timing = buildSleepTimingPrior({
+      trainingEndedAt,
+      settings: createDefaultEngineSettings(),
+      historicalSleepPrior: makeHistoricalPrior({
+        remWindows: [
+          {
+            startMinutesAfterSleepOnset: 180,
+            endMinutesAfterSleepOnset: 240,
+            confidence: 0.9,
+          },
+        ],
+      }),
+    });
+
+    expect(timing.source).toBe("historical_sleep");
+    expect(timing.predictedRemWindows[0]).toMatchObject({
+      source: "historical_sleep",
+      startAt: "2026-01-02T02:20:00.000Z",
+      endAt: "2026-01-02T03:20:00.000Z",
+    });
+    expect(timing.likelyPhoneCueWindowStart).toBe("2026-01-02T03:00:00.000Z");
   });
 
   it("formats visible engine fields for UI surfaces", () => {

@@ -9,6 +9,7 @@ import type {
 import { addSeconds } from "./CueDecisionTypes";
 
 const wakeBufferSeconds = 20 * 60;
+const earliestHistoricalPhoneCueStartSeconds = 4 * 3600;
 
 function parseTime(value: string): { hours: number; minutes: number } | null {
   const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
@@ -147,6 +148,43 @@ function buildPredictedRemWindows(input: {
   ];
 }
 
+function buildLikelyPhoneCueWindowStart(input: {
+  trainingEndedAt: string;
+  estimatedSleepOnsetAt: string;
+  defaultPhoneCueWindowStart: string;
+  historicalSleepPrior?: HistoricalSleepPrior;
+}): string {
+  const prior = input.historicalSleepPrior;
+
+  if (!isUsableHistoricalPrior(prior) || prior.remWindows.length === 0) {
+    return input.defaultPhoneCueWindowStart;
+  }
+
+  const earliestHistoricalRemWindowStartMs = Math.min(
+    ...prior.remWindows.map((window) =>
+      Date.parse(
+        addSeconds(
+          input.estimatedSleepOnsetAt,
+          window.startMinutesAfterSleepOnset * 60,
+        ),
+      ),
+    ),
+  );
+  const defaultStartMs = Date.parse(input.defaultPhoneCueWindowStart);
+
+  if (earliestHistoricalRemWindowStartMs >= defaultStartMs) {
+    return input.defaultPhoneCueWindowStart;
+  }
+
+  const lowerBoundMs = Date.parse(
+    addSeconds(input.trainingEndedAt, earliestHistoricalPhoneCueStartSeconds),
+  );
+
+  return new Date(
+    Math.max(lowerBoundMs, earliestHistoricalRemWindowStartMs),
+  ).toISOString();
+}
+
 export function buildSleepTimingPrior(input: {
   trainingEndedAt: string;
   settings: CueDecisionSettings;
@@ -195,10 +233,16 @@ export function buildSleepTimingPrior(input: {
       settings.typicalSleepDurationHours * 60) * 60,
   );
   const expectedWakeAt = wakeFromClock ?? wakeFromDuration;
-  const likelyPhoneCueWindowStart = addSeconds(
+  const defaultPhoneCueWindowStart = addSeconds(
     trainingEndedAt,
     settings.cueStartDelayHoursAfterTraining * 3600,
   );
+  const likelyPhoneCueWindowStart = buildLikelyPhoneCueWindowStart({
+    trainingEndedAt,
+    estimatedSleepOnsetAt,
+    defaultPhoneCueWindowStart,
+    historicalSleepPrior: usableHistoricalPrior,
+  });
   const expectedWakeMinusBuffer = addSeconds(expectedWakeAt, -wakeBufferSeconds);
   const likelyPhoneCueWindowEnd =
     Date.parse(expectedWakeMinusBuffer) > Date.parse(likelyPhoneCueWindowStart)
