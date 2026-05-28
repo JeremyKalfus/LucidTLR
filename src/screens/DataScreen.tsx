@@ -40,7 +40,6 @@ export function DataScreen() {
     <Screen>
       <SectionTitle>Data</SectionTitle>
 
-      <SectionTitle>TLR engine</SectionTitle>
       <Card compact>
         <Pressable
           accessibilityRole="button"
@@ -60,29 +59,17 @@ export function DataScreen() {
               gap: 12,
             }}
           >
-            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-              <Text
-                selectable
-                style={{
-                  color: colors.textPrimary,
-                  fontSize: typography.body.fontSize,
-                  lineHeight: typography.body.lineHeight,
-                }}
-              >
-                {latestEngineSnapshot.currentValues.currentEngineStatus}
-              </Text>
-              <Text
-                selectable
-                numberOfLines={2}
-                style={{
-                  color: colors.textMuted,
-                  fontSize: typography.label.fontSize,
-                  lineHeight: typography.label.lineHeight,
-                }}
-              >
-                {showEngineDetails ? "Hide details" : "Show status, timing, movement, volume, watch, and log"}
-              </Text>
-            </View>
+            <Text
+              selectable
+              style={{
+                color: colors.textPrimary,
+                flex: 1,
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+              }}
+            >
+              TLR engine
+            </Text>
             {showEngineDetails ? (
               <ChevronDown color={colors.textMuted} size={22} strokeWidth={1.8} />
             ) : (
