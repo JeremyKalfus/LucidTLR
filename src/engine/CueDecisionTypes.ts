@@ -2,7 +2,9 @@ import type {
   AppMode,
   CueDecisionAction,
   CueDecisionReason,
+  HistoricalSleepPrior,
   NightSession,
+  PredictedRemWindow,
   SessionStatus,
   SoundSensitivityProfile,
   WatchSensorQuality,
@@ -19,12 +21,14 @@ import {
 export type {
   CueDecisionAction,
   CueDecisionReason,
+  HistoricalSleepPrior,
+  PredictedRemWindow,
   SoundSensitivityProfile,
   WatchSensorQuality,
 };
 
 export type SleepTimingConfidence = "low" | "medium" | "high";
-export type SleepTimingSource = "default" | "self_report" | "future_health_history";
+export type SleepTimingSource = "default" | "self_report" | "historical_sleep";
 export type WatchConnectivityState = "connected" | "disconnected" | "unknown";
 
 export interface CueDecisionSettings {
@@ -120,6 +124,7 @@ export interface CueDecisionContext {
   movement: MovementHistoryContext;
   userFeedback: UserFeedbackContext;
   watchSignal?: WatchEpochSignal;
+  historicalSleepPrior?: HistoricalSleepPrior;
 }
 
 export interface SleepTimingPrior {
@@ -127,12 +132,15 @@ export interface SleepTimingPrior {
   expectedWakeAt: string;
   likelyPhoneCueWindowStart: string;
   likelyPhoneCueWindowEnd: string;
+  predictedRemWindows: PredictedRemWindow[];
+  historicalSleepPrior?: HistoricalSleepPrior;
   confidence: SleepTimingConfidence;
   source: SleepTimingSource;
 }
 
 export interface ScoreBreakdown {
   timeOpportunityScore: number;
+  historicalRemWindowScore: number;
   movementStabilityScore: number;
   noInteractionScore: number;
   sleepPriorScore: number;
@@ -246,6 +254,12 @@ export interface EngineSnapshot {
     userReportedAwakeningPause: string;
     suppressionReason: string;
     healthHistoryCalibrationStatus: string;
+    sleepPriorSource: string;
+    nextPredictedRemWindow: string;
+    cueWindowSource: string;
+    sleepPriorConfidence: string;
+    historicalRemWindowScore: string;
+    latestDecisionUsedHistoricalSleep: string;
   };
   scoreRows: Array<{ label: string; value: string }>;
   decisionLogLine: string;
@@ -413,6 +427,7 @@ export function getProfileDefaults(
 export function emptyScoreBreakdown(): ScoreBreakdown {
   return {
     timeOpportunityScore: 0,
+    historicalRemWindowScore: 0,
     movementStabilityScore: 0,
     noInteractionScore: 0,
     sleepPriorScore: 0,

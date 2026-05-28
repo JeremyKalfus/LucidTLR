@@ -8,6 +8,7 @@ import {
   Screen,
   SectionTitle,
 } from "@/src/components/ui";
+import type { ExternalSleepSource, PredictedRemWindow, RemDensityBin } from "@/src/domain/types";
 import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import { useAppState } from "@/src/state/AppState";
@@ -22,12 +23,51 @@ function isOvernightEngineStatus(status: string): boolean {
   );
 }
 
+function formatSleepHistorySource(source: ExternalSleepSource | null): string {
+  if (source === "apple_health") {
+    return "Apple Health";
+  }
+
+  if (source === "health_connect") {
+    return "Health Connect";
+  }
+
+  return "none";
+}
+
+function formatWindow(window: PredictedRemWindow): string {
+  return `${new Date(window.startAt).toLocaleTimeString()} - ${new Date(
+    window.endAt,
+  ).toLocaleTimeString()} (${window.confidence.toFixed(2)})`;
+}
+
+function formatDensitySummary(density: RemDensityBin[]): string {
+  const topBins = [...density]
+    .sort((a, b) => b.density - a.density)
+    .slice(0, 4)
+    .sort((a, b) => a.minuteAfterSleepOnset - b.minuteAfterSleepOnset);
+
+  if (topBins.length === 0) {
+    return "none yet";
+  }
+
+  return topBins
+    .map(
+      (bin) =>
+        `${bin.minuteAfterSleepOnset}m: ${(bin.density * 100).toFixed(0)}%`,
+    )
+    .join(" / ");
+}
+
 export function DataScreen() {
   const [showEngineDetails, setShowEngineDetails] = React.useState(false);
-  const { engineDecisionLog, latestEngineSnapshot, sessionHistory } =
+  const { engineDecisionLog, latestEngineSnapshot, sessionHistory, sleepHistory } =
     useAppState();
   const decision = latestEngineSnapshot.decision;
   const watch = decision.watch;
+  const historicalWindows = latestEngineSnapshot.sleepTiming.predictedRemWindows.filter(
+    (window) => window.source === "historical_sleep",
+  );
   const visibleRemThreshold =
     typeof decision.metadata.threshold === "number"
       ? decision.metadata.threshold
@@ -102,6 +142,7 @@ export function DataScreen() {
             <InfoRow label="estimated sleep onset" value={latestEngineSnapshot.currentValues.estimatedSleepOnset} />
             <InfoRow label="expected wake" value={latestEngineSnapshot.currentValues.expectedWakeTime} />
             <InfoRow label="cue window" value={latestEngineSnapshot.currentValues.nextOrActiveCueWindow} />
+            <InfoRow label="next predicted REM" value={latestEngineSnapshot.currentValues.nextPredictedRemWindow} />
             <InfoRow label="confidence" value={latestEngineSnapshot.sleepTiming.confidence} />
             <InfoRow label="source" value={latestEngineSnapshot.sleepTiming.source.replaceAll("_", " ")} />
           </Card>
@@ -167,6 +208,41 @@ export function DataScreen() {
         </View>
       ) : null}
 
+      <SectionTitle>Sleep history calibration</SectionTitle>
+      <Card>
+        <InfoRow label="enabled" value={sleepHistory.enabled ? "on" : "off"} />
+        <InfoRow label="source" value={formatSleepHistorySource(sleepHistory.source)} />
+        <InfoRow label="permission" value={sleepHistory.permissionStatus} />
+        <InfoRow label="imported sessions" value={String(sleepHistory.nightsImported)} />
+        <InfoRow
+          label="prior confidence"
+          value={sleepHistory.prior?.confidence ?? "none"}
+        />
+        <InfoRow
+          label="REM density"
+          value={formatDensitySummary(sleepHistory.prior?.remDensityByMinute ?? [])}
+        />
+        <InfoRow
+          label="historical REM score"
+          value={latestEngineSnapshot.currentValues.historicalRemWindowScore}
+        />
+        <InfoRow
+          label="decision used prior"
+          value={latestEngineSnapshot.currentValues.latestDecisionUsedHistoricalSleep}
+        />
+        {historicalWindows.length === 0 ? (
+          <InfoRow label="predicted REM windows" value="none yet" />
+        ) : (
+          historicalWindows.slice(0, 3).map((window, index) => (
+            <InfoRow
+              key={`${window.startAt}-${window.endAt}`}
+              label={`REM window ${index + 1}`}
+              value={formatWindow(window)}
+            />
+          ))
+        )}
+      </Card>
+
       {sessionHistory.length === 0 ? (
         <Card>
           <Text
@@ -207,7 +283,7 @@ export function DataScreen() {
             lineHeight: typography.body.lineHeight,
           }}
         >
-          This screen shows local session placeholders only. No cloud sync, REM
+          Sleep-history calibration is local-only by default. No cloud sync, REM
           classifier, or native watch/overnight data path is active yet.
         </Text>
       </Card>

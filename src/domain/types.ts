@@ -71,6 +71,45 @@ export type UploadStatus =
   | "canceled"
   | "failed";
 
+export type ExternalSleepSource = "apple_health" | "health_connect";
+
+export type ExternalSleepStage =
+  | "awake"
+  | "rem"
+  | "core"
+  | "light"
+  | "deep"
+  | "asleep_unknown"
+  | "out_of_bed"
+  | "unknown";
+
+export type HistoricalSleepPriorConfidence =
+  | "none"
+  | "low"
+  | "medium"
+  | "high";
+
+export interface HistoricalRemWindow {
+  startMinutesAfterSleepOnset: number;
+  endMinutesAfterSleepOnset: number;
+  confidence: number;
+  medianDurationMinutes?: number;
+}
+
+export interface RemDensityBin {
+  minuteAfterSleepOnset: number;
+  density: number;
+  nightsObserved: number;
+}
+
+export interface PredictedRemWindow {
+  startAt: string;
+  endAt: string;
+  source: "historical_sleep" | "default";
+  confidence: number;
+  medianDurationMinutes?: number;
+}
+
 export type CueSuppressionReason =
   | "none"
   | "movement"
@@ -177,4 +216,37 @@ export interface DreamJournalEntry {
   audioLocalUri?: string;
   localOnly: boolean;
   uploadedWithExplicitConsent: boolean;
+}
+
+export interface ExternalSleepSession {
+  id: string;
+  participantId: string;
+  sourcePlatform: ExternalSleepSource;
+  sourceRecordIdHash: string;
+  startAt: string;
+  endAt: string;
+  importedAt: string;
+  uploadStatus: UploadStatus;
+}
+
+export interface ExternalSleepStageSegment {
+  id: string;
+  externalSleepSessionId: string;
+  stage: ExternalSleepStage;
+  startAt: string;
+  endAt: string;
+  durationSeconds: number;
+  confidence?: number;
+}
+
+export interface HistoricalSleepPrior {
+  source: ExternalSleepSource;
+  nightsIncluded: number;
+  confidence: HistoricalSleepPriorConfidence;
+  medianSleepOnsetMinutesAfterMidnight: number | null;
+  medianWakeMinutesAfterMidnight: number | null;
+  medianSleepDurationMinutes: number | null;
+  remWindows: HistoricalRemWindow[];
+  remDensityByMinute: RemDensityBin[];
+  generatedAt: string;
 }

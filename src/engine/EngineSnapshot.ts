@@ -55,6 +55,10 @@ function formatPhoneScoreRows(breakdown: ScoreBreakdown) {
       value: formatScore(breakdown.timeOpportunityScore),
     },
     {
+      label: "historical REM window",
+      value: formatScore(breakdown.historicalRemWindowScore),
+    },
+    {
       label: "movement stability",
       value: formatScore(breakdown.movementStabilityScore),
     },
@@ -110,6 +114,40 @@ function formatScoreRows(decision: CueDecision) {
 
 function formatWindow(start: string, end: string): string {
   return `${formatDateTime(start)} - ${formatDateTime(end)}`;
+}
+
+function formatSource(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
+function formatNextPredictedRemWindow(
+  decision: CueDecision,
+  now: string,
+): string {
+  const nowMs = Date.parse(now);
+  const window = decision.sleepTiming.predictedRemWindows
+    .filter((candidate) => Date.parse(candidate.endAt) >= nowMs)
+    .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))[0];
+
+  return window ? formatWindow(window.startAt, window.endAt) : "not available";
+}
+
+function formatHealthHistoryStatus(decision: CueDecision): string {
+  const prior = decision.sleepTiming.historicalSleepPrior;
+
+  if (!prior) {
+    return "not connected";
+  }
+
+  return `${formatSource(prior.source)}; ${prior.nightsIncluded} nights; ${prior.confidence}`;
+}
+
+function formatCueWindowSource(decision: CueDecision): string {
+  return decision.sleepTiming.predictedRemWindows.some(
+    (window) => window.source === "historical_sleep",
+  )
+    ? "historical sleep plus protocol gate"
+    : "default protocol";
 }
 
 function formatStatus(decision: CueDecision): string {
@@ -209,7 +247,20 @@ export function buildEngineSnapshot(input: {
         decision.action === "suppress" || decision.action === "pause"
           ? formatReason(decision.reason)
           : "none",
-      healthHistoryCalibrationStatus: "not connected",
+      healthHistoryCalibrationStatus: formatHealthHistoryStatus(decision),
+      sleepPriorSource: formatSource(decision.sleepTiming.source),
+      nextPredictedRemWindow: formatNextPredictedRemWindow(
+        decision,
+        context.now,
+      ),
+      cueWindowSource: formatCueWindowSource(decision),
+      sleepPriorConfidence: decision.sleepTiming.confidence,
+      historicalRemWindowScore: formatScore(
+        decision.scoreBreakdown.historicalRemWindowScore,
+      ),
+      latestDecisionUsedHistoricalSleep: decision.sleepTiming.historicalSleepPrior
+        ? "yes"
+        : "no",
     },
     scoreRows: formatScoreRows(decision),
     decisionLogLine: `${formatDateTime(context.now)}: ${decision.action} / ${formatReason(
@@ -228,6 +279,7 @@ export function buildInactiveEngineSnapshot(input: {
   const sleepTiming = buildSleepTimingPrior({
     trainingEndedAt,
     settings: context.settings,
+    historicalSleepPrior: context.historicalSleepPrior,
   });
   const decision: CueDecision = {
     action: "idle",

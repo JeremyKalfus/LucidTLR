@@ -9,6 +9,10 @@ export const LOCAL_MIGRATIONS = [
     id: "002_indexes",
     filename: "002_indexes.sql",
   },
+  {
+    id: "003_sleep_history",
+    filename: "003_sleep_history.sql",
+  },
 ] as const;
 
 export const LOCAL_TABLES = [
@@ -21,6 +25,9 @@ export const LOCAL_TABLES = [
   "watch_epochs",
   "morning_reports",
   "dream_journals",
+  "external_sleep_sessions",
+  "external_sleep_stage_segments",
+  "sleep_prior_profiles",
   "upload_queue",
   "app_settings",
 ] as const;

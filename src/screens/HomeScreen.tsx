@@ -150,6 +150,7 @@ export function HomeScreen() {
           <InfoRow label="nights with TLR" value={String(tlrNights)} />
           <InfoRow label="sensitivity" value={engineValues.sensitivityProfile.replaceAll("_", " ")} />
           <InfoRow label="cues tonight" value={engineValues.cueCountTonight} />
+          <InfoRow label="sleep prior" value={`${engineValues.sleepPriorSource} (${engineValues.sleepPriorConfidence})`} />
         </Card>
       </View>
 
@@ -157,6 +158,8 @@ export function HomeScreen() {
         <HomeSectionLabel>Engine state</HomeSectionLabel>
         <Card compact>
           <InfoRow label="cue window" value={engineValues.nextOrActiveCueWindow} />
+          <InfoRow label="cue window source" value={engineValues.cueWindowSource} />
+          <InfoRow label="next predicted REM" value={engineValues.nextPredictedRemWindow} />
           <InfoRow label="status" value={engineValues.currentEngineStatus} />
           <InfoRow label="reason" value={engineValues.latestDecisionReason} />
           <InfoRow label="last cue" value={engineValues.lastCueTime} />

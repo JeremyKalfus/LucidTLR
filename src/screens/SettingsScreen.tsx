@@ -16,6 +16,7 @@ import {
   type CueDecisionSettings,
   type SoundSensitivityProfile,
 } from "@/src/engine";
+import type { ExternalSleepSource } from "@/src/domain/types";
 import { cueAudio, TLR_PROTOCOL_VERSION } from "@/src/protocol/tlrProtocol";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
@@ -173,16 +174,36 @@ function SensitivityButton({
   );
 }
 
+function formatSleepHistorySource(source: ExternalSleepSource | null): string {
+  if (source === "apple_health") {
+    return "Apple Health";
+  }
+
+  if (source === "health_connect") {
+    return "Health Connect";
+  }
+
+  return "none";
+}
+
+function formatOptionalDate(value: string | undefined): string {
+  return value ? new Date(value).toLocaleString() : "never";
+}
+
 export function SettingsScreen() {
   const [isResetting, setIsResetting] = React.useState(false);
   const [resetError, setResetError] = React.useState<string | null>(null);
   const {
     consentChoices,
     engineSettings,
+    isSyncingSleepHistory,
     participantId,
     resetAppData,
     selectedMode,
     setSelectedMode,
+    setSleepHistoryEnabled,
+    sleepHistory,
+    syncSleepHistoryNow,
     updateEngineSettings,
   } = useAppState();
   const applySensitivityProfile = React.useCallback(
@@ -372,7 +393,63 @@ export function SettingsScreen() {
           settings={engineSettings}
           updateEngineSettings={updateEngineSettings}
         />
-        <InfoRow label="health history calibration" value="not connected" />
+      </Card>
+
+      <SectionTitle>Sleep history calibration</SectionTitle>
+      <Card>
+        <InfoRow label="enabled" value={sleepHistory.enabled ? "on" : "off"} />
+        <InfoRow label="source" value={formatSleepHistorySource(sleepHistory.source)} />
+        <InfoRow label="permission" value={sleepHistory.permissionStatus} />
+        <InfoRow label="nights imported" value={String(sleepHistory.nightsImported)} />
+        <InfoRow label="last import" value={formatOptionalDate(sleepHistory.lastImportedAt)} />
+        <InfoRow
+          label="prior confidence"
+          value={sleepHistory.prior?.confidence ?? "none"}
+        />
+        {sleepHistory.lastSyncError ? (
+          <Text
+            selectable
+            style={{
+              color: colors.textSecondary,
+              fontSize: typography.body.fontSize,
+              lineHeight: typography.body.lineHeight,
+            }}
+          >
+            {sleepHistory.lastSyncError}
+          </Text>
+        ) : null}
+        <Text
+          selectable
+          style={{
+            color: colors.textSecondary,
+            fontSize: typography.body.fontSize,
+            lineHeight: typography.body.lineHeight,
+          }}
+        >
+          Used locally to estimate better cue windows. Not uploaded by default.
+        </Text>
+        <PrimaryPillButton
+          disabled={isSyncingSleepHistory}
+          label={
+            sleepHistory.enabled
+              ? "Turn sleep history off"
+              : "Use sleep history to improve cue timing"
+          }
+          onPress={() => {
+            void setSleepHistoryEnabled(!sleepHistory.enabled);
+          }}
+        />
+        {sleepHistory.enabled ? (
+          <PrimaryPillButton
+            disabled={isSyncingSleepHistory}
+            label={
+              isSyncingSleepHistory ? "Syncing..." : "Sync sleep history now"
+            }
+            onPress={() => {
+              void syncSleepHistoryNow();
+            }}
+          />
+        ) : null}
       </Card>
 
       <SectionTitle>Volume model</SectionTitle>

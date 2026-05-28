@@ -29,6 +29,7 @@ function fallbackSleepTiming(context: CueDecisionContext): SleepTimingPrior {
   return buildSleepTimingPrior({
     trainingEndedAt,
     settings: context.settings,
+    historicalSleepPrior: context.historicalSleepPrior,
   });
 }
 

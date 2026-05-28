@@ -1,10 +1,28 @@
 import type { LocalDb } from "./localDb";
 import type { OnboardingAnswer, OnboardingAnswerValue } from "@/src/domain/forms";
-import type { AppMode, UploadStatus } from "@/src/domain/types";
+import type {
+  AppMode,
+  ExternalSleepSession,
+  ExternalSleepSource,
+  ExternalSleepStage,
+  ExternalSleepStageSegment,
+  HistoricalSleepPrior,
+  HistoricalSleepPriorConfidence,
+  RemDensityBin,
+  UploadStatus,
+} from "@/src/domain/types";
 import { ONBOARDING_FORM_ID, onboardingSteps } from "@/src/features/onboarding/onboardingSteps";
 
 export const ONBOARDING_COMPLETED_AT_SETTING = "onboarding_completed_at";
 export const ONBOARDING_VERSION_SETTING = "onboarding_version";
+export const SLEEP_HISTORY_ENABLED_SETTING = "sleep_history_enabled";
+export const SLEEP_HISTORY_SOURCE_SETTING = "sleep_history_source";
+export const SLEEP_HISTORY_LAST_IMPORTED_AT_SETTING =
+  "sleep_history_last_imported_at";
+export const SLEEP_HISTORY_PERMISSION_STATUS_SETTING =
+  "sleep_history_permission_status";
+export const SLEEP_HISTORY_NIGHTS_IMPORTED_SETTING =
+  "sleep_history_nights_imported";
 
 export interface LocalParticipantRow {
   id: string;
@@ -28,8 +46,44 @@ interface AppSettingRow {
   value_json: string;
 }
 
+interface ExternalSleepSessionRow {
+  id: string;
+  participant_id: string;
+  source_platform: ExternalSleepSource;
+  source_record_id_hash: string;
+  start_at: string;
+  end_at: string;
+  imported_at: string;
+  upload_status: UploadStatus;
+}
+
+interface ExternalSleepStageSegmentRow {
+  id: string;
+  external_sleep_session_id: string;
+  stage: ExternalSleepStage;
+  start_at: string;
+  end_at: string;
+  duration_seconds: number;
+  confidence: number | null;
+}
+
+interface SleepPriorProfileRow {
+  generated_at: string;
+  source_platform: ExternalSleepSource;
+  source_nights_count: number;
+  median_sleep_onset_minutes: number | null;
+  median_wake_minutes: number | null;
+  median_sleep_duration_minutes: number | null;
+  rem_windows_json: string;
+  rem_density_by_minute_json: string | null;
+  confidence: HistoricalSleepPriorConfidence;
+}
+
 const resetTables = [
   "upload_queue",
+  "external_sleep_stage_segments",
+  "external_sleep_sessions",
+  "sleep_prior_profiles",
   "dream_journals",
   "morning_reports",
   "watch_epochs",
@@ -87,6 +141,35 @@ export async function clearAllLocalData(db: LocalDb): Promise<void> {
   for (const table of resetTables) {
     await db.execute(`delete from ${table}`);
   }
+}
+
+function toExternalSleepSession(
+  row: ExternalSleepSessionRow,
+): ExternalSleepSession {
+  return {
+    id: row.id,
+    participantId: row.participant_id,
+    sourcePlatform: row.source_platform,
+    sourceRecordIdHash: row.source_record_id_hash,
+    startAt: row.start_at,
+    endAt: row.end_at,
+    importedAt: row.imported_at,
+    uploadStatus: row.upload_status,
+  };
+}
+
+function toExternalSleepStageSegment(
+  row: ExternalSleepStageSegmentRow,
+): ExternalSleepStageSegment {
+  return {
+    id: row.id,
+    externalSleepSessionId: row.external_sleep_session_id,
+    stage: row.stage,
+    startAt: row.start_at,
+    endAt: row.end_at,
+    durationSeconds: row.duration_seconds,
+    confidence: row.confidence ?? undefined,
+  };
 }
 
 export async function getLocalParticipant(
@@ -233,6 +316,205 @@ order by created_at asc`,
       },
     ];
   });
+}
+
+export async function saveExternalSleepHistory(input: {
+  db: LocalDb;
+  sessions: ExternalSleepSession[];
+  stageSegments: ExternalSleepStageSegment[];
+}): Promise<void> {
+  const segmentsBySessionId = new Map<string, ExternalSleepStageSegment[]>();
+
+  for (const segment of input.stageSegments) {
+    const segments = segmentsBySessionId.get(segment.externalSleepSessionId) ?? [];
+    segments.push(segment);
+    segmentsBySessionId.set(segment.externalSleepSessionId, segments);
+  }
+
+  for (const session of input.sessions) {
+    await input.db.execute(
+      `insert into external_sleep_sessions (
+  id,
+  participant_id,
+  source_platform,
+  source_record_id_hash,
+  start_at,
+  end_at,
+  imported_at,
+  upload_status
+) values (?, ?, ?, ?, ?, ?, ?, ?)
+on conflict(source_platform, source_record_id_hash) do update set
+  participant_id = excluded.participant_id,
+  start_at = excluded.start_at,
+  end_at = excluded.end_at,
+  imported_at = excluded.imported_at,
+  upload_status = 'local_only'`,
+      [
+        session.id,
+        session.participantId,
+        session.sourcePlatform,
+        session.sourceRecordIdHash,
+        session.startAt,
+        session.endAt,
+        session.importedAt,
+        session.uploadStatus,
+      ],
+    );
+
+    await input.db.execute(
+      "delete from external_sleep_stage_segments where external_sleep_session_id = ?",
+      [session.id],
+    );
+
+    for (const segment of segmentsBySessionId.get(session.id) ?? []) {
+      await input.db.execute(
+        `insert into external_sleep_stage_segments (
+  id,
+  external_sleep_session_id,
+  stage,
+  start_at,
+  end_at,
+  duration_seconds,
+  confidence
+) values (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          segment.id,
+          segment.externalSleepSessionId,
+          segment.stage,
+          segment.startAt,
+          segment.endAt,
+          segment.durationSeconds,
+          segment.confidence ?? null,
+        ],
+      );
+    }
+  }
+}
+
+export async function loadExternalSleepHistory(input: {
+  db: LocalDb;
+  participantId: string;
+}): Promise<{
+  sessions: ExternalSleepSession[];
+  stageSegments: ExternalSleepStageSegment[];
+}> {
+  const sessionRows = await input.db.query<ExternalSleepSessionRow>(
+    `select *
+from external_sleep_sessions
+where participant_id = ?
+order by start_at asc`,
+    [input.participantId],
+  );
+  const sessions = sessionRows.map(toExternalSleepSession);
+
+  if (sessions.length === 0) {
+    return { sessions, stageSegments: [] };
+  }
+
+  const placeholders = sessions.map(() => "?").join(", ");
+  const segmentRows = await input.db.query<ExternalSleepStageSegmentRow>(
+    `select *
+from external_sleep_stage_segments
+where external_sleep_session_id in (${placeholders})
+order by start_at asc`,
+    sessions.map((session) => session.id),
+  );
+
+  return {
+    sessions,
+    stageSegments: segmentRows.map(toExternalSleepStageSegment),
+  };
+}
+
+export async function countExternalSleepSessions(input: {
+  db: LocalDb;
+  participantId: string;
+}): Promise<number> {
+  const row = await input.db.queryOne<{ count: number }>(
+    `select count(*) as count
+from external_sleep_sessions
+where participant_id = ?`,
+    [input.participantId],
+  );
+
+  return row?.count ?? 0;
+}
+
+export async function saveSleepPriorProfile(input: {
+  db: LocalDb;
+  id: string;
+  participantId: string;
+  prior: HistoricalSleepPrior;
+}): Promise<void> {
+  await input.db.execute(
+    `insert into sleep_prior_profiles (
+  id,
+  participant_id,
+  generated_at,
+  source_platform,
+  source_nights_count,
+  median_sleep_onset_minutes,
+  median_wake_minutes,
+  median_sleep_duration_minutes,
+  rem_windows_json,
+  rem_density_by_minute_json,
+  confidence,
+  upload_status
+) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local_only')`,
+    [
+      input.id,
+      input.participantId,
+      input.prior.generatedAt,
+      input.prior.source,
+      input.prior.nightsIncluded,
+      input.prior.medianSleepOnsetMinutesAfterMidnight,
+      input.prior.medianWakeMinutesAfterMidnight,
+      input.prior.medianSleepDurationMinutes,
+      JSON.stringify(input.prior.remWindows),
+      JSON.stringify(input.prior.remDensityByMinute),
+      input.prior.confidence,
+    ],
+  );
+}
+
+export async function loadLatestSleepPriorProfile(input: {
+  db: LocalDb;
+  participantId: string;
+}): Promise<HistoricalSleepPrior | null> {
+  const row = await input.db.queryOne<SleepPriorProfileRow>(
+    `select generated_at,
+  source_platform,
+  source_nights_count,
+  median_sleep_onset_minutes,
+  median_wake_minutes,
+  median_sleep_duration_minutes,
+  rem_windows_json,
+  rem_density_by_minute_json,
+  confidence
+from sleep_prior_profiles
+where participant_id = ?
+order by generated_at desc
+limit 1`,
+    [input.participantId],
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    source: row.source_platform,
+    nightsIncluded: row.source_nights_count,
+    confidence: row.confidence,
+    medianSleepOnsetMinutesAfterMidnight: row.median_sleep_onset_minutes,
+    medianWakeMinutesAfterMidnight: row.median_wake_minutes,
+    medianSleepDurationMinutes: row.median_sleep_duration_minutes,
+    remWindows: JSON.parse(row.rem_windows_json) as HistoricalSleepPrior["remWindows"],
+    remDensityByMinute: row.rem_density_by_minute_json
+      ? (JSON.parse(row.rem_density_by_minute_json) as RemDensityBin[])
+      : [],
+    generatedAt: row.generated_at,
+  };
 }
 
 export function buildQuestionnaireResponsePayload(answer: OnboardingAnswer) {

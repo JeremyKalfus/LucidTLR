@@ -1,5 +1,16 @@
 import type { ConsentState, EntityType } from "../../domain/types";
 
+const structuredUploadEntityTypes = new Set<string>([
+  "participant",
+  "consent",
+  "questionnaire_response",
+  "session",
+  "cue_event",
+  "movement_event",
+  "watch_epoch",
+  "morning_report",
+]);
+
 export function canUploadStructuredData(consents: ConsentState): boolean {
   return (
     consents.structuredResearchUploadAccepted &&
@@ -17,14 +28,17 @@ export function canUploadDreamJournal(consents: ConsentState): boolean {
 }
 
 export function canUploadEntity(
-  entityType: EntityType,
+  entityType: EntityType | string,
   consents: ConsentState,
 ): boolean {
   if (entityType === "dream_journal") {
     return canUploadDreamJournal(consents);
   }
 
-  return canUploadStructuredData(consents);
+  return (
+    structuredUploadEntityTypes.has(entityType) &&
+    canUploadStructuredData(consents)
+  );
 }
 
 export function getRequiredConsentForEntity(

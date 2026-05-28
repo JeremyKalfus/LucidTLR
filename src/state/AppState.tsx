@@ -38,6 +38,12 @@ import {
   STUDY_PARTICIPATION_QUESTION_ID,
 } from "@/src/features/onboarding/onboardingSteps";
 import { buildOnboardingAnswer, updateOnboardingAnswer } from "@/src/features/onboarding/onboardingSurvey";
+import {
+  disableSleepHistoryCalibration,
+  importSleepHistory,
+  loadSleepHistoryCalibrationState,
+  type SleepHistoryCalibrationState,
+} from "@/src/features/sleepHistory/importSleepHistory";
 import { createLocalDreamJournalEntry } from "@/src/features/journal/journalTypes";
 import { createNightSession, applySessionEvent } from "@/src/features/sessions/sessionActions";
 import type { SessionEvent } from "@/src/features/sessions/sessionStateMachine";
@@ -77,8 +83,12 @@ interface AppStateValue {
   engineSettings: CueDecisionSettings;
   latestEngineSnapshot: EngineSnapshot;
   engineDecisionLog: string[];
+  sleepHistory: SleepHistoryCalibrationState;
+  isSyncingSleepHistory: boolean;
   setSelectedMode: (mode: AppMode) => void;
   updateEngineSettings: (patch: Partial<CueDecisionSettings>) => Promise<void>;
+  setSleepHistoryEnabled: (enabled: boolean) => Promise<void>;
+  syncSleepHistoryNow: () => Promise<void>;
   setOnboardingAnswer: (input: {
     stepId: OnboardingStepId;
     questionId: string;
@@ -101,6 +111,16 @@ function emptyConsentChoices(): AppConsentChoices {
   return {
     structuredResearchUploadConsent: false,
     dreamJournalUploadConsent: false,
+  };
+}
+
+function emptySleepHistoryState(): SleepHistoryCalibrationState {
+  return {
+    enabled: false,
+    source: null,
+    permissionStatus: "unknown",
+    nightsImported: 0,
+    prior: null,
   };
 }
 
@@ -249,8 +269,15 @@ function buildEngineContext(input: {
   selectedMode: AppMode;
   activeSession: NightSession | null;
   engineSettings: CueDecisionSettings;
+  sleepHistory: SleepHistoryCalibrationState;
 }): CueDecisionContext {
   const mode = input.activeSession?.mode ?? input.selectedMode;
+  const historicalSleepPrior =
+    input.sleepHistory.enabled &&
+    input.sleepHistory.prior &&
+    input.sleepHistory.prior.confidence !== "none"
+      ? input.sleepHistory.prior
+      : undefined;
 
   return {
     now: input.now,
@@ -272,6 +299,7 @@ function buildEngineContext(input: {
       largeMovementEvents: [],
     },
     userFeedback: {},
+    historicalSleepPrior,
   };
 }
 
@@ -306,6 +334,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [engineSettings, setEngineSettings] = React.useState(() =>
     createDefaultEngineSettings("standard"),
   );
+  const [sleepHistory, setSleepHistory] = React.useState(
+    emptySleepHistoryState,
+  );
+  const [isSyncingSleepHistory, setIsSyncingSleepHistory] =
+    React.useState(false);
   const [engineNowMs, setEngineNowMs] = React.useState(() => Date.now());
   const [engineDecisionLog, setEngineDecisionLog] = React.useState<string[]>([]);
   const shouldRecordEngineDecisions = isCueingSessionActive(activeSession);
@@ -334,6 +367,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           persistedAnswers,
           persistedEngineSettings,
         );
+        const persistedSleepHistory = participant
+          ? await loadSleepHistoryCalibrationState({
+              db,
+              participantId: participant.id,
+            })
+          : emptySleepHistoryState();
 
         if (cancelled) {
           return;
@@ -356,6 +395,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
         setOnboardingAnswers(persistedAnswers);
         setEngineSettings(nextEngineSettings);
+        setSleepHistory(persistedSleepHistory);
         setOnboardingComplete(Boolean(completedAt && onboardingVersion));
       } catch (error) {
         if (!cancelled) {
@@ -564,6 +604,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setSessionHistory([]);
     setJournalEntries([]);
     setEngineSettings(createDefaultEngineSettings("standard"));
+    setSleepHistory(emptySleepHistoryState());
+    setIsSyncingSleepHistory(false);
     setEngineDecisionLog([]);
   }, []);
 
@@ -580,6 +622,65 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setEngineSettings(nextSettings);
     },
     [engineSettings],
+  );
+
+  const syncSleepHistoryNow = React.useCallback(async () => {
+    const db = await getLocalDb();
+
+    setIsSyncingSleepHistory(true);
+    setSleepHistory((state) => ({
+      ...state,
+      lastSyncError: undefined,
+    }));
+
+    try {
+      const result = await importSleepHistory({
+        db,
+        participantId,
+      });
+
+      setSleepHistory({
+        enabled: result.enabled,
+        source: result.source,
+        permissionStatus: result.permissionStatus,
+        lastImportedAt: result.lastImportedAt,
+        nightsImported: result.nightsImported,
+        prior: result.prior,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Sleep history sync failed.";
+
+      setSleepHistory((state) => ({
+        ...state,
+        lastSyncError: message,
+      }));
+    } finally {
+      setIsSyncingSleepHistory(false);
+    }
+  }, [participantId]);
+
+  const setSleepHistoryEnabled = React.useCallback(
+    async (enabled: boolean) => {
+      const db = await getLocalDb();
+
+      if (!enabled) {
+        const now = new Date().toISOString();
+        const disabledState = await disableSleepHistoryCalibration({
+          db,
+          participantId,
+          now,
+        });
+
+        setSleepHistory(disabledState);
+        return;
+      }
+
+      await syncSleepHistoryNow();
+    },
+    [participantId, syncSleepHistoryNow],
   );
 
   const startSession = React.useCallback(
@@ -650,8 +751,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         selectedMode,
         activeSession,
         engineSettings,
+        sleepHistory,
       }),
-    [activeSession, engineNowMs, engineSettings, selectedMode],
+    [activeSession, engineNowMs, engineSettings, selectedMode, sleepHistory],
   );
   const latestEngineSnapshot = React.useMemo(() => {
     if (!shouldRecordEngineDecisions) {
@@ -699,8 +801,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       engineSettings,
       latestEngineSnapshot,
       engineDecisionLog,
+      sleepHistory,
+      isSyncingSleepHistory,
       setSelectedMode,
       updateEngineSettings,
+      setSleepHistoryEnabled,
+      syncSleepHistoryNow,
       setOnboardingAnswer,
       completeOnboarding,
       resetAppData,
@@ -718,6 +824,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       hydrationError,
       isCompletingOnboarding,
       isHydrated,
+      isSyncingSleepHistory,
       journalEntries,
       latestEngineSnapshot,
       onboardingAnswers,
@@ -727,7 +834,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       selectedMode,
       sendSessionEvent,
       setOnboardingAnswer,
+      setSleepHistoryEnabled,
+      sleepHistory,
       startSession,
+      syncSleepHistoryNow,
       updateEngineSettings,
     ],
   );

@@ -59,6 +59,40 @@ function scoreSleepPrior(now: string, timing: SleepTimingPrior): number {
     : 0;
 }
 
+function scoreHistoricalRemWindow(input: {
+  now: string;
+  timing: SleepTimingPrior;
+  fallbackScore: number;
+}): number {
+  const historicalWindows = input.timing.predictedRemWindows.filter(
+    (window) => window.source === "historical_sleep",
+  );
+
+  if (!input.timing.historicalSleepPrior || historicalWindows.length === 0) {
+    return input.fallbackScore;
+  }
+
+  const nowMs = Date.parse(input.now);
+  const shoulderMs = 15 * 60 * 1000;
+  const score = historicalWindows.reduce((bestScore, window) => {
+    const startMs = Date.parse(window.startAt);
+    const endMs = Date.parse(window.endAt);
+    const confidence = clamp(window.confidence, 0, 1);
+
+    if (nowMs >= startMs && nowMs <= endMs) {
+      return Math.max(bestScore, confidence);
+    }
+
+    if (nowMs >= startMs - shoulderMs && nowMs <= endMs + shoulderMs) {
+      return Math.max(bestScore, confidence * 0.5);
+    }
+
+    return bestScore;
+  }, 0);
+
+  return clamp(score, 0, 1);
+}
+
 export function scorePhoneOpportunity(input: {
   context: CueDecisionContext;
   timing: SleepTimingPrior;
@@ -67,12 +101,18 @@ export function scorePhoneOpportunity(input: {
 }): { score: number; breakdown: ScoreBreakdown } {
   const { budget, context, movement, timing } = input;
   const trainingEndedAt = context.session?.trainingEndedAt ?? context.now;
+  const timeOpportunityScore = scoreTimeOpportunity(
+    context.now,
+    trainingEndedAt,
+    timing,
+  );
   const breakdown: ScoreBreakdown = {
-    timeOpportunityScore: scoreTimeOpportunity(
-      context.now,
-      trainingEndedAt,
+    timeOpportunityScore,
+    historicalRemWindowScore: scoreHistoricalRemWindow({
+      now: context.now,
       timing,
-    ),
+      fallbackScore: timeOpportunityScore,
+    }),
     movementStabilityScore: clamp(
       movement.stableLowMovementSeconds /
         Math.max(1, movement.requiredStableLowMovementSeconds),
@@ -89,10 +129,11 @@ export function scorePhoneOpportunity(input: {
     ),
   };
   const score =
-    breakdown.timeOpportunityScore * 0.4 +
-    breakdown.movementStabilityScore * 0.25 +
-    breakdown.sleepPriorScore * 0.15 +
-    breakdown.userToleranceScore * 0.1 +
+    breakdown.timeOpportunityScore * 0.3 +
+    breakdown.historicalRemWindowScore * 0.25 +
+    breakdown.movementStabilityScore * 0.2 +
+    breakdown.sleepPriorScore * 0.1 +
+    breakdown.userToleranceScore * 0.05 +
     breakdown.cueBudgetScore * 0.1;
 
   return { score, breakdown };

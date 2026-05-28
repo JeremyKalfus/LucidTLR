@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  HistoricalSleepPrior,
   NightSession,
   SoundSensitivityProfile,
   WatchSensorQuality,
@@ -83,6 +84,30 @@ function makeContext(
       largeMovementEvents: [],
     },
     userFeedback: {},
+    ...overrides,
+  };
+}
+
+function makeHistoricalPrior(
+  overrides: Partial<HistoricalSleepPrior> = {},
+): HistoricalSleepPrior {
+  return {
+    source: "apple_health",
+    nightsIncluded: 10,
+    confidence: "high",
+    medianSleepOnsetMinutesAfterMidnight: null,
+    medianWakeMinutesAfterMidnight: null,
+    medianSleepDurationMinutes: null,
+    remWindows: [
+      {
+        startMinutesAfterSleepOnset: 330,
+        endMinutesAfterSleepOnset: 360,
+        confidence: 0.9,
+        medianDurationMinutes: 20,
+      },
+    ],
+    remDensityByMinute: [],
+    generatedAt: "2026-01-01T12:00:00.000Z",
     ...overrides,
   };
 }
@@ -243,11 +268,48 @@ describe("Phone Mode scoring", () => {
       }),
     );
     const expectedScore =
-      0.4 * 1 + 0.25 * 1 + 0.15 * 1 + 0.1 * 0.6 + 0.1 * 0.5;
+      0.3 * 1 + 0.25 * 1 + 0.2 * 1 + 0.1 * 1 + 0.05 * 0.6 + 0.1 * 0.5;
 
     expect(decision.scoreBreakdown.sleepPriorScore).toBe(1);
+    expect(decision.scoreBreakdown.historicalRemWindowScore).toBe(1);
     expect(decision.scoreBreakdown.noInteractionScore).toBe(1);
     expect(decision.opportunityScore).toBeCloseTo(expectedScore);
+  });
+
+  it("scores higher inside a historical REM window than outside one", () => {
+    const historicalSleepPrior = makeHistoricalPrior();
+    const inside = evaluateCueDecision(
+      makeContext({
+        now: "2026-01-02T05:00:00.000Z",
+        historicalSleepPrior,
+      }),
+    );
+    const outside = evaluateCueDecision(
+      makeContext({
+        now: "2026-01-02T05:45:00.000Z",
+        historicalSleepPrior,
+      }),
+    );
+
+    expect(inside.sleepTiming.predictedRemWindows[0]).toMatchObject({
+      source: "historical_sleep",
+      startAt: "2026-01-02T04:50:00.000Z",
+      endAt: "2026-01-02T05:20:00.000Z",
+    });
+    expect(inside.scoreBreakdown.historicalRemWindowScore).toBeCloseTo(0.9);
+    expect(outside.scoreBreakdown.historicalRemWindowScore).toBe(0);
+    expect(inside.opportunityScore).toBeGreaterThan(outside.opportunityScore);
+  });
+
+  it("keeps default phone behavior close when no historical prior exists", () => {
+    const decision = evaluateCueDecision(makeContext());
+
+    expect(decision.sleepTiming.source).toBe("default");
+    expect(decision.sleepTiming.predictedRemWindows[0]?.source).toBe("default");
+    expect(decision.scoreBreakdown.historicalRemWindowScore).toBe(
+      decision.scoreBreakdown.timeOpportunityScore,
+    );
+    expect(decision.action).toBe("play_cue");
   });
 
   it("becomes eligible after cue-associated pause ends and movement is stable", () => {
@@ -472,6 +534,28 @@ describe("Watch Mode opportunity", () => {
       expect(decision.reason).toBe("sensor_quality_bad");
     },
   );
+
+  it("keeps live REM probability decisive even with a historical REM prior", () => {
+    const decision = evaluateCueDecision(
+      watchContext({
+        historicalSleepPrior: makeHistoricalPrior(),
+        watchSignal: {
+          epochStart: "2026-01-02T05:00:00.000Z",
+          epochEnd: "2026-01-02T05:00:30.000Z",
+          remProbability: 0.1,
+          sleepProbability: 0.8,
+          sensorQuality: "good",
+          stableLowMovementSeconds: 60,
+          consecutiveLikelyRemEpochs: 1,
+          connectivityState: "connected",
+        },
+      }),
+    );
+
+    expect(decision.sleepTiming.source).toBe("historical_sleep");
+    expect(decision.action).toBe("suppress");
+    expect(decision.reason).toBe("outside_sleep_opportunity");
+  });
 });
 
 describe("Sleep timing prior and snapshots", () => {
@@ -484,6 +568,10 @@ describe("Sleep timing prior and snapshots", () => {
     expect(timing.estimatedSleepOnsetAt).toBe("2026-01-01T23:20:00.000Z");
     expect(timing.expectedWakeAt).toBe(localClockAfter(trainingEndedAt, 7, 0));
     expect(timing.likelyPhoneCueWindowStart).toBe(cueWindowStart);
+    expect(timing.predictedRemWindows[0]).toMatchObject({
+      source: "default",
+      startAt: cueWindowStart,
+    });
     expect(timing.confidence).toBe("low");
     expect(timing.source).toBe("default");
   });
@@ -501,6 +589,9 @@ describe("Sleep timing prior and snapshots", () => {
     );
     expect(snapshot.scoreRows.map((row) => row.label)).toContain(
       "time opportunity",
+    );
+    expect(snapshot.scoreRows.map((row) => row.label)).toContain(
+      "historical REM window",
     );
   });
 
