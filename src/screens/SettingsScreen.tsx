@@ -17,6 +17,10 @@ import {
   type SoundSensitivityProfile,
 } from "@/src/engine";
 import type { ExternalSleepSource } from "@/src/domain/types";
+import {
+  phoneRuntime,
+  type PhoneRuntimeStatus,
+} from "@/src/native/phoneRuntime";
 import { cueAudio, TLR_PROTOCOL_VERSION } from "@/src/protocol/tlrProtocol";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
@@ -193,6 +197,8 @@ function formatOptionalDate(value: string | undefined): string {
 export function SettingsScreen() {
   const [isResetting, setIsResetting] = React.useState(false);
   const [resetError, setResetError] = React.useState<string | null>(null);
+  const [runtimeStatus, setRuntimeStatus] =
+    React.useState<PhoneRuntimeStatus | null>(null);
   const {
     consentChoices,
     engineSettings,
@@ -215,6 +221,39 @@ export function SettingsScreen() {
     },
     [updateEngineSettings],
   );
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadRuntimeStatus() {
+      try {
+        const status = await phoneRuntime.getPhoneRuntimeStatus();
+
+        if (!cancelled) {
+          setRuntimeStatus(status);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setRuntimeStatus({
+            available: false,
+            unavailableReason:
+              error instanceof Error ? error.message : "unknown",
+            running: false,
+            audioBedRunning: false,
+            motionRunning: false,
+            cueCount: 0,
+            cuesInBlock: 0,
+          });
+        }
+      }
+    }
+
+    void loadRuntimeStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const reset = React.useCallback(async () => {
     setIsResetting(true);
@@ -301,6 +340,37 @@ export function SettingsScreen() {
         <InfoRow label="cue sound" value={cueAudio.description} />
         <InfoRow label="structured upload" value={consentChoices.structuredResearchUploadConsent ? "enabled" : "off"} />
         <InfoRow label="dream upload" value={consentChoices.dreamJournalUploadConsent ? "enabled" : "off"} />
+      </Card>
+
+      <SectionTitle>iPhone Phone Mode</SectionTitle>
+      <Card>
+        <Text
+          selectable
+          style={{
+            color: colors.textPrimary,
+            fontSize: typography.body.fontSize,
+            lineHeight: typography.body.lineHeight,
+          }}
+        >
+          Locked iPhone Phone Mode requires a quiet audio bed.
+        </Text>
+        <NumericSettingInput
+          label="audio bed volume"
+          settingKey="phoneAudioBedVolume"
+          settings={engineSettings}
+          updateEngineSettings={updateEngineSettings}
+        />
+        <InfoRow
+          label="native runtime"
+          value={
+            runtimeStatus?.available
+              ? runtimeStatus.running
+                ? "running"
+                : "available"
+              : runtimeStatus?.unavailableReason ?? "unknown"
+          }
+        />
+        <InfoRow label="manual capability" value="unknown" />
       </Card>
 
       <SectionTitle>Engine assumptions</SectionTitle>
@@ -524,8 +594,7 @@ export function SettingsScreen() {
           }}
         >
           Engine settings are stored locally and used by the TypeScript
-          decision engine. Native sensing and overnight audio behavior are not
-          connected here.
+          decision engine and native iPhone Phone Mode plan builder.
         </Text>
       </Card>
 

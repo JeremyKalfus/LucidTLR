@@ -11,6 +11,10 @@ import {
 import type { ExternalSleepSource, PredictedRemWindow, RemDensityBin } from "@/src/domain/types";
 import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
+import {
+  phoneRuntime,
+  type NativePhoneRuntimeEvent,
+} from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -59,10 +63,52 @@ function formatDensitySummary(density: RemDensityBin[]): string {
     .join(" / ");
 }
 
+function runtimeEventLabel(event: NativePhoneRuntimeEvent): string {
+  const reason =
+    typeof event.payload.reason === "string" ? ` / ${event.payload.reason}` : "";
+  const cueAsset =
+    typeof event.payload.cueAsset === "string" ? ` / ${event.payload.cueAsset}` : "";
+  const movement =
+    typeof event.payload.roughMovementIntensity === "string"
+      ? ` / ${event.payload.roughMovementIntensity}`
+      : "";
+
+  return `${new Date(event.timestamp).toLocaleTimeString()} / ${event.eventType}${reason}${cueAsset}${movement}`;
+}
+
+function isTimelineEvent(event: NativePhoneRuntimeEvent): boolean {
+  return (
+    event.eventType === "cue_candidate" ||
+    event.eventType === "cue_suppressed" ||
+    event.eventType === "cue_play_attempted" ||
+    event.eventType === "cue_played" ||
+    event.eventType === "cue_failed" ||
+    event.eventType === "motion_summary" ||
+    event.eventType === "movement_pause_started" ||
+    event.eventType === "movement_pause_ended" ||
+    event.eventType === "cue_associated_movement" ||
+    event.eventType === "route_changed" ||
+    event.eventType === "interruption_started" ||
+    event.eventType === "interruption_ended" ||
+    event.eventType === "runtime_error"
+  );
+}
+
 export function DataScreen() {
   const [showEngineDetails, setShowEngineDetails] = React.useState(false);
-  const { engineDecisionLog, latestEngineSnapshot, sessionHistory, sleepHistory } =
-    useAppState();
+  const [runtimeLogs, setRuntimeLogs] = React.useState<NativePhoneRuntimeEvent[]>(
+    [],
+  );
+  const [runtimeLogError, setRuntimeLogError] = React.useState<string | null>(
+    null,
+  );
+  const {
+    activeSession,
+    engineDecisionLog,
+    latestEngineSnapshot,
+    sessionHistory,
+    sleepHistory,
+  } = useAppState();
   const decision = latestEngineSnapshot.decision;
   const watch = decision.watch;
   const historicalWindows = latestEngineSnapshot.sleepTiming.predictedRemWindows.filter(
@@ -75,6 +121,48 @@ export function DataScreen() {
   const showDecisionLog = isOvernightEngineStatus(
     latestEngineSnapshot.sessionStatus,
   );
+  const runtimeSession =
+    activeSession?.sessionType === "tlr" && activeSession.mode === "phone"
+      ? activeSession
+      : sessionHistory.find(
+          (session) =>
+            session.sessionType === "tlr" && session.mode === "phone",
+        );
+  const timelineEvents = runtimeLogs.filter(isTimelineEvent).slice(-40).reverse();
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadRuntimeLogs() {
+      if (!runtimeSession) {
+        setRuntimeLogs([]);
+        return;
+      }
+
+      try {
+        const logs = await phoneRuntime.getPhoneRuntimeLogs(runtimeSession.id);
+
+        if (!cancelled) {
+          setRuntimeLogs(logs);
+          setRuntimeLogError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setRuntimeLogError(
+            error instanceof Error
+              ? error.message
+              : "Could not load iPhone runtime logs.",
+          );
+        }
+      }
+    }
+
+    void loadRuntimeLogs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [runtimeSession]);
 
   return (
     <Screen>
@@ -207,6 +295,34 @@ export function DataScreen() {
           </Card>
         </View>
       ) : null}
+
+      <SectionTitle>iPhone runtime timeline</SectionTitle>
+      <Card>
+        {runtimeSession ? (
+          <InfoRow label="session" value={runtimeSession.id} />
+        ) : (
+          <InfoRow label="session" value="none yet" />
+        )}
+        {runtimeLogError ? (
+          <InfoRow label="runtime logs" value={runtimeLogError} />
+        ) : timelineEvents.length === 0 ? (
+          <InfoRow label="events" value="none yet" />
+        ) : (
+          timelineEvents.map((event) => (
+            <Text
+              selectable
+              key={event.id}
+              style={{
+                color: colors.textSecondary,
+                fontSize: typography.label.fontSize,
+                lineHeight: typography.label.lineHeight,
+              }}
+            >
+              {runtimeEventLabel(event)}
+            </Text>
+          ))
+        )}
+      </Card>
 
       <SectionTitle>Sleep history calibration</SectionTitle>
       <Card>

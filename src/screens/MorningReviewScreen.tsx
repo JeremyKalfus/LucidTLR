@@ -1,9 +1,10 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import React, { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import {
   Card,
+  InfoRow,
   PrimaryPillButton,
   Screen,
   SectionTitle,
@@ -15,6 +16,12 @@ import {
   type MorningReportField,
 } from "@/src/features/reports/morningReportSchema";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
+import {
+  importPhoneRuntimeLogsToLocalRecords,
+  phoneRuntime,
+  summarizePhoneRuntimeEvents,
+  type PhoneRuntimeLogSummary,
+} from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
@@ -129,10 +136,107 @@ export function MorningReviewScreen() {
   const { activeSession, sendSessionEvent } = useAppState();
   const [answers, setAnswers] = useState<Record<string, FieldValue>>({});
   const [showOptional, setShowOptional] = useState(false);
+  const [runtimeSummary, setRuntimeSummary] =
+    useState<PhoneRuntimeLogSummary | null>(null);
+  const [runtimeSummaryError, setRuntimeSummaryError] = useState<string | null>(
+    null,
+  );
+  const usesPhoneRuntime =
+    activeSession?.sessionType === "tlr" && activeSession.mode === "phone";
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadRuntimeSummary() {
+      if (!activeSession || !usesPhoneRuntime) {
+        return;
+      }
+
+      try {
+        const logs = await phoneRuntime.getPhoneRuntimeLogs(activeSession.id);
+
+        await importPhoneRuntimeLogsToLocalRecords(logs);
+
+        if (!cancelled) {
+          setRuntimeSummary(summarizePhoneRuntimeEvents(logs));
+          setRuntimeSummaryError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setRuntimeSummaryError(
+            error instanceof Error
+              ? error.message
+              : "Could not load native phone runtime logs.",
+          );
+        }
+      }
+    }
+
+    void loadRuntimeSummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSession, usesPhoneRuntime]);
 
   return (
     <Screen>
       <SectionTitle>Morning review</SectionTitle>
+
+      {usesPhoneRuntime ? (
+        <Card>
+          <InfoRow
+            label="cues played"
+            value={runtimeSummary ? String(runtimeSummary.cuesPlayed) : "loading"}
+          />
+          <InfoRow
+            label="cue failures"
+            value={runtimeSummary ? String(runtimeSummary.cueFailures) : "loading"}
+          />
+          <InfoRow
+            label="motion summaries"
+            value={
+              runtimeSummary ? String(runtimeSummary.motionSummaries) : "loading"
+            }
+          />
+          <InfoRow
+            label="movement pauses"
+            value={
+              runtimeSummary ? String(runtimeSummary.movementPauses) : "loading"
+            }
+          />
+          <InfoRow
+            label="interruptions"
+            value={runtimeSummary ? String(runtimeSummary.interruptions) : "loading"}
+          />
+          <InfoRow
+            label="runtime status"
+            value={
+              runtimeSummary
+                ? runtimeSummary.errored
+                  ? "error"
+                  : runtimeSummary.completed
+                    ? "completed"
+                    : runtimeSummary.stopped
+                      ? "stopped"
+                      : "not stopped"
+                : "loading"
+            }
+          />
+          {runtimeSummaryError ? (
+            <Text
+              selectable
+              style={{
+                color: colors.textSecondary,
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+              }}
+            >
+              {runtimeSummaryError}
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
 
       <Card>
         <Text

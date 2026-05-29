@@ -1,0 +1,1456 @@
+import AVFoundation
+import CoreMotion
+import React
+import UIKit
+
+private struct PhoneRuntimePlan: Codable {
+  struct AudioBed: Codable {
+    let enabled: Bool
+    let assetId: String
+    let volume: Double
+  }
+
+  struct Cue: Codable {
+    let cueId: String
+    let assetId: String
+    let durationSeconds: Double
+    let startVolume: Double
+    let rampPerCue: Double
+    let capVolume: Double
+  }
+
+  struct Timing: Codable {
+    struct PredictedRemWindow: Codable {
+      let startAt: String
+      let endAt: String
+      let confidence: Double
+      let source: String
+    }
+
+    let earliestCueAt: String
+    let latestCueAt: String
+    let predictedRemWindows: [PredictedRemWindow]
+    let cueIntervalRangeSeconds: [Double]
+  }
+
+  struct Movement: Codable {
+    let enabled: Bool
+    let summaryIntervalSeconds: Double
+    let stableLowMovementRequiredSeconds: Double
+    let largeMovementThreshold: Double
+    let cueAssociatedMovementWindowSeconds: Double
+    let cueAssociatedMovementPauseSeconds: Double
+  }
+
+  struct Budget: Codable {
+    let maxCuesTonight: Int
+    let maxCuesPerBlock: Int
+    let maxBlockDurationMinutes: Double
+    let minRestBetweenBlocksMinutes: Double
+  }
+
+  struct Pauses: Codable {
+    let minimumSecondsSinceLastCue: Double
+    let userReportedAwakeningPauseSeconds: Double
+  }
+
+  struct Safety: Codable {
+    let requireAudioBed: Bool
+    let stopAt: String?
+  }
+
+  let sessionId: String
+  let protocolVersion: String
+  let nativePolicyVersion: String
+  let mode: String
+  let startedAt: String
+  let trainingStartedAt: String
+  let trainingEndedAt: String
+  let audioBed: AudioBed
+  let cue: Cue
+  let timing: Timing
+  let movement: Movement
+  let budget: Budget
+  let pauses: Pauses
+  let safety: Safety
+}
+
+private struct PhoneRuntimeState: Codable {
+  let sessionId: String
+  var runtimeStartedAt: String
+  var cueCount: Int
+  var cuesInBlock: Int
+  var blockStartedAt: String?
+  var blockRestUntil: String?
+  var lastCueAt: String?
+  var nextCueCandidateAt: String?
+  var movementPauseUntil: String?
+  var cueAssociatedMovementPauseUntil: String?
+  var stableLowMovementSeconds: Double
+  var latestDecisionReason: String?
+  var latestMovementIntensity: String?
+  var latestMotionSummaryAt: String?
+  var latestRuntimeError: String?
+}
+
+private struct RuntimeSnapshot: Codable {
+  let plan: PhoneRuntimePlan
+  let state: PhoneRuntimeState
+}
+
+@objc(LucidCuePhoneRuntime)
+class LucidCuePhoneRuntime: NSObject {
+  private let queue = DispatchQueue(label: "com.lucidcue.phone-runtime")
+  private let isoFormatter = ISO8601DateFormatter()
+  private let motionManager = CMMotionManager()
+  private let motionQueue = OperationQueue()
+  private var activePlan: PhoneRuntimePlan?
+  private var state: PhoneRuntimeState?
+  private var activeLogs: [[String: Any]] = []
+  private var decisionTimer: DispatchSourceTimer?
+  private var motionSummaryTimer: DispatchSourceTimer?
+  private var batteryTimer: DispatchSourceTimer?
+  private var audioEngine: AVAudioEngine?
+  private var audioBedPlayer: AVAudioPlayerNode?
+  private var cuePlayer: AVAudioPlayerNode?
+  private var motionSampleCount = 0
+  private var motionMagnitudeSum = 0.0
+  private var motionMagnitudeMax = 0.0
+  private var lastMotionSummaryAt: Date?
+  private var lastCueAssociatedMovementAt: String?
+
+  override init() {
+    isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    super.init()
+    UIDevice.current.isBatteryMonitoringEnabled = true
+    observeSystemEvents()
+    restoreRuntimeIfNeeded()
+  }
+
+  @objc
+  static func requiresMainQueueSetup() -> Bool {
+    false
+  }
+
+  @objc(startPhoneTlrSession:resolver:rejecter:)
+  func startPhoneTlrSession(
+    _ planDictionary: NSDictionary,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let plan: PhoneRuntimePlan
+
+    do {
+      plan = try decodePlan(planDictionary)
+      try validatePlan(plan)
+    } catch {
+      reject("invalid_phone_runtime_plan", error.localizedDescription, error)
+      return
+    }
+
+    queue.async {
+      self.stopRuntime(reason: "replaced_by_new_session", errorMessage: nil, logEvent: true)
+      self.activePlan = plan
+      self.state = PhoneRuntimeState(
+        sessionId: plan.sessionId,
+        runtimeStartedAt: self.formatDate(Date()),
+        cueCount: 0,
+        cuesInBlock: 0,
+        stableLowMovementSeconds: 0,
+        latestDecisionReason: "runtime_started"
+      )
+      self.activeLogs = self.loadLogs(sessionId: plan.sessionId)
+
+      self.appendEvent("runtime_started", payload: [
+        "protocolVersion": plan.protocolVersion,
+        "nativePolicyVersion": plan.nativePolicyVersion,
+        "startedAt": plan.startedAt,
+        "trainingStartedAt": plan.trainingStartedAt,
+        "trainingEndedAt": plan.trainingEndedAt,
+        "earliestCueAt": plan.timing.earliestCueAt,
+        "latestCueAt": plan.timing.latestCueAt,
+        "audioBedAsset": plan.audioBed.assetId,
+        "cueAsset": plan.cue.assetId,
+        "appState": self.currentAppState()
+      ])
+
+      do {
+        try self.configureAudioSession()
+        try self.startAudioBed(plan: plan)
+        try self.startMotionSummaries(plan: plan)
+        self.logBatterySummary(reason: "runtime_start")
+        self.scheduleDecisionLoop()
+        self.scheduleBatteryTimer()
+        self.persistRuntimeSnapshot()
+        resolve(nil)
+      } catch {
+        self.appendEvent("runtime_error", payload: [
+          "operation": "start_runtime",
+          "error": error.localizedDescription
+        ])
+        self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+        reject("phone_runtime_start_failed", error.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc(stopPhoneTlrSession:resolver:rejecter:)
+  func stopPhoneTlrSession(
+    _ options: NSDictionary?,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let reason = options?["reason"] as? String ?? "user_stopped"
+
+    queue.async {
+      self.stopRuntime(reason: reason, errorMessage: nil, logEvent: true)
+      resolve(nil)
+    }
+  }
+
+  @objc(getPhoneRuntimeStatus:rejecter:)
+  func getPhoneRuntimeStatus(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      resolve(self.statusPayload())
+    }
+  }
+
+  @objc(getPhoneRuntimeLogs:resolver:rejecter:)
+  func getPhoneRuntimeLogs(
+    _ sessionId: NSString,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      resolve(self.loadLogs(sessionId: sessionId as String))
+    }
+  }
+
+  @objc(clearPhoneRuntimeLogs:resolver:rejecter:)
+  func clearPhoneRuntimeLogs(
+    _ sessionId: NSString,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      let id = sessionId as String
+
+      if id.isEmpty {
+        self.activeLogs = []
+        try? FileManager.default.removeItem(at: self.storageDirectory())
+      } else {
+        if id == self.activePlan?.sessionId {
+          self.activeLogs = []
+        }
+
+        try? FileManager.default.removeItem(at: self.logsURL(sessionId: id))
+      }
+
+      resolve(nil)
+    }
+  }
+
+  private func decodePlan(_ dictionary: NSDictionary) throws -> PhoneRuntimePlan {
+    let data = try JSONSerialization.data(withJSONObject: dictionary, options: [])
+
+    return try JSONDecoder().decode(PhoneRuntimePlan.self, from: data)
+  }
+
+  private func validatePlan(_ plan: PhoneRuntimePlan) throws {
+    guard plan.mode == "phone" else {
+      throw runtimeError("Phone runtime only accepts mode=phone.")
+    }
+
+    guard plan.audioBed.enabled && plan.safety.requireAudioBed else {
+      throw runtimeError("Phone runtime requires an audible audio bed.")
+    }
+
+    guard plan.audioBed.volume > 0 else {
+      throw runtimeError("Phone runtime audio bed volume must be audible.")
+    }
+
+    guard !plan.cue.assetId.isEmpty else {
+      throw runtimeError("Phone runtime requires a cue WAV asset.")
+    }
+
+    guard plan.timing.cueIntervalRangeSeconds.count == 2 else {
+      throw runtimeError("Phone runtime requires a cue interval range.")
+    }
+  }
+
+  private func configureAudioSession() throws {
+    let session = AVAudioSession.sharedInstance()
+    var lastError: Error?
+
+    for candidate in audioSessionOptionCandidates() {
+      do {
+        try session.setCategory(.playback, mode: .default, options: candidate.options)
+        try session.setActive(true)
+        var payload = audioSessionPayload()
+        payload["configurationAttempt"] = candidate.name
+        appendEvent("audio_session_configured", payload: payload)
+        return
+      } catch {
+        lastError = error
+      }
+    }
+
+    throw lastError ?? runtimeError("Could not configure AVAudioSession.")
+  }
+
+  private func audioSessionOptionCandidates() -> [(name: String, options: AVAudioSession.CategoryOptions)] {
+    [
+      ("playback_mix", [.mixWithOthers]),
+      ("playback_plain", [])
+    ]
+  }
+
+  private func startAudioBed(plan: PhoneRuntimePlan) throws {
+    let engine = ensureAudioEngine()
+    let format = engine.mainMixerNode.outputFormat(forBus: 0)
+    let buffer = makeSineBuffer(
+      format: format,
+      frequency: 220,
+      durationSeconds: 6,
+      amplitude: 0.18
+    )
+
+    audioBedPlayer?.stop()
+    audioBedPlayer?.volume = Float(clamp(plan.audioBed.volume, min: 0, max: 1))
+    audioBedPlayer?.scheduleBuffer(buffer, at: nil, options: .loops)
+
+    if !engine.isRunning {
+      try engine.start()
+    }
+
+    audioBedPlayer?.play()
+    appendEvent("audio_bed_started", payload: [
+      "assetId": plan.audioBed.assetId,
+      "volume": plan.audioBed.volume,
+      "audible": true,
+      "toneHz": 220
+    ])
+  }
+
+  private func recoverAudioBedIfNeeded(reason: String) {
+    guard let plan = activePlan, activePlan != nil else {
+      return
+    }
+
+    do {
+      try configureAudioSession()
+      try startAudioBed(plan: plan)
+      appendEvent("decision_tick", payload: [
+        "reason": "audio_bed_recovered",
+        "recoveryReason": reason
+      ])
+    } catch {
+      appendEvent("audio_bed_failed", payload: [
+        "reason": reason,
+        "error": error.localizedDescription
+      ])
+      appendEvent("runtime_error", payload: [
+        "operation": "recover_audio_bed",
+        "error": error.localizedDescription
+      ])
+      stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+    }
+  }
+
+  private func startMotionSummaries(plan: PhoneRuntimePlan) throws {
+    guard plan.movement.enabled else {
+      throw runtimeError("Phone runtime requires movement summaries.")
+    }
+
+    guard motionManager.isAccelerometerAvailable else {
+      throw runtimeError("Accelerometer is unavailable.")
+    }
+
+    motionSampleCount = 0
+    motionMagnitudeSum = 0
+    motionMagnitudeMax = 0
+    lastMotionSummaryAt = Date()
+    motionManager.accelerometerUpdateInterval = 0.2
+    motionManager.startAccelerometerUpdates(to: motionQueue) { [weak self] data, error in
+      guard let self else {
+        return
+      }
+
+      if let error {
+        self.logEvent("runtime_error", payload: [
+          "operation": "accelerometer_update",
+          "error": error.localizedDescription
+        ])
+        return
+      }
+
+      guard let acceleration = data?.acceleration else {
+        return
+      }
+
+      let magnitude = sqrt(
+        acceleration.x * acceleration.x +
+          acceleration.y * acceleration.y +
+          acceleration.z * acceleration.z
+      )
+
+      self.queue.async {
+        self.motionSampleCount += 1
+        self.motionMagnitudeSum += magnitude
+        self.motionMagnitudeMax = max(self.motionMagnitudeMax, magnitude)
+      }
+    }
+
+    motionSummaryTimer?.cancel()
+    motionSummaryTimer = makeTimer(
+      after: max(1, plan.movement.summaryIntervalSeconds),
+      repeating: max(1, plan.movement.summaryIntervalSeconds)
+    ) { [weak self] in
+      self?.appendMotionSummary()
+    }
+
+    appendEvent("motion_started", payload: [
+      "source": "phone_accelerometer",
+      "updateInterval": motionManager.accelerometerUpdateInterval,
+      "summaryIntervalSeconds": plan.movement.summaryIntervalSeconds
+    ])
+  }
+
+  private func appendMotionSummary() {
+    guard let plan = activePlan, var state else {
+      return
+    }
+
+    let now = Date()
+    let sampleCount = motionSampleCount
+    let mean = sampleCount > 0 ? motionMagnitudeSum / Double(sampleCount) : 0
+    let maxMagnitude = motionMagnitudeMax
+    let lastSummaryAt = lastMotionSummaryAt ?? now
+    let elapsed = now.timeIntervalSince(lastSummaryAt)
+    let intensity = movementIntensity(mean: mean, max: maxMagnitude, sampleCount: sampleCount)
+
+    if intensity == "still" || intensity == "light" {
+      state.stableLowMovementSeconds += elapsed
+    } else {
+      state.stableLowMovementSeconds = 0
+    }
+
+    if intensity == "large" {
+      startMovementPause(
+        state: &state,
+        reason: "movement",
+        now: now,
+        durationSeconds: plan.movement.stableLowMovementRequiredSeconds,
+        roughMovementIntensity: intensity
+      )
+    }
+
+    handleCueAssociatedMovementIfNeeded(
+      state: &state,
+      now: now,
+      roughMovementIntensity: intensity
+    )
+
+    state.latestMovementIntensity = intensity
+    state.latestMotionSummaryAt = formatDate(now)
+    self.state = state
+
+    appendEvent("motion_summary", payload: [
+      "sampleCount": sampleCount,
+      "meanAccelerationMagnitude": mean,
+      "maxAccelerationMagnitude": maxMagnitude,
+      "roughMovementIntensity": intensity,
+      "movementIntensity": movementIntensityScore(intensity),
+      "stableLowMovementSeconds": state.stableLowMovementSeconds,
+      "largeMovementThreshold": plan.movement.largeMovementThreshold,
+      "orientation": orientationString(UIDevice.current.orientation),
+      "updateInterval": motionManager.accelerometerUpdateInterval,
+      "backgroundState": currentAppState(),
+      "timeSinceLastSummary": elapsed
+    ])
+
+    motionSampleCount = 0
+    motionMagnitudeSum = 0
+    motionMagnitudeMax = 0
+    lastMotionSummaryAt = now
+    persistRuntimeSnapshot()
+  }
+
+  private func handleCueAssociatedMovementIfNeeded(
+    state: inout PhoneRuntimeState,
+    now: Date,
+    roughMovementIntensity: String
+  ) {
+    guard
+      roughMovementIntensity != "still",
+      let plan = activePlan,
+      let lastCueAt = state.lastCueAt,
+      let lastCueDate = parseDate(lastCueAt)
+    else {
+      return
+    }
+
+    let secondsAfterCue = now.timeIntervalSince(lastCueDate)
+
+    guard secondsAfterCue >= 0,
+      secondsAfterCue <= plan.movement.cueAssociatedMovementWindowSeconds
+    else {
+      return
+    }
+
+    let movementAt = formatDate(now)
+
+    guard lastCueAssociatedMovementAt != movementAt else {
+      return
+    }
+
+    lastCueAssociatedMovementAt = movementAt
+    let pauseUntil = now.addingTimeInterval(plan.movement.cueAssociatedMovementPauseSeconds)
+    state.cueAssociatedMovementPauseUntil = formatDate(pauseUntil)
+    appendEvent("cue_associated_movement", payload: [
+      "lastCueAt": lastCueAt,
+      "movementAt": movementAt,
+      "secondsAfterCue": secondsAfterCue,
+      "roughMovementIntensity": roughMovementIntensity,
+      "pauseUntil": formatDate(pauseUntil)
+    ])
+    appendEvent("movement_pause_started", payload: [
+      "reason": "cue_associated_movement",
+      "roughMovementIntensity": roughMovementIntensity,
+      "pauseUntil": formatDate(pauseUntil)
+    ])
+  }
+
+  private func startMovementPause(
+    state: inout PhoneRuntimeState,
+    reason: String,
+    now: Date,
+    durationSeconds: Double,
+    roughMovementIntensity: String
+  ) {
+    let pauseUntil = now.addingTimeInterval(durationSeconds)
+    let pauseUntilString = formatDate(pauseUntil)
+    let currentPauseUntil = state.movementPauseUntil.flatMap(parseDate)
+
+    if currentPauseUntil == nil || currentPauseUntil! < pauseUntil {
+      state.movementPauseUntil = pauseUntilString
+      appendEvent("movement_pause_started", payload: [
+        "reason": reason,
+        "roughMovementIntensity": roughMovementIntensity,
+        "pauseUntil": pauseUntilString
+      ])
+    }
+  }
+
+  private func scheduleDecisionLoop() {
+    decisionTimer?.cancel()
+    decisionTimer = makeTimer(after: 5, repeating: 5) { [weak self] in
+      self?.decisionTick()
+    }
+  }
+
+  private func decisionTick() {
+    guard let plan = activePlan, var state else {
+      return
+    }
+
+    let now = Date()
+
+    if let stopAt = plan.safety.stopAt.flatMap(parseDate), now >= stopAt {
+      stopRuntime(reason: "completed", errorMessage: nil, logEvent: true)
+      return
+    }
+
+    guard isAudioBedRunning() else {
+      appendEvent("audio_bed_failed", payload: [
+        "reason": "not_running_at_decision_tick"
+      ])
+      stopRuntime(reason: "error", errorMessage: "Audio bed stopped.", logEvent: true)
+      return
+    }
+
+    let reason = evaluateDecision(plan: plan, state: &state, now: now)
+    state.latestDecisionReason = reason
+    self.state = state
+
+    appendEvent("decision_tick", payload: [
+      "reason": reason,
+      "cueCount": state.cueCount,
+      "cuesInBlock": state.cuesInBlock,
+      "stableLowMovementSeconds": state.stableLowMovementSeconds,
+      "nextCueCandidateAt": state.nextCueCandidateAt ?? "",
+      "appState": currentAppState()
+    ])
+    persistRuntimeSnapshot()
+  }
+
+  private func evaluateDecision(
+    plan: PhoneRuntimePlan,
+    state: inout PhoneRuntimeState,
+    now: Date
+  ) -> String {
+    clearExpiredPauses(state: &state, now: now)
+
+    guard let earliestCueAt = parseDate(plan.timing.earliestCueAt),
+      let latestCueAt = parseDate(plan.timing.latestCueAt)
+    else {
+      appendEvent("runtime_error", payload: [
+        "operation": "parse_cue_window",
+        "error": "invalid cue window"
+      ])
+      return "runtime_error"
+    }
+
+    if now < earliestCueAt {
+      appendCueSuppressed(reason: "before_cue_window", nextCheckAt: earliestCueAt)
+      return "before_cue_window"
+    }
+
+    if now > latestCueAt {
+      appendCueSuppressed(reason: "outside_cue_window", nextCheckAt: nil)
+      return "outside_cue_window"
+    }
+
+    if let pauseUntil = state.movementPauseUntil.flatMap(parseDate), now < pauseUntil {
+      appendCueSuppressed(reason: "movement", nextCheckAt: pauseUntil)
+      return "movement"
+    }
+
+    if let pauseUntil = state.cueAssociatedMovementPauseUntil.flatMap(parseDate),
+      now < pauseUntil {
+      appendCueSuppressed(reason: "cue_associated_movement", nextCheckAt: pauseUntil)
+      return "cue_associated_movement"
+    }
+
+    if state.stableLowMovementSeconds < plan.movement.stableLowMovementRequiredSeconds {
+      appendCueSuppressed(
+        reason: "movement",
+        nextCheckAt: now.addingTimeInterval(
+          plan.movement.stableLowMovementRequiredSeconds - state.stableLowMovementSeconds
+        )
+      )
+      return "movement"
+    }
+
+    if let lastCueAt = state.lastCueAt.flatMap(parseDate) {
+      let nextAllowedCueAt = lastCueAt.addingTimeInterval(plan.pauses.minimumSecondsSinceLastCue)
+
+      if now < nextAllowedCueAt {
+        appendCueSuppressed(reason: "recent_cue", nextCheckAt: nextAllowedCueAt)
+        return "recent_cue"
+      }
+    }
+
+    if let budgetReason = applyBudgetGate(plan: plan, state: &state, now: now) {
+      return budgetReason
+    }
+
+    if state.nextCueCandidateAt == nil {
+      scheduleNextCueCandidate(plan: plan, state: &state, after: now)
+      appendCueSuppressed(reason: "waiting_for_next_candidate", nextCheckAt: state.nextCueCandidateAt.flatMap(parseDate))
+      return "waiting_for_next_candidate"
+    }
+
+    if let candidateAt = state.nextCueCandidateAt.flatMap(parseDate), now < candidateAt {
+      appendCueSuppressed(reason: "waiting_for_next_candidate", nextCheckAt: candidateAt)
+      return "waiting_for_next_candidate"
+    }
+
+    appendEvent("cue_candidate", payload: [
+      "candidateAt": state.nextCueCandidateAt ?? formatDate(now),
+      "windowMatch": windowMatch(plan: plan, now: now),
+      "cueCount": state.cueCount,
+      "cuesInBlock": state.cuesInBlock
+    ])
+    playCue(plan: plan, state: &state, plannedAt: state.nextCueCandidateAt.flatMap(parseDate) ?? now)
+    scheduleNextCueCandidate(plan: plan, state: &state, after: now)
+    return "cue_played"
+  }
+
+  private func clearExpiredPauses(state: inout PhoneRuntimeState, now: Date) {
+    if let pauseUntil = state.movementPauseUntil.flatMap(parseDate), now >= pauseUntil {
+      appendEvent("movement_pause_ended", payload: [
+        "reason": "movement",
+        "pauseEndedAt": formatDate(now)
+      ])
+      state.movementPauseUntil = nil
+    }
+
+    if let pauseUntil = state.cueAssociatedMovementPauseUntil.flatMap(parseDate),
+      now >= pauseUntil {
+      appendEvent("movement_pause_ended", payload: [
+        "reason": "cue_associated_movement",
+        "pauseEndedAt": formatDate(now)
+      ])
+      state.cueAssociatedMovementPauseUntil = nil
+    }
+  }
+
+  private func applyBudgetGate(
+    plan: PhoneRuntimePlan,
+    state: inout PhoneRuntimeState,
+    now: Date
+  ) -> String? {
+    if state.cueCount >= plan.budget.maxCuesTonight {
+      appendEvent("budget_exhausted", payload: [
+        "reason": "nightly_budget_exhausted",
+        "cueCount": state.cueCount,
+        "maxCuesTonight": plan.budget.maxCuesTonight
+      ])
+      appendCueSuppressed(reason: "cue_budget_exhausted", nextCheckAt: nil)
+      return "cue_budget_exhausted"
+    }
+
+    if let blockRestUntil = state.blockRestUntil.flatMap(parseDate) {
+      if now < blockRestUntil {
+        appendCueSuppressed(reason: "cue_budget_exhausted", nextCheckAt: blockRestUntil)
+        return "cue_budget_exhausted"
+      }
+
+      state.blockRestUntil = nil
+      state.blockStartedAt = nil
+      state.cuesInBlock = 0
+    }
+
+    let blockStartedAt = state.blockStartedAt.flatMap(parseDate)
+    let blockDurationExhausted =
+      blockStartedAt.map {
+        now.timeIntervalSince($0) >= plan.budget.maxBlockDurationMinutes * 60
+      } ?? false
+
+    if state.cuesInBlock >= plan.budget.maxCuesPerBlock || blockDurationExhausted {
+      let restUntil = now.addingTimeInterval(plan.budget.minRestBetweenBlocksMinutes * 60)
+      state.blockRestUntil = formatDate(restUntil)
+      appendEvent("budget_exhausted", payload: [
+        "reason": state.cuesInBlock >= plan.budget.maxCuesPerBlock
+          ? "block_cue_count_exhausted"
+          : "block_duration_exhausted",
+        "cuesInBlock": state.cuesInBlock,
+        "restUntil": formatDate(restUntil)
+      ])
+      appendCueSuppressed(reason: "cue_budget_exhausted", nextCheckAt: restUntil)
+      return "cue_budget_exhausted"
+    }
+
+    return nil
+  }
+
+  private func scheduleNextCueCandidate(
+    plan: PhoneRuntimePlan,
+    state: inout PhoneRuntimeState,
+    after date: Date
+  ) {
+    let intervalMin = max(1, plan.timing.cueIntervalRangeSeconds[0])
+    let intervalMax = max(intervalMin, plan.timing.cueIntervalRangeSeconds[1])
+    let interval = Double.random(in: intervalMin...intervalMax)
+    let candidateAt = date.addingTimeInterval(interval)
+
+    state.nextCueCandidateAt = formatDate(candidateAt)
+    appendEvent("cue_candidate", payload: [
+      "candidateAt": formatDate(candidateAt),
+      "intervalSeconds": interval,
+      "reason": "scheduled_next_candidate"
+    ])
+  }
+
+  private func appendCueSuppressed(reason: String, nextCheckAt: Date?) {
+    appendEvent("cue_suppressed", payload: [
+      "reason": reason,
+      "nextCheckAt": nextCheckAt.map(formatDate) ?? ""
+    ])
+  }
+
+  private func playCue(
+    plan: PhoneRuntimePlan,
+    state: inout PhoneRuntimeState,
+    plannedAt: Date
+  ) {
+    let attemptAt = Date()
+    let volume = min(
+      plan.cue.capVolume,
+      plan.cue.startVolume + plan.cue.rampPerCue * Double(state.cueCount)
+    )
+    let driftMs = Int(attemptAt.timeIntervalSince(plannedAt) * 1000)
+    let cueAsset = cueResourceName(assetId: plan.cue.assetId)
+
+    appendEvent("cue_play_attempted", payload: [
+      "cueId": plan.cue.cueId,
+      "cueAsset": "\(cueAsset).wav",
+      "plannedCueAt": formatDate(plannedAt),
+      "actualCueAttemptAt": formatDate(attemptAt),
+      "volume": volume,
+      "driftMs": driftMs
+    ])
+
+    do {
+      guard let url = Bundle.main.url(forResource: cueAsset, withExtension: "wav") else {
+        throw runtimeError("Missing bundled cue WAV \(cueAsset).wav.")
+      }
+
+      let engine = ensureAudioEngine()
+      let file = try AVAudioFile(forReading: url)
+
+      cuePlayer?.stop()
+      cuePlayer?.volume = Float(clamp(volume, min: 0, max: 1))
+      cuePlayer?.scheduleFile(file, at: nil)
+
+      if !engine.isRunning {
+        try engine.start()
+      }
+
+      cuePlayer?.play()
+
+      if state.blockStartedAt == nil {
+        state.blockStartedAt = formatDate(attemptAt)
+      }
+
+      state.cueCount += 1
+      state.cuesInBlock += 1
+      state.lastCueAt = formatDate(attemptAt)
+
+      appendEvent("cue_played", payload: [
+        "cueId": plan.cue.cueId,
+        "cueAsset": "\(cueAsset).wav",
+        "plannedCueAt": formatDate(plannedAt),
+        "actualCueAttemptAt": formatDate(attemptAt),
+        "actualCuePlayedAt": formatDate(Date()),
+        "durationSeconds": Double(file.length) / file.fileFormat.sampleRate,
+        "sampleRate": file.fileFormat.sampleRate,
+        "channelCount": file.fileFormat.channelCount,
+        "volume": volume,
+        "driftMs": driftMs,
+        "success": true
+      ])
+    } catch {
+      appendEvent("cue_failed", payload: [
+        "cueId": plan.cue.cueId,
+        "cueAsset": "\(cueAsset).wav",
+        "plannedCueAt": formatDate(plannedAt),
+        "actualCueAttemptAt": formatDate(attemptAt),
+        "volume": volume,
+        "driftMs": driftMs,
+        "success": false,
+        "error": error.localizedDescription
+      ])
+    }
+  }
+
+  private func cueResourceName(assetId: String) -> String {
+    switch assetId {
+    case "lucidcue_feasibility_low", "lucidcue_feasibility_low.wav":
+      return "lucidcue_feasibility_low"
+    case "lucidcue_feasibility_high", "lucidcue_feasibility_high.wav":
+      return "lucidcue_feasibility_high"
+    case "soft-harp-3s":
+      return "lucidcue_feasibility_medium"
+    default:
+      return "lucidcue_feasibility_medium"
+    }
+  }
+
+  private func windowMatch(plan: PhoneRuntimePlan, now: Date) -> String {
+    for window in plan.timing.predictedRemWindows {
+      guard let start = parseDate(window.startAt), let end = parseDate(window.endAt) else {
+        continue
+      }
+
+      if now >= start && now <= end {
+        return window.source
+      }
+    }
+
+    return "cue_window"
+  }
+
+  private func stopRuntime(
+    reason: String,
+    errorMessage: String?,
+    logEvent: Bool
+  ) {
+    decisionTimer?.cancel()
+    decisionTimer = nil
+    motionSummaryTimer?.cancel()
+    motionSummaryTimer = nil
+    batteryTimer?.cancel()
+    batteryTimer = nil
+
+    if motionManager.isAccelerometerActive {
+      appendMotionSummary()
+      motionManager.stopAccelerometerUpdates()
+    }
+
+    audioBedPlayer?.stop()
+    cuePlayer?.stop()
+    audioEngine?.stop()
+    audioEngine = nil
+    audioBedPlayer = nil
+    cuePlayer = nil
+
+    if logEvent, let plan = activePlan {
+      if let errorMessage {
+        state?.latestRuntimeError = errorMessage
+      }
+
+      appendEvent("runtime_stopped", payload: [
+        "reason": reason,
+        "stoppedAt": formatDate(Date()),
+        "cueCount": state?.cueCount ?? 0,
+        "cuesInBlock": state?.cuesInBlock ?? 0,
+        "error": errorMessage ?? ""
+      ])
+      persistLogs(sessionId: plan.sessionId)
+    }
+
+    activePlan = nil
+    state = nil
+    activeLogs = []
+    lastCueAssociatedMovementAt = nil
+    clearRuntimeSnapshot()
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+  }
+
+  private func ensureAudioEngine() -> AVAudioEngine {
+    if let audioEngine {
+      return audioEngine
+    }
+
+    let engine = AVAudioEngine()
+    let bedPlayer = AVAudioPlayerNode()
+    let cuePlayer = AVAudioPlayerNode()
+
+    engine.attach(bedPlayer)
+    engine.attach(cuePlayer)
+    engine.connect(bedPlayer, to: engine.mainMixerNode, format: nil)
+    engine.connect(cuePlayer, to: engine.mainMixerNode, format: nil)
+
+    audioEngine = engine
+    audioBedPlayer = bedPlayer
+    self.cuePlayer = cuePlayer
+
+    return engine
+  }
+
+  private func isAudioBedRunning() -> Bool {
+    audioEngine?.isRunning == true && audioBedPlayer?.isPlaying == true
+  }
+
+  private func makeSineBuffer(
+    format: AVAudioFormat,
+    frequency: Double,
+    durationSeconds: Double,
+    amplitude: Double
+  ) -> AVAudioPCMBuffer {
+    let sampleRate = format.sampleRate
+    let frameCount = AVAudioFrameCount(sampleRate * durationSeconds)
+    let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+    buffer.frameLength = frameCount
+
+    guard let channels = buffer.floatChannelData else {
+      return buffer
+    }
+
+    for frame in 0..<Int(frameCount) {
+      let time = Double(frame) / sampleRate
+      let sample = Float(sin(2 * Double.pi * frequency * time) * amplitude)
+
+      for channelIndex in 0..<Int(format.channelCount) {
+        channels[channelIndex][frame] = sample
+      }
+    }
+
+    return buffer
+  }
+
+  private func makeTimer(
+    after seconds: TimeInterval,
+    repeating: TimeInterval? = nil,
+    handler: @escaping () -> Void
+  ) -> DispatchSourceTimer {
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+
+    if let repeating {
+      timer.schedule(deadline: .now() + seconds, repeating: repeating)
+    } else {
+      timer.schedule(deadline: .now() + seconds)
+    }
+
+    timer.setEventHandler(handler: handler)
+    timer.resume()
+
+    return timer
+  }
+
+  private func scheduleBatteryTimer() {
+    batteryTimer?.cancel()
+    batteryTimer = makeTimer(after: 60, repeating: 60) { [weak self] in
+      self?.logBatterySummary(reason: "periodic")
+    }
+  }
+
+  private func observeSystemEvents() {
+    let center = NotificationCenter.default
+
+    center.addObserver(
+      self,
+      selector: #selector(handleAudioInterruption),
+      name: AVAudioSession.interruptionNotification,
+      object: AVAudioSession.sharedInstance()
+    )
+    center.addObserver(
+      self,
+      selector: #selector(handleAudioRouteChange),
+      name: AVAudioSession.routeChangeNotification,
+      object: AVAudioSession.sharedInstance()
+    )
+    center.addObserver(
+      self,
+      selector: #selector(handleBatteryChange),
+      name: UIDevice.batteryLevelDidChangeNotification,
+      object: nil
+    )
+    center.addObserver(
+      self,
+      selector: #selector(handleBatteryChange),
+      name: UIDevice.batteryStateDidChangeNotification,
+      object: nil
+    )
+    center.addObserver(
+      self,
+      selector: #selector(handleLowPowerModeChange),
+      name: Notification.Name.NSProcessInfoPowerStateDidChange,
+      object: nil
+    )
+    center.addObserver(
+      self,
+      selector: #selector(handleThermalStateChange),
+      name: ProcessInfo.thermalStateDidChangeNotification,
+      object: nil
+    )
+  }
+
+  @objc private func handleAudioInterruption(_ notification: Notification) {
+    let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+    let type = rawType.flatMap(AVAudioSession.InterruptionType.init(rawValue:))
+    let payload: [String: Any] = [
+      "rawType": rawType ?? 0,
+      "type": type?.description ?? "unknown",
+      "options": notification.userInfo?[AVAudioSessionInterruptionOptionKey] ?? 0
+    ]
+
+    if type == .began {
+      logEvent("interruption_started", payload: payload)
+      return
+    }
+
+    logEvent("interruption_ended", payload: payload)
+    queue.async {
+      self.recoverAudioBedIfNeeded(reason: "interruption_ended")
+    }
+  }
+
+  @objc private func handleAudioRouteChange(_ notification: Notification) {
+    let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+    let reason = rawReason.flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))
+    var payload = audioRoutePayload()
+    payload["reason"] = reason?.description ?? "unknown"
+    payload["rawReason"] = rawReason ?? 0
+
+    logEvent("route_changed", payload: payload)
+  }
+
+  @objc private func handleBatteryChange() {
+    logEvent("battery_summary", payload: batteryPayload(reason: "battery_notification"))
+  }
+
+  @objc private func handleLowPowerModeChange() {
+    logEvent("battery_summary", payload: batteryPayload(reason: "low_power_mode_change"))
+  }
+
+  @objc private func handleThermalStateChange() {
+    logEvent("thermal_state_changed", payload: [
+      "thermalState": thermalStateString(ProcessInfo.processInfo.thermalState)
+    ])
+  }
+
+  private func logBatterySummary(reason: String) {
+    appendEvent("battery_summary", payload: batteryPayload(reason: reason))
+  }
+
+  private func statusPayload() -> [String: Any] {
+    guard let plan = activePlan, let state else {
+      return [
+        "available": true,
+        "running": false,
+        "audioBedRunning": false,
+        "motionRunning": false,
+        "cueCount": 0,
+        "cuesInBlock": 0
+      ]
+    }
+
+    return [
+      "available": true,
+      "running": true,
+      "sessionId": plan.sessionId,
+      "audioBedRunning": isAudioBedRunning(),
+      "motionRunning": motionManager.isAccelerometerActive,
+      "cueCount": state.cueCount,
+      "cuesInBlock": state.cuesInBlock,
+      "lastCueAt": state.lastCueAt ?? "",
+      "nextCueCandidateAt": state.nextCueCandidateAt ?? "",
+      "latestDecisionReason": state.latestDecisionReason ?? "",
+      "latestMovementIntensity": state.latestMovementIntensity ?? "",
+      "latestMotionSummaryAt": state.latestMotionSummaryAt ?? "",
+      "latestRuntimeError": state.latestRuntimeError ?? ""
+    ]
+  }
+
+  private func appendEvent(_ eventType: String, payload: [String: Any]) {
+    guard let sessionId = activePlan?.sessionId ?? state?.sessionId else {
+      return
+    }
+
+    let event: [String: Any] = [
+      "id": UUID().uuidString,
+      "sessionId": sessionId,
+      "timestamp": formatDate(Date()),
+      "eventType": eventType,
+      "payload": sanitizePayload(payload)
+    ]
+
+    activeLogs.append(event)
+    persistLogs(sessionId: sessionId)
+  }
+
+  private func logEvent(_ eventType: String, payload: [String: Any]) {
+    queue.async {
+      self.appendEvent(eventType, payload: payload)
+    }
+  }
+
+  private func persistLogs(sessionId: String) {
+    do {
+      let data = try JSONSerialization.data(withJSONObject: activeLogs, options: [.prettyPrinted])
+      try ensureStorageDirectory()
+      try data.write(to: logsURL(sessionId: sessionId), options: [.atomic])
+    } catch {
+      NSLog("LucidCue phone runtime log write failed: \(error.localizedDescription)")
+    }
+  }
+
+  private func loadLogs(sessionId: String) -> [[String: Any]] {
+    guard
+      let data = try? Data(contentsOf: logsURL(sessionId: sessionId)),
+      let decoded = try? JSONSerialization.jsonObject(with: data),
+      let logs = decoded as? [[String: Any]]
+    else {
+      return []
+    }
+
+    return logs
+  }
+
+  private func persistRuntimeSnapshot() {
+    guard let activePlan, let state else {
+      return
+    }
+
+    if let data = try? JSONEncoder().encode(RuntimeSnapshot(plan: activePlan, state: state)) {
+      UserDefaults.standard.set(data, forKey: "lucidcue_phone_runtime_active_snapshot")
+    }
+  }
+
+  private func clearRuntimeSnapshot() {
+    UserDefaults.standard.removeObject(forKey: "lucidcue_phone_runtime_active_snapshot")
+  }
+
+  private func restoreRuntimeIfNeeded() {
+    guard
+      let data = UserDefaults.standard.data(forKey: "lucidcue_phone_runtime_active_snapshot"),
+      let snapshot = try? JSONDecoder().decode(RuntimeSnapshot.self, from: data)
+    else {
+      return
+    }
+
+    activePlan = snapshot.plan
+    state = snapshot.state
+    activeLogs = loadLogs(sessionId: snapshot.plan.sessionId)
+    appendEvent("decision_tick", payload: [
+      "reason": "runtime_restored",
+      "sessionId": snapshot.plan.sessionId
+    ])
+
+    queue.async {
+      do {
+        try self.configureAudioSession()
+        try self.startAudioBed(plan: snapshot.plan)
+        try self.startMotionSummaries(plan: snapshot.plan)
+        self.scheduleDecisionLoop()
+        self.scheduleBatteryTimer()
+      } catch {
+        self.appendEvent("runtime_error", payload: [
+          "operation": "restore_runtime",
+          "error": error.localizedDescription
+        ])
+        self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+      }
+    }
+  }
+
+  private func logsURL(sessionId: String) -> URL {
+    storageDirectory().appendingPathComponent("\(sessionId)-events.json")
+  }
+
+  private func storageDirectory() -> URL {
+    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("LucidCuePhoneRuntime", isDirectory: true)
+  }
+
+  private func ensureStorageDirectory() throws {
+    try FileManager.default.createDirectory(
+      at: storageDirectory(),
+      withIntermediateDirectories: true
+    )
+  }
+
+  private func sanitizePayload(_ value: Any) -> Any {
+    if JSONSerialization.isValidJSONObject(["value": value]) {
+      return value
+    }
+
+    if let error = value as? Error {
+      return error.localizedDescription
+    }
+
+    return String(describing: value)
+  }
+
+  private func runtimeError(_ message: String) -> NSError {
+    NSError(
+      domain: "LucidCuePhoneRuntime",
+      code: -1,
+      userInfo: [NSLocalizedDescriptionKey: message]
+    )
+  }
+
+  private func formatDate(_ date: Date) -> String {
+    isoFormatter.string(from: date)
+  }
+
+  private func parseDate(_ value: String) -> Date? {
+    isoFormatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+  }
+
+  private func movementIntensity(mean: Double, max: Double, sampleCount: Int) -> String {
+    if sampleCount == 0 {
+      return "still"
+    }
+
+    if max >= 1.45 {
+      return "large"
+    }
+
+    if max >= 1.18 {
+      return "moderate"
+    }
+
+    if max >= 1.06 || abs(mean - 1.0) >= 0.04 {
+      return "light"
+    }
+
+    return "still"
+  }
+
+  private func movementIntensityScore(_ intensity: String) -> Double {
+    switch intensity {
+    case "large":
+      return 1
+    case "moderate":
+      return 0.66
+    case "light":
+      return 0.33
+    default:
+      return 0
+    }
+  }
+
+  private func clamp(_ value: Double, min: Double, max: Double) -> Double {
+    Swift.min(max, Swift.max(min, value))
+  }
+
+  private func batteryPayload(reason: String) -> [String: Any] {
+    [
+      "reason": reason,
+      "batteryLevel": UIDevice.current.batteryLevel,
+      "batteryState": batteryStateString(UIDevice.current.batteryState),
+      "lowPowerMode": ProcessInfo.processInfo.isLowPowerModeEnabled,
+      "thermalState": thermalStateString(ProcessInfo.processInfo.thermalState),
+      "appState": currentAppState()
+    ]
+  }
+
+  private func audioSessionPayload() -> [String: Any] {
+    var payload = audioRoutePayload()
+    let session = AVAudioSession.sharedInstance()
+
+    payload["category"] = session.category.rawValue
+    payload["mode"] = session.mode.rawValue
+    payload["options"] = audioOptionsPayload(session.categoryOptions)
+    payload["sampleRate"] = session.sampleRate
+    payload["isOtherAudioPlaying"] = session.isOtherAudioPlaying
+
+    return payload
+  }
+
+  private func audioRoutePayload() -> [String: Any] {
+    let route = AVAudioSession.sharedInstance().currentRoute
+
+    return [
+      "inputs": route.inputs.map { port in
+        [
+          "portName": port.portName,
+          "portType": port.portType.rawValue,
+          "uid": port.uid
+        ]
+      },
+      "outputs": route.outputs.map { port in
+        [
+          "portName": port.portName,
+          "portType": port.portType.rawValue,
+          "uid": port.uid
+        ]
+      }
+    ]
+  }
+
+  private func audioOptionsPayload(_ options: AVAudioSession.CategoryOptions) -> [String] {
+    var values: [String] = []
+
+    if options.contains(.mixWithOthers) {
+      values.append("mixWithOthers")
+    }
+
+    if options.contains(.duckOthers) {
+      values.append("duckOthers")
+    }
+
+    if options.contains(.allowBluetooth) {
+      values.append("allowBluetooth")
+    }
+
+    if options.contains(.allowAirPlay) {
+      values.append("allowAirPlay")
+    }
+
+    if options.contains(.defaultToSpeaker) {
+      values.append("defaultToSpeaker")
+    }
+
+    return values
+  }
+
+  private func currentAppState() -> String {
+    switch UIApplication.shared.applicationState {
+    case .active:
+      return "active"
+    case .background:
+      return "background"
+    case .inactive:
+      return "inactive"
+    @unknown default:
+      return "unknown"
+    }
+  }
+
+  private func orientationString(_ orientation: UIDeviceOrientation) -> String {
+    switch orientation {
+    case .portrait:
+      return "portrait"
+    case .portraitUpsideDown:
+      return "portrait_upside_down"
+    case .landscapeLeft:
+      return "landscape_left"
+    case .landscapeRight:
+      return "landscape_right"
+    case .faceUp:
+      return "face_up"
+    case .faceDown:
+      return "face_down"
+    case .unknown:
+      return "unknown"
+    @unknown default:
+      return "unknown"
+    }
+  }
+
+  private func batteryStateString(_ state: UIDevice.BatteryState) -> String {
+    switch state {
+    case .unknown:
+      return "unknown"
+    case .unplugged:
+      return "unplugged"
+    case .charging:
+      return "charging"
+    case .full:
+      return "full"
+    @unknown default:
+      return "unknown"
+    }
+  }
+
+  private func thermalStateString(_ state: ProcessInfo.ThermalState) -> String {
+    switch state {
+    case .nominal:
+      return "nominal"
+    case .fair:
+      return "fair"
+    case .serious:
+      return "serious"
+    case .critical:
+      return "critical"
+    @unknown default:
+      return "unknown"
+    }
+  }
+}
+
+private extension AVAudioSession.InterruptionType {
+  var description: String {
+    switch self {
+    case .began:
+      return "began"
+    case .ended:
+      return "ended"
+    @unknown default:
+      return "unknown"
+    }
+  }
+}
+
+private extension AVAudioSession.RouteChangeReason {
+  var description: String {
+    switch self {
+    case .unknown:
+      return "unknown"
+    case .newDeviceAvailable:
+      return "new_device_available"
+    case .oldDeviceUnavailable:
+      return "old_device_unavailable"
+    case .categoryChange:
+      return "category_change"
+    case .override:
+      return "override"
+    case .wakeFromSleep:
+      return "wake_from_sleep"
+    case .noSuitableRouteForCategory:
+      return "no_suitable_route_for_category"
+    case .routeConfigurationChange:
+      return "route_configuration_change"
+    @unknown default:
+      return "unknown"
+    }
+  }
+}

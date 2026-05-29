@@ -45,6 +45,7 @@ export interface CueDecisionSettings {
   cueAssociatedMovementWindowSeconds: number;
   cueAssociatedMovementPauseSeconds: number;
   userReportedAwakeningPauseSeconds: number;
+  phoneAudioBedVolume: number;
   phoneScoreThreshold: number;
   remThreshold: number;
   minimumWatchSleepProbability: number;
@@ -321,6 +322,7 @@ export function createDefaultEngineSettings(
       phoneCueing.cueAssociatedMovementPauseSeconds,
     userReportedAwakeningPauseSeconds:
       phoneCueing.userReportedAwakeningPauseSeconds,
+    phoneAudioBedVolume: 0.03,
     phoneScoreThreshold: 0.7,
     remThreshold: watchCueing.defaultRemThreshold,
     minimumWatchSleepProbability: watchCueing.minimumSleepProbability,
@@ -344,6 +346,10 @@ export function normalizeEngineSettings(
     minInterval,
     Math.round(settings.cueIntervalRangeSeconds[1]),
   );
+  const phoneAudioBedVolume =
+    typeof settings.phoneAudioBedVolume === "number"
+      ? settings.phoneAudioBedVolume
+      : 0.03;
   const volumeStartLevel = clamp(settings.volumeStartLevel, 0, 1);
   const volumeRampPerCue =
     settings.volumeRampPerCue > 0.02
@@ -388,6 +394,7 @@ export function normalizeEngineSettings(
       0,
       Math.round(settings.userReportedAwakeningPauseSeconds),
     ),
+    phoneAudioBedVolume: clamp(phoneAudioBedVolume, 0.01, 0.2),
     phoneScoreThreshold: clamp(settings.phoneScoreThreshold, 0, 1),
     remThreshold: clamp(settings.remThreshold, 0, 1),
     minimumWatchSleepProbability: clamp(

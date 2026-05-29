@@ -10,7 +10,14 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.jeremykalfus.lucidcue",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "LucidCue uses microphone access only for local debug feasibility audio analysis when explicitly enabled on the hidden development screen.",
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,6 +30,12 @@
     "plugins": [
       "expo-router",
       "expo-sqlite"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1927a3da-a23c-4160-b86e-a312d9326558"
+      }
+    }
   }
 }

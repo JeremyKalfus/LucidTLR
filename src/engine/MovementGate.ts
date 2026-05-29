@@ -4,8 +4,9 @@ import type {
   MovementGateState,
 } from "./CueDecisionTypes";
 import { addSeconds, secondsBetween } from "./CueDecisionTypes";
+import { phoneCueing } from "@/src/protocol/tlrProtocol";
 
-const largeMovementThreshold = 0.7;
+const largeMovementThreshold = phoneCueing.largeMovementThreshold;
 
 export interface MovementGateResult {
   blocked: boolean;

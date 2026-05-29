@@ -17,3 +17,10 @@ This is not a medical device or treatment, and results are not guaranteed.
 - Local SQLite and Supabase schemas are scaffolded.
 - Upload decisions are centralized and consent-gated.
 - Native overnight behavior is represented by TypeScript adapter interfaces.
+
+## Development Builds
+
+Physical-device testing of native iOS behavior requires a custom Expo
+development build, not Expo Go. See [docs/dev-build.md](docs/dev-build.md).
+The hidden iPhone locked-background feasibility harness is documented in
+[docs/iphone-feasibility.md](docs/iphone-feasibility.md).

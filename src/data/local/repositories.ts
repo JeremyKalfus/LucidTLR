@@ -2,15 +2,24 @@ import type { LocalDb } from "./localDb";
 import type { OnboardingAnswer, OnboardingAnswerValue } from "@/src/domain/forms";
 import type {
   AppMode,
+  CueEvent,
   ExternalSleepSession,
   ExternalSleepSource,
   ExternalSleepStage,
   ExternalSleepStageSegment,
   HistoricalSleepPrior,
   HistoricalSleepPriorConfidence,
+  MovementEvent,
+  NightSession,
   RemDensityBin,
+  SessionStatus,
+  SessionType,
   UploadStatus,
 } from "@/src/domain/types";
+import type {
+  PhoneRuntimeCueRecordDraft,
+  PhoneRuntimeMovementRecordDraft,
+} from "@/src/native/phoneRuntime/NativePhoneSessionPlan";
 import { ONBOARDING_FORM_ID, onboardingSteps } from "@/src/features/onboarding/onboardingSteps";
 
 export const ONBOARDING_COMPLETED_AT_SETTING = "onboarding_completed_at";
@@ -44,6 +53,40 @@ interface QuestionnaireResponseRow {
 
 interface AppSettingRow {
   value_json: string;
+}
+
+interface NightSessionRow {
+  id: string;
+  participant_id: string;
+  session_type: SessionType;
+  mode: AppMode | null;
+  status: SessionStatus;
+  protocol_version: string;
+  started_at: string;
+  ended_at: string | null;
+  training_started_at: string | null;
+  training_ended_at: string | null;
+  cueing_started_at: string | null;
+}
+
+interface CueEventRow {
+  id: string;
+  session_id: string;
+  timestamp: string;
+  cue_id: string;
+  volume_level: number;
+  played: number;
+  suppression_reason: CueEvent["suppressionReason"];
+}
+
+interface MovementEventRow {
+  id: string;
+  session_id: string;
+  timestamp: string;
+  intensity: number | null;
+  was_cue_associated: number;
+  pause_started_at: string | null;
+  pause_ended_at: string | null;
 }
 
 interface ExternalSleepSessionRow {
@@ -172,6 +215,48 @@ function toExternalSleepStageSegment(
   };
 }
 
+function toNightSession(row: NightSessionRow): NightSession {
+  return {
+    id: row.id,
+    participantId: row.participant_id,
+    sessionType: row.session_type,
+    mode: row.mode,
+    status: row.status,
+    protocolVersion: row.protocol_version,
+    startedAt: row.started_at,
+    endedAt: row.ended_at ?? undefined,
+    trainingStartedAt: row.training_started_at ?? undefined,
+    trainingEndedAt: row.training_ended_at ?? undefined,
+    cueingStartedAt: row.cueing_started_at ?? undefined,
+  };
+}
+
+function toCueEvent(row: CueEventRow): CueEvent {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    timestamp: row.timestamp,
+    cueId: row.cue_id,
+    volumeLevel: row.volume_level,
+    deliveryDevice: "phone",
+    played: row.played === 1,
+    suppressionReason: row.suppression_reason,
+  };
+}
+
+function toMovementEvent(row: MovementEventRow): MovementEvent {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    timestamp: row.timestamp,
+    source: "phone",
+    intensity: row.intensity ?? 0,
+    wasCueAssociated: row.was_cue_associated === 1,
+    pauseStartedAt: row.pause_started_at ?? undefined,
+    pauseEndedAt: row.pause_ended_at ?? undefined,
+  };
+}
+
 export async function getLocalParticipant(
   db: LocalDb,
 ): Promise<LocalParticipantRow | null> {
@@ -211,6 +296,179 @@ on conflict(id) do update set
       input.dreamJournalUploadAccepted ? 1 : 0,
     ],
   );
+}
+
+export async function upsertLocalSession(input: {
+  db: LocalDb;
+  session: NightSession;
+  uploadStatus?: UploadStatus;
+}): Promise<void> {
+  await input.db.execute(
+    `insert into sessions (
+  id,
+  participant_id,
+  session_type,
+  mode,
+  status,
+  protocol_version,
+  started_at,
+  ended_at,
+  training_started_at,
+  training_ended_at,
+  cueing_started_at,
+  upload_status
+) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+on conflict(id) do update set
+  status = excluded.status,
+  ended_at = excluded.ended_at,
+  training_started_at = excluded.training_started_at,
+  training_ended_at = excluded.training_ended_at,
+  cueing_started_at = excluded.cueing_started_at,
+  upload_status = excluded.upload_status`,
+    [
+      input.session.id,
+      input.session.participantId,
+      input.session.sessionType,
+      input.session.mode,
+      input.session.status,
+      input.session.protocolVersion,
+      input.session.startedAt,
+      input.session.endedAt ?? null,
+      input.session.trainingStartedAt ?? null,
+      input.session.trainingEndedAt ?? null,
+      input.session.cueingStartedAt ?? null,
+      input.uploadStatus ?? "local_only",
+    ],
+  );
+}
+
+export async function loadLocalSessions(input: {
+  db: LocalDb;
+  participantId: string;
+}): Promise<NightSession[]> {
+  const rows = await input.db.query<NightSessionRow>(
+    `select id,
+  participant_id,
+  session_type,
+  mode,
+  status,
+  protocol_version,
+  started_at,
+  ended_at,
+  training_started_at,
+  training_ended_at,
+  cueing_started_at
+from sessions
+where participant_id = ?
+order by started_at desc`,
+    [input.participantId],
+  );
+
+  return rows.map(toNightSession);
+}
+
+export async function savePhoneRuntimeCueRecords(input: {
+  db: LocalDb;
+  records: PhoneRuntimeCueRecordDraft[];
+}): Promise<void> {
+  for (const record of input.records) {
+    await input.db.execute(
+      `insert into cue_events (
+  id,
+  session_id,
+  timestamp,
+  cue_id,
+  volume_level,
+  delivery_device,
+  played,
+  suppression_reason,
+  upload_status
+) values (?, ?, ?, ?, ?, 'phone', ?, ?, 'local_only')
+on conflict(id) do nothing`,
+      [
+        record.id,
+        record.sessionId,
+        record.timestamp,
+        record.cueId,
+        record.volumeLevel,
+        record.played ? 1 : 0,
+        record.suppressionReason,
+      ],
+    );
+  }
+}
+
+export async function savePhoneRuntimeMovementRecords(input: {
+  db: LocalDb;
+  records: PhoneRuntimeMovementRecordDraft[];
+}): Promise<void> {
+  for (const record of input.records) {
+    await input.db.execute(
+      `insert into movement_events (
+  id,
+  session_id,
+  timestamp,
+  source,
+  intensity,
+  was_cue_associated,
+  pause_started_at,
+  pause_ended_at,
+  upload_status
+) values (?, ?, ?, 'phone', ?, ?, ?, ?, 'local_only')
+on conflict(id) do nothing`,
+      [
+        record.id,
+        record.sessionId,
+        record.timestamp,
+        record.intensity,
+        record.wasCueAssociated ? 1 : 0,
+        record.pauseStartedAt ?? null,
+        record.pauseEndedAt ?? null,
+      ],
+    );
+  }
+}
+
+export async function loadCueEventsForSession(input: {
+  db: LocalDb;
+  sessionId: string;
+}): Promise<CueEvent[]> {
+  const rows = await input.db.query<CueEventRow>(
+    `select id,
+  session_id,
+  timestamp,
+  cue_id,
+  volume_level,
+  played,
+  suppression_reason
+from cue_events
+where session_id = ?
+order by timestamp asc`,
+    [input.sessionId],
+  );
+
+  return rows.map(toCueEvent);
+}
+
+export async function loadMovementEventsForSession(input: {
+  db: LocalDb;
+  sessionId: string;
+}): Promise<MovementEvent[]> {
+  const rows = await input.db.query<MovementEventRow>(
+    `select id,
+  session_id,
+  timestamp,
+  intensity,
+  was_cue_associated,
+  pause_started_at,
+  pause_ended_at
+from movement_events
+where session_id = ?
+order by timestamp asc`,
+    [input.sessionId],
+  );
+
+  return rows.map(toMovementEvent);
 }
 
 export async function replaceStructuredConsent(input: {

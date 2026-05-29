@@ -23,6 +23,8 @@ export const phoneCueing = {
   cueAssociatedMovementWindowSeconds: 30,
   cueAssociatedMovementPauseSeconds: 180,
   userReportedAwakeningPauseSeconds: 45 * 60,
+  motionSummaryIntervalSeconds: 5,
+  largeMovementThreshold: 0.7,
   defaultVolumeRampPerCue: 0.0016,
   slowVolumeRampPerCue: 0.0008,
 } as const;

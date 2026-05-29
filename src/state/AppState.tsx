@@ -7,6 +7,7 @@ import {
   clearAllLocalData,
   getAppSetting,
   getLocalParticipant,
+  loadLocalSessions,
   loadOnboardingResponses,
   ONBOARDING_COMPLETED_AT_SETTING,
   ONBOARDING_VERSION_SETTING,
@@ -14,6 +15,7 @@ import {
   saveOnboardingResponses,
   setAppSetting,
   upsertLocalParticipant,
+  upsertLocalSession,
 } from "@/src/data/local/repositories";
 import { createLocalUploadQueueStore } from "@/src/data/local/uploadQueueStore";
 import { clearSupabaseSessionForLocalReset, prepareAnonymousResearchUpload } from "@/src/data/supabase/researchUpload";
@@ -97,7 +99,10 @@ interface AppStateValue {
   completeOnboarding: () => Promise<void>;
   resetAppData: () => Promise<void>;
   startSession: (sessionType: SessionType) => NightSession;
-  sendSessionEvent: (event: SessionEvent) => void;
+  sendSessionEvent: (
+    event: SessionEvent,
+    timestamp?: string,
+  ) => NightSession | null;
   addJournalEntry: (text: string) => void;
 }
 
@@ -373,6 +378,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
               participantId: participant.id,
             })
           : emptySleepHistoryState();
+        const persistedSessions = participant
+          ? await loadLocalSessions({
+              db,
+              participantId: participant.id,
+            })
+          : [];
 
         if (cancelled) {
           return;
@@ -394,6 +405,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
 
         setOnboardingAnswers(persistedAnswers);
+        setSessionHistory(persistedSessions);
+        setActiveSession(
+          persistedSessions.find(
+            (session) =>
+              session.status !== "ended" &&
+              session.status !== "morning_review_complete",
+          ) ?? null,
+        );
         setEngineSettings(nextEngineSettings);
         setSleepHistory(persistedSleepHistory);
         setOnboardingComplete(Boolean(completedAt && onboardingVersion));
@@ -700,35 +719,49 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       setActiveSession(nextSession);
       setSessionHistory((sessions) => [nextSession, ...sessions]);
+      void getLocalDb().then((db) =>
+        upsertLocalSession({
+          db,
+          session: nextSession,
+        }),
+      );
       return nextSession;
     },
     [participantId, selectedMode],
   );
 
-  const sendSessionEvent = React.useCallback((event: SessionEvent) => {
-    setActiveSession((session) => {
+  const sendSessionEvent = React.useCallback(
+    (event: SessionEvent, timestamp = new Date().toISOString()) => {
       if (
-        !session ||
-        !canTransitionSession(session.sessionType, session.status, event)
+        !activeSession ||
+        !canTransitionSession(
+          activeSession.sessionType,
+          activeSession.status,
+          event,
+        )
       ) {
-        return session;
+        return null;
       }
 
-      const nextSession = applySessionEvent(
-        session,
-        event,
-        new Date().toISOString(),
-      );
+      const nextSession = applySessionEvent(activeSession, event, timestamp);
 
+      setActiveSession(nextSession);
       setSessionHistory((sessions) =>
         sessions.map((candidate) =>
           candidate.id === nextSession.id ? nextSession : candidate,
         ),
       );
+      void getLocalDb().then((db) =>
+        upsertLocalSession({
+          db,
+          session: nextSession,
+        }),
+      );
 
       return nextSession;
-    });
-  }, []);
+    },
+    [activeSession],
+  );
 
   const addJournalEntry = React.useCallback((text: string) => {
     const now = new Date().toISOString();

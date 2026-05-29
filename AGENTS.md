@@ -6,10 +6,7 @@ unless otherwise stated. Keep code clean and simple. Break up tasks into
 micro-steps and test each step before continuing. If something fails tests, find
 the reason--do not do workarounds.
 
-For UI work, use the Figma MCP connection documented in `docs/figma/FIGMA_MCP.md`. 
-Treat that Figma file as inspiration, a broad guideline, and general info 
-for exact colors, fonts, sizes, radii, spacing, borders, icons, and screenshots. ALWAYS be incredibly internally consistent with UI. Don't double-nest cards or use 100 different fonts or font sizes. Try to stick to 2 different fonts, 2-3 font sizes. 
-
+For UI work, use UI skills and always ask Jeremy. ALWAYS be incredibly internally consistent with UI. Don't double-nest cards or use 100 different fonts or font sizes. Try to stick to 2 different fonts, 2-3 font sizes. You may refer to the Figma MCP connection documented in `docs/figma/FIGMA_MCP.md`, but we don't use it much anymore.
 
 Liberally ask for clarification and user input on UI, functionality-based, or
 science informed app decisions. You are not the decider of these things, Jeremy

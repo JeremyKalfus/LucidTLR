@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { Headphones, Play, StepForward } from "lucide-react-native";
-import { Text, View } from "react-native";
+import React from "react";
+import { Alert, Text, View } from "react-native";
 
 import {
   Card,
@@ -12,11 +13,27 @@ import {
 } from "@/src/components/ui";
 import { cueAudio, PRESLEEP_SCRIPT_NOTICE, PRESLEEP_SCRIPT_PLACEHOLDER } from "@/src/protocol/tlrProtocol";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
+import {
+  buildNativePhoneSessionPlan,
+  phoneRuntime,
+} from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Phone runtime failed.";
+}
+
 export function PresleepTrainingScreen() {
-  const { activeSession, sendSessionEvent, startSession } = useAppState();
+  const {
+    activeSession,
+    engineSettings,
+    latestEngineSnapshot,
+    sendSessionEvent,
+    startSession,
+  } = useAppState();
+  const [runtimeError, setRuntimeError] = React.useState<string | null>(null);
+  const [isStartingRuntime, setIsStartingRuntime] = React.useState(false);
   const session =
     activeSession?.sessionType === "tlr" ? activeSession : null;
   const canStart =
@@ -25,6 +42,44 @@ export function PresleepTrainingScreen() {
   const canFinish =
     session?.status === "training" &&
     canTransitionSession("tlr", session.status, "finish_training");
+  const canStartRuntime =
+    session?.status === "waiting_for_cue_window" && session.mode === "phone";
+
+  async function startPhoneRuntime() {
+    const timestamp = new Date().toISOString();
+    const runtimeSession =
+      session?.status === "training"
+        ? sendSessionEvent("finish_training", timestamp)
+        : session;
+
+    if (!runtimeSession) {
+      return;
+    }
+
+    setRuntimeError(null);
+    setIsStartingRuntime(true);
+
+    try {
+      const plan = buildNativePhoneSessionPlan({
+        session: runtimeSession,
+        sleepTiming: latestEngineSnapshot.sleepTiming,
+        settings: engineSettings,
+      });
+
+      await phoneRuntime.startPhoneTlrSession(plan);
+      router.push("/active-night-session");
+    } catch (error) {
+      const message = errorMessage(error);
+
+      setRuntimeError(message);
+
+      if (process.env.EXPO_OS !== "web") {
+        Alert.alert("Phone runtime failed", message);
+      }
+    } finally {
+      setIsStartingRuntime(false);
+    }
+  }
 
   if (canFinish) {
     return (
@@ -32,11 +87,24 @@ export function PresleepTrainingScreen() {
         <RunningSessionClock
           startedAt={session.trainingStartedAt ?? session.startedAt}
         />
+        {runtimeError ? (
+          <Text
+            selectable
+            style={{
+              color: colors.textSecondary,
+              fontSize: typography.body.fontSize,
+              lineHeight: typography.body.lineHeight,
+              textAlign: "center",
+            }}
+          >
+            {runtimeError}
+          </Text>
+        ) : null}
         <PrimaryPillButton
-          label="Skip"
+          disabled={isStartingRuntime}
+          label={isStartingRuntime ? "Starting Phone Runtime..." : "Start Night Session"}
           onPress={() => {
-            sendSessionEvent("finish_training");
-            router.push("/active-night-session");
+            void startPhoneRuntime();
           }}
         />
       </Screen>
@@ -62,7 +130,7 @@ export function PresleepTrainingScreen() {
           </Text>
         </View>
         <InfoRow label="cue" value={cueAudio.description} />
-        <InfoRow label="audio adapter" value="not connected in this shell" />
+        <InfoRow label="runtime" value="native iPhone Phone Mode after training" />
       </Card>
 
       <Card>
@@ -108,10 +176,39 @@ export function PresleepTrainingScreen() {
       ) : null}
 
       {session?.status === "waiting_for_cue_window" ? (
-        <PrimaryPillButton
-          label="Open Night Session"
-          onPress={() => router.push("/active-night-session")}
-        />
+        <View style={{ gap: 12 }}>
+          {runtimeError ? (
+            <Card>
+              <Text
+                selectable
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: typography.body.fontSize,
+                  lineHeight: typography.body.lineHeight,
+                }}
+              >
+                {runtimeError}
+              </Text>
+            </Card>
+          ) : null}
+          {canStartRuntime ? (
+            <PrimaryPillButton
+              disabled={isStartingRuntime}
+              label={
+                isStartingRuntime
+                  ? "Starting Phone Runtime..."
+                  : "Start Native Phone Runtime"
+              }
+              onPress={() => {
+                void startPhoneRuntime();
+              }}
+            />
+          ) : null}
+          <PrimaryPillButton
+            label="Open Night Session"
+            onPress={() => router.push("/active-night-session")}
+          />
+        </View>
       ) : null}
 
       <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
@@ -125,7 +222,8 @@ export function PresleepTrainingScreen() {
             lineHeight: typography.label.lineHeight,
           }}
         >
-          Controls are visual placeholders only; no real audio is implemented.
+          Training player controls are placeholders; locked Phone Mode uses the
+          native runtime after training.
         </Text>
       </View>
     </Screen>
