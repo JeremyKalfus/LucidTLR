@@ -5,8 +5,15 @@ import {
   buildSleepTimingPrior,
   createDefaultEngineSettings,
 } from "@/src/engine";
-import { buildNativePhoneSessionPlan } from "@/src/native/phoneRuntime/buildNativePhoneSessionPlan";
-import { validateNativePhoneSessionPlan } from "@/src/native/phoneRuntime/NativePhoneSessionPlan";
+import { createDefaultTlrOptions } from "@/src/features/tlrOptions/tlrOptions";
+import {
+  buildNativePhoneSessionPlan,
+  buildNativePhoneSessionPlanFromCompletedSession,
+} from "@/src/native/phoneRuntime/buildNativePhoneSessionPlan";
+import {
+  nativePhoneSessionUsesPredictedRemWindows,
+  validateNativePhoneSessionPlan,
+} from "@/src/native/phoneRuntime/NativePhoneSessionPlan";
 
 const trainingEndedAt = "2026-01-20T04:00:00.000Z";
 
@@ -65,6 +72,39 @@ describe("buildNativePhoneSessionPlan", () => {
         confidence: 0.72,
       }),
     ]);
+    expect(nativePhoneSessionUsesPredictedRemWindows(plan)).toBe(true);
+  });
+
+  it("preserves broad protocol cueing when there are no historical REM windows", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const plan = buildNativePhoneSessionPlanFromCompletedSession({
+      session: session(),
+      settings,
+    });
+
+    expect(plan.timing.predictedRemWindows).toEqual([
+      expect.objectContaining({
+        startAt: plan.timing.earliestCueAt,
+        endAt: plan.timing.latestCueAt,
+        source: "default",
+      }),
+    ]);
+    expect(nativePhoneSessionUsesPredictedRemWindows(plan)).toBe(false);
+  });
+
+  it("recomputes sleep timing from the completed session training end", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const completedSession = {
+      ...session(),
+      trainingEndedAt: "2026-01-20T04:30:00.000Z",
+    };
+    const plan = buildNativePhoneSessionPlanFromCompletedSession({
+      session: completedSession,
+      settings,
+    });
+
+    expect(plan.trainingEndedAt).toBe("2026-01-20T04:30:00.000Z");
+    expect(plan.timing.earliestCueAt).toBe("2026-01-20T10:30:00.000Z");
   });
 
   it("includes the shifted historical cue window when history pulls it earlier", () => {
@@ -114,6 +154,10 @@ describe("buildNativePhoneSessionPlan", () => {
       volume: 0.04,
     });
     expect(plan.safety.requireAudioBed).toBe(true);
+    expect(plan.backgroundAudio).toMatchObject({
+      option: "none",
+      enabled: false,
+    });
     expect(plan.cue).toMatchObject({
       startVolume: 0.12,
       rampPerCue: 0.002,
@@ -131,6 +175,51 @@ describe("buildNativePhoneSessionPlan", () => {
       maxBlockDurationMinutes: 8,
       minRestBetweenBlocksMinutes: 18,
     });
+  });
+
+  it("passes user-facing background audio and alarm fields through", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const plan = buildNativePhoneSessionPlanFromCompletedSession({
+      session: session(),
+      settings,
+      tlrOptions: {
+        ...createDefaultTlrOptions("06:30"),
+        backgroundNoise: "white_noise",
+        alarm: {
+          enabled: true,
+          time: "06:30",
+          autoShutoff: true,
+          ringDurationMinutes: 5,
+        },
+      },
+    });
+
+    expect(plan.audioBed.enabled).toBe(true);
+    expect(plan.safety.requireAudioBed).toBe(true);
+    expect(plan.backgroundAudio).toMatchObject({
+      option: "white_noise",
+      enabled: true,
+    });
+    expect(plan.alarm).toMatchObject({
+      enabled: true,
+      autoShutoff: true,
+      ringDurationSeconds: 300,
+    });
+    expect(plan.alarm.fireAt).toBe(plan.safety.stopAt);
+  });
+
+  it("represents skipped guided training explicitly in the native plan", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const plan = buildNativePhoneSessionPlanFromCompletedSession({
+      session: {
+        ...session(),
+        trainingStartedAt: trainingEndedAt,
+        guidedTrainingSkipped: true,
+      },
+      settings,
+    });
+
+    expect(plan.training.guidedTrainingSkipped).toBe(true);
   });
 
   it("rejects plans without a required audible audio bed", () => {

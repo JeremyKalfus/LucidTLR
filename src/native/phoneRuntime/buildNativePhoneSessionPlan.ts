@@ -1,6 +1,18 @@
-import type { NightSession } from "@/src/domain/types";
+import type {
+  HistoricalSleepPrior,
+  NightSession,
+  TlrOptions,
+} from "@/src/domain/types";
 import type { CueDecisionSettings, SleepTimingPrior } from "@/src/engine";
-import { buildCueId } from "@/src/engine";
+import { buildCueId, buildSleepTimingPrior } from "@/src/engine";
+import {
+  BACKGROUND_AUDIO_VOLUME,
+  BINAURAL_BEAT_FREQUENCY_HZ,
+  BINAURAL_CARRIER_FREQUENCY_HZ,
+  DEFAULT_ALARM_VOLUME,
+  normalizeTlrOptions,
+  resolveAlarmFireAt,
+} from "@/src/features/tlrOptions/tlrOptions";
 import { cueAudio, phoneCueing } from "@/src/protocol/tlrProtocol";
 
 import {
@@ -15,8 +27,16 @@ export type BuildNativePhoneSessionPlanInput = {
   session: NightSession;
   sleepTiming: SleepTimingPrior;
   settings: CueDecisionSettings;
+  tlrOptions?: TlrOptions;
   audioBedAssetId?: string;
   cueAssetId?: string;
+};
+
+export type BuildNativePhoneSessionPlanFromCompletedSessionInput = Omit<
+  BuildNativePhoneSessionPlanInput,
+  "sleepTiming"
+> & {
+  historicalSleepPrior?: HistoricalSleepPrior;
 };
 
 function toMutableInterval(
@@ -29,6 +49,16 @@ export function buildNativePhoneSessionPlan(
   input: BuildNativePhoneSessionPlanInput,
 ): NativePhoneSessionPlan {
   const { session, settings, sleepTiming } = input;
+  const tlrOptions = normalizeTlrOptions(
+    input.tlrOptions,
+    settings.typicalWakeTime,
+  );
+  const alarmFireAt = tlrOptions.alarm.enabled
+    ? resolveAlarmFireAt({
+        alarmTime: tlrOptions.alarm.time,
+        after: session.trainingEndedAt ?? session.startedAt,
+      })
+    : undefined;
 
   if (session.sessionType !== "tlr") {
     throw new Error("Native Phone Mode can only start a TLR session.");
@@ -50,10 +80,20 @@ export function buildNativePhoneSessionPlan(
     startedAt: session.startedAt,
     trainingStartedAt: session.trainingStartedAt,
     trainingEndedAt: session.trainingEndedAt,
+    training: {
+      guidedTrainingSkipped: session.guidedTrainingSkipped === true,
+    },
     audioBed: {
       enabled: true,
       assetId: input.audioBedAssetId ?? DEFAULT_PHONE_AUDIO_BED_ASSET_ID,
       volume: settings.phoneAudioBedVolume,
+    },
+    backgroundAudio: {
+      option: tlrOptions.backgroundNoise,
+      enabled: tlrOptions.backgroundNoise !== "none",
+      volume: BACKGROUND_AUDIO_VOLUME,
+      binauralCarrierFrequencyHz: BINAURAL_CARRIER_FREQUENCY_HZ,
+      binauralBeatFrequencyHz: BINAURAL_BEAT_FREQUENCY_HZ,
     },
     cue: {
       cueId: buildCueId(),
@@ -98,7 +138,16 @@ export function buildNativePhoneSessionPlan(
     },
     safety: {
       requireAudioBed: true,
-      stopAt: sleepTiming.expectedWakeAt,
+      stopAt: alarmFireAt ?? sleepTiming.expectedWakeAt,
+    },
+    alarm: {
+      enabled: tlrOptions.alarm.enabled,
+      fireAt: alarmFireAt,
+      autoShutoff: tlrOptions.alarm.autoShutoff,
+      ringDurationSeconds: tlrOptions.alarm.autoShutoff
+        ? tlrOptions.alarm.ringDurationMinutes * 60
+        : undefined,
+      volume: DEFAULT_ALARM_VOLUME,
     },
   };
   const errors = validateNativePhoneSessionPlan(plan);
@@ -108,4 +157,21 @@ export function buildNativePhoneSessionPlan(
   }
 
   return plan;
+}
+
+export function buildNativePhoneSessionPlanFromCompletedSession(
+  input: BuildNativePhoneSessionPlanFromCompletedSessionInput,
+): NativePhoneSessionPlan {
+  if (!input.session.trainingEndedAt) {
+    throw new Error("Native Phone Mode requires completed presleep training.");
+  }
+
+  return buildNativePhoneSessionPlan({
+    ...input,
+    sleepTiming: buildSleepTimingPrior({
+      trainingEndedAt: input.session.trainingEndedAt,
+      settings: input.settings,
+      historicalSleepPrior: input.historicalSleepPrior,
+    }),
+  });
 }

@@ -1,4 +1,7 @@
-import type { CueSuppressionReason } from "@/src/domain/types";
+import type {
+  BackgroundNoiseOption,
+  CueSuppressionReason,
+} from "@/src/domain/types";
 
 export const NATIVE_PHONE_POLICY_VERSION = "iphone-phone-runtime-2026-001";
 
@@ -17,10 +20,22 @@ export type NativePhoneSessionPlan = {
   trainingStartedAt: string;
   trainingEndedAt: string;
 
+  training: {
+    guidedTrainingSkipped: boolean;
+  };
+
   audioBed: {
     enabled: true;
     assetId: string;
     volume: number;
+  };
+
+  backgroundAudio: {
+    option: BackgroundNoiseOption;
+    enabled: boolean;
+    volume: number;
+    binauralCarrierFrequencyHz: number;
+    binauralBeatFrequencyHz: number;
   };
 
   cue: {
@@ -69,6 +84,14 @@ export type NativePhoneSessionPlan = {
     requireAudioBed: true;
     stopAt?: string;
   };
+
+  alarm: {
+    enabled: boolean;
+    fireAt?: string;
+    autoShutoff: boolean;
+    ringDurationSeconds?: number;
+    volume: number;
+  };
 };
 
 export type NativePhoneRuntimeEvent = {
@@ -81,6 +104,12 @@ export type NativePhoneRuntimeEvent = {
     | "audio_session_configured"
     | "audio_bed_started"
     | "audio_bed_failed"
+    | "background_audio_started"
+    | "background_audio_stopped"
+    | "background_audio_failed"
+    | "alarm_scheduled"
+    | "alarm_started"
+    | "alarm_stopped"
     | "decision_tick"
     | "cue_candidate"
     | "cue_suppressed"
@@ -108,6 +137,9 @@ export type PhoneRuntimeStatus = {
   running: boolean;
   sessionId?: string;
   audioBedRunning: boolean;
+  backgroundAudioRunning: boolean;
+  alarmRinging: boolean;
+  alarmFireAt?: string;
   motionRunning: boolean;
   cueCount: number;
   cuesInBlock: number;
@@ -150,6 +182,14 @@ export type PhoneRuntimeLogSummary = {
   errored: boolean;
 };
 
+export function nativePhoneSessionUsesPredictedRemWindows(
+  plan: NativePhoneSessionPlan,
+): boolean {
+  return plan.timing.predictedRemWindows.some(
+    (window) => window.source === "historical_sleep",
+  );
+}
+
 export function validateNativePhoneSessionPlan(
   plan: NativePhoneSessionPlan,
 ): string[] {
@@ -161,6 +201,29 @@ export function validateNativePhoneSessionPlan(
 
   if (plan.audioBed.enabled !== true || plan.safety.requireAudioBed !== true) {
     errors.push("Phone runtime requires an audible audio bed.");
+  }
+
+  if (
+    plan.backgroundAudio.option !== "none" &&
+    plan.backgroundAudio.option !== "white_noise" &&
+    plan.backgroundAudio.option !== "binaural_beats"
+  ) {
+    errors.push("Phone runtime background audio option is invalid.");
+  }
+
+  if (plan.backgroundAudio.option === "none" && plan.backgroundAudio.enabled) {
+    errors.push("Background audio cannot be enabled when option is none.");
+  }
+
+  if (plan.backgroundAudio.option !== "none" && !plan.backgroundAudio.enabled) {
+    errors.push("Background audio must be enabled for the selected option.");
+  }
+
+  if (
+    plan.backgroundAudio.volume < 0 ||
+    plan.backgroundAudio.volume > 1
+  ) {
+    errors.push("Background audio volume must be between 0 and 1.");
   }
 
   if (!plan.audioBed.assetId) {
@@ -177,6 +240,19 @@ export function validateNativePhoneSessionPlan(
 
   if (Date.parse(plan.timing.earliestCueAt) > Date.parse(plan.timing.latestCueAt)) {
     errors.push("Earliest cue time cannot be after latest cue time.");
+  }
+
+  if (plan.alarm.enabled) {
+    if (!plan.alarm.fireAt || Number.isNaN(Date.parse(plan.alarm.fireAt))) {
+      errors.push("Alarm requires a valid fire time.");
+    }
+
+    if (
+      plan.alarm.autoShutoff &&
+      (!plan.alarm.ringDurationSeconds || plan.alarm.ringDurationSeconds <= 0)
+    ) {
+      errors.push("Alarm auto shutoff requires a positive ring duration.");
+    }
   }
 
   return errors;

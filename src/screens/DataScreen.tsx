@@ -1,4 +1,14 @@
-import { ChevronDown, ChevronRight } from "lucide-react-native";
+import { router } from "expo-router";
+import type { LucideIcon } from "lucide-react-native";
+import {
+  Activity,
+  BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  History,
+  Moon,
+  Smartphone,
+} from "lucide-react-native";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 
@@ -8,7 +18,11 @@ import {
   Screen,
   SectionTitle,
 } from "@/src/components/ui";
-import type { ExternalSleepSource, PredictedRemWindow, RemDensityBin } from "@/src/domain/types";
+import type {
+  ExternalSleepSource,
+  PredictedRemWindow,
+  RemDensityBin,
+} from "@/src/domain/types";
 import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import {
@@ -17,6 +31,12 @@ import {
 } from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
+
+type DataRoute =
+  | "/data/tlr-engine"
+  | "/data/iphone-runtime"
+  | "/data/sleep-history"
+  | "/data/sessions";
 
 function isOvernightEngineStatus(status: string): boolean {
   return (
@@ -94,33 +114,102 @@ function isTimelineEvent(event: NativePhoneRuntimeEvent): boolean {
   );
 }
 
-export function DataScreen() {
-  const [showEngineDetails, setShowEngineDetails] = React.useState(false);
+function DataPageHeader({ title }: { title: string }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+      <Pressable
+        accessibilityLabel="Back to data"
+        accessibilityRole="button"
+        onPress={() => router.replace("/data")}
+        style={({ pressed }) => ({
+          width: 32,
+          height: 32,
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: pressed ? 0.68 : 1,
+        })}
+      >
+        <ChevronLeft color={colors.textMuted} size={24} strokeWidth={1.8} />
+      </Pressable>
+      <SectionTitle>{title}</SectionTitle>
+    </View>
+  );
+}
+
+function DataNavRow({
+  detail,
+  icon: Icon,
+  route,
+  title,
+}: {
+  detail: string;
+  icon: LucideIcon;
+  route: DataRoute;
+  title: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => router.push(route)}
+      style={({ pressed }) => ({
+        minHeight: 58,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        opacity: pressed ? 0.72 : 1,
+      })}
+    >
+      <Icon color={colors.textMuted} size={23} strokeWidth={1.8} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text
+          selectable
+          style={{
+            color: colors.textPrimary,
+            fontSize: typography.body.fontSize,
+            lineHeight: typography.body.lineHeight,
+          }}
+        >
+          {title}
+        </Text>
+        <Text
+          selectable
+          style={{
+            color: colors.textMuted,
+            fontSize: typography.label.fontSize,
+            lineHeight: typography.label.lineHeight,
+          }}
+        >
+          {detail}
+        </Text>
+      </View>
+      <ChevronRight color={colors.textDim} size={20} strokeWidth={1.8} />
+    </Pressable>
+  );
+}
+
+function DataNote({ children }: { children: string }) {
+  return (
+    <Text
+      selectable
+      style={{
+        color: colors.textSecondary,
+        fontSize: typography.body.fontSize,
+        lineHeight: typography.body.lineHeight,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+function useRuntimeTimeline() {
   const [runtimeLogs, setRuntimeLogs] = React.useState<NativePhoneRuntimeEvent[]>(
     [],
   );
   const [runtimeLogError, setRuntimeLogError] = React.useState<string | null>(
     null,
   );
-  const {
-    activeSession,
-    engineDecisionLog,
-    latestEngineSnapshot,
-    sessionHistory,
-    sleepHistory,
-  } = useAppState();
-  const decision = latestEngineSnapshot.decision;
-  const watch = decision.watch;
-  const historicalWindows = latestEngineSnapshot.sleepTiming.predictedRemWindows.filter(
-    (window) => window.source === "historical_sleep",
-  );
-  const visibleRemThreshold =
-    typeof decision.metadata.threshold === "number"
-      ? decision.metadata.threshold
-      : undefined;
-  const showDecisionLog = isOvernightEngineStatus(
-    latestEngineSnapshot.sessionStatus,
-  );
+  const { activeSession, sessionHistory } = useAppState();
   const runtimeSession =
     activeSession?.sessionType === "tlr" && activeSession.mode === "phone"
       ? activeSession
@@ -164,139 +253,285 @@ export function DataScreen() {
     };
   }, [runtimeSession]);
 
+  return {
+    runtimeLogError,
+    runtimeSession,
+    timelineEvents,
+  };
+}
+
+export function DataScreen() {
+  const { latestEngineSnapshot, sessionHistory, sleepHistory } = useAppState();
+
   return (
     <Screen>
       <SectionTitle>Data</SectionTitle>
 
-      <Card compact>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            showEngineDetails ? "Hide TLR engine details" : "Show TLR engine details"
-          }
-          onPress={() => setShowEngineDetails((value) => !value)}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.72 : 1,
-          })}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
-          >
-            <Text
-              selectable
-              style={{
-                color: colors.textPrimary,
-                flex: 1,
-                fontSize: typography.body.fontSize,
-                lineHeight: typography.body.lineHeight,
-              }}
-            >
-              TLR engine
-            </Text>
-            {showEngineDetails ? (
-              <ChevronDown color={colors.textMuted} size={22} strokeWidth={1.8} />
-            ) : (
-              <ChevronRight color={colors.textMuted} size={22} strokeWidth={1.8} />
-            )}
-          </View>
-        </Pressable>
+      <Card>
+        <DataNavRow
+          detail="Decision status, score breakdown, timing, movement, and budget."
+          icon={Activity}
+          route="/data/tlr-engine"
+          title="TLR engine"
+        />
+        <DataNavRow
+          detail="Native iPhone Phone Mode events for the latest local session."
+          icon={Smartphone}
+          route="/data/iphone-runtime"
+          title="iPhone runtime timeline"
+        />
+        <DataNavRow
+          detail="Local sleep-history calibration and predicted REM windows."
+          icon={Moon}
+          route="/data/sleep-history"
+          title="Sleep history"
+        />
+        <DataNavRow
+          detail="Local session records stored on this device."
+          icon={History}
+          route="/data/sessions"
+          title="Sessions"
+        />
       </Card>
 
-      {showEngineDetails ? (
-        <View style={{ gap: 12 }}>
-          <Card>
-            <InfoRow label="engine status" value={latestEngineSnapshot.currentValues.currentEngineStatus} />
-            <InfoRow label="decision reason" value={latestEngineSnapshot.currentValues.latestDecisionReason} />
-            <InfoRow label="opportunity score" value={showDecisionLog ? decision.opportunityScore.toFixed(2) : "not running"} />
-            <InfoRow label="next check" value={latestEngineSnapshot.currentValues.nextCheckTime} />
-            <InfoRow label="suppression reason" value={latestEngineSnapshot.currentValues.suppressionReason} />
-          </Card>
+      <Card>
+        <InfoRow
+          label="engine status"
+          value={latestEngineSnapshot.currentValues.currentEngineStatus}
+        />
+        <InfoRow
+          label="decision reason"
+          value={latestEngineSnapshot.currentValues.latestDecisionReason}
+        />
+        <InfoRow label="local sessions" value={String(sessionHistory.length)} />
+        <InfoRow
+          label="sleep history"
+          value={sleepHistory.enabled ? "on" : "off"}
+        />
+      </Card>
 
-          <SectionTitle>Score breakdown</SectionTitle>
-          <Card compact>
-            {latestEngineSnapshot.scoreRows.map((row) => (
-              <InfoRow key={row.label} label={row.label} value={row.value} />
-            ))}
-          </Card>
+      <Card>
+        <BarChart3 color={colors.textMuted} size={23} strokeWidth={1.8} />
+        <DataNote>
+          Data stays local by default. Structured research upload and dream
+          journal upload remain separate opt-ins.
+        </DataNote>
+      </Card>
+    </Screen>
+  );
+}
 
-          <SectionTitle>Sleep timing prior</SectionTitle>
-          <Card>
-            <InfoRow label="training ended" value={latestEngineSnapshot.currentValues.trainingEndTime} />
-            <InfoRow label="estimated sleep onset" value={latestEngineSnapshot.currentValues.estimatedSleepOnset} />
-            <InfoRow label="expected wake" value={latestEngineSnapshot.currentValues.expectedWakeTime} />
-            <InfoRow label="cue window" value={latestEngineSnapshot.currentValues.nextOrActiveCueWindow} />
-            <InfoRow label="next predicted REM" value={latestEngineSnapshot.currentValues.nextPredictedRemWindow} />
-            <InfoRow label="confidence" value={latestEngineSnapshot.sleepTiming.confidence} />
-            <InfoRow label="source" value={latestEngineSnapshot.sleepTiming.source.replaceAll("_", " ")} />
-          </Card>
+export function TlrEngineDataScreen() {
+  const { engineDecisionLog, latestEngineSnapshot } = useAppState();
+  const decision = latestEngineSnapshot.decision;
+  const watch = decision.watch;
+  const visibleRemThreshold =
+    typeof decision.metadata.threshold === "number"
+      ? decision.metadata.threshold
+      : undefined;
+  const showDecisionLog = isOvernightEngineStatus(
+    latestEngineSnapshot.sessionStatus,
+  );
 
-          <SectionTitle>Movement and pauses</SectionTitle>
-          <Card>
-            <InfoRow label="movement intensity" value={decision.movement.recentMovementIntensity.toFixed(2)} />
-            <InfoRow label="large movement threshold" value={decision.movement.largeMovementThreshold.toFixed(2)} />
-            <InfoRow label="stable low movement" value={latestEngineSnapshot.currentValues.stableLowMovementSeconds} />
-            <InfoRow label="movement pause" value={latestEngineSnapshot.currentValues.movementPauseStatus} />
-            <InfoRow label="cue-associated pause" value={latestEngineSnapshot.currentValues.cueAssociatedMovementPause} />
-            <InfoRow label="awakening pause" value={latestEngineSnapshot.currentValues.userReportedAwakeningPause} />
-          </Card>
+  return (
+    <Screen>
+      <DataPageHeader title="TLR engine" />
 
-          <SectionTitle>Volume and budget</SectionTitle>
-          <Card>
-            <InfoRow label="current volume" value={formatEnginePercent(decision.volume.currentVolumeLevel)} />
-            <InfoRow label="next cue volume" value={formatEnginePercent(decision.volume.nextCueVolumeLevel)} />
-            <InfoRow label="volume start" value={formatEnginePercent(decision.volume.startLevel)} />
-            <InfoRow label="volume ramp" value={latestEngineSnapshot.currentValues.volumeRamp} />
-            <InfoRow label="volume cap" value={latestEngineSnapshot.currentValues.volumeCap} />
-            <InfoRow label="cue count tonight" value={latestEngineSnapshot.currentValues.cueCountTonight} />
-            <InfoRow label="block cues" value={`${decision.budget.cuesInCurrentBlock} / ${decision.budget.maxCuesPerBlock}`} />
-            <InfoRow label="block rest until" value={decision.budget.blockRestUntil ? new Date(decision.budget.blockRestUntil).toLocaleString() : "off"} />
-          </Card>
+      <Card>
+        <InfoRow
+          label="engine status"
+          value={latestEngineSnapshot.currentValues.currentEngineStatus}
+        />
+        <InfoRow
+          label="decision reason"
+          value={latestEngineSnapshot.currentValues.latestDecisionReason}
+        />
+        <InfoRow
+          label="opportunity score"
+          value={showDecisionLog ? decision.opportunityScore.toFixed(2) : "not running"}
+        />
+        <InfoRow
+          label="next check"
+          value={latestEngineSnapshot.currentValues.nextCheckTime}
+        />
+        <InfoRow
+          label="suppression reason"
+          value={latestEngineSnapshot.currentValues.suppressionReason}
+        />
+      </Card>
 
-          <SectionTitle>Watch signal</SectionTitle>
-          <Card>
-            <InfoRow label="REM probability" value={formatEnginePercent(watch?.remProbability)} />
-            <InfoRow label="REM threshold" value={formatEnginePercent(watch?.remThreshold ?? visibleRemThreshold)} />
-            <InfoRow label="sleep probability" value={formatEnginePercent(watch?.sleepProbability)} />
-            <InfoRow label="sensor quality" value={watch?.sensorQuality ?? "not available yet"} />
-            <InfoRow label="consecutive likely REM" value={watch ? String(watch.consecutiveLikelyRemEpochs) : "not available yet"} />
-            <InfoRow label="connectivity" value={watch?.connectivityState ?? "not available yet"} />
-            <InfoRow label="classifier" value="TBD; no real REM classifier connected" />
-          </Card>
+      <SectionTitle>Score breakdown</SectionTitle>
+      <Card compact>
+        {latestEngineSnapshot.scoreRows.map((row) => (
+          <InfoRow key={row.label} label={row.label} value={row.value} />
+        ))}
+      </Card>
 
-          <SectionTitle>Decision log</SectionTitle>
-          <Card>
-            <InfoRow label="cue history" value="no native cue playback connected" />
-            <InfoRow label="movement events" value="no native movement stream connected" />
-            <InfoRow label="watch epochs" value="no native watch stream connected" />
-            {!showDecisionLog ? (
-              <InfoRow label="latest entries" value="no active overnight engine log" />
-            ) : engineDecisionLog.length === 0 ? (
-              <InfoRow label="latest entries" value="none yet" />
-            ) : (
-              engineDecisionLog.slice(0, 8).map((line) => (
-                <Text
-                  selectable
-                  key={line}
-                  style={{
-                    color: colors.textSecondary,
-                    fontSize: typography.label.fontSize,
-                    lineHeight: typography.label.lineHeight,
-                  }}
-                >
-                  {line}
-                </Text>
-              ))
-            )}
-          </Card>
-        </View>
-      ) : null}
+      <SectionTitle>Sleep timing prior</SectionTitle>
+      <Card>
+        <InfoRow
+          label="training ended"
+          value={latestEngineSnapshot.currentValues.trainingEndTime}
+        />
+        <InfoRow
+          label="estimated sleep onset"
+          value={latestEngineSnapshot.currentValues.estimatedSleepOnset}
+        />
+        <InfoRow
+          label="expected wake"
+          value={latestEngineSnapshot.currentValues.expectedWakeTime}
+        />
+        <InfoRow
+          label="cue window"
+          value={latestEngineSnapshot.currentValues.nextOrActiveCueWindow}
+        />
+        <InfoRow
+          label="next predicted REM"
+          value={latestEngineSnapshot.currentValues.nextPredictedRemWindow}
+        />
+        <InfoRow
+          label="confidence"
+          value={latestEngineSnapshot.sleepTiming.confidence}
+        />
+        <InfoRow
+          label="source"
+          value={latestEngineSnapshot.sleepTiming.source.replaceAll("_", " ")}
+        />
+      </Card>
 
-      <SectionTitle>iPhone runtime timeline</SectionTitle>
+      <SectionTitle>Movement and pauses</SectionTitle>
+      <Card>
+        <InfoRow
+          label="movement intensity"
+          value={decision.movement.recentMovementIntensity.toFixed(2)}
+        />
+        <InfoRow
+          label="large movement threshold"
+          value={decision.movement.largeMovementThreshold.toFixed(2)}
+        />
+        <InfoRow
+          label="stable low movement"
+          value={latestEngineSnapshot.currentValues.stableLowMovementSeconds}
+        />
+        <InfoRow
+          label="movement pause"
+          value={latestEngineSnapshot.currentValues.movementPauseStatus}
+        />
+        <InfoRow
+          label="cue-associated pause"
+          value={latestEngineSnapshot.currentValues.cueAssociatedMovementPause}
+        />
+        <InfoRow
+          label="awakening pause"
+          value={latestEngineSnapshot.currentValues.userReportedAwakeningPause}
+        />
+      </Card>
+
+      <SectionTitle>Volume and budget</SectionTitle>
+      <Card>
+        <InfoRow
+          label="current volume"
+          value={formatEnginePercent(decision.volume.currentVolumeLevel)}
+        />
+        <InfoRow
+          label="next cue volume"
+          value={formatEnginePercent(decision.volume.nextCueVolumeLevel)}
+        />
+        <InfoRow
+          label="volume start"
+          value={formatEnginePercent(decision.volume.startLevel)}
+        />
+        <InfoRow
+          label="volume ramp"
+          value={latestEngineSnapshot.currentValues.volumeRamp}
+        />
+        <InfoRow
+          label="volume cap"
+          value={latestEngineSnapshot.currentValues.volumeCap}
+        />
+        <InfoRow
+          label="cue count tonight"
+          value={latestEngineSnapshot.currentValues.cueCountTonight}
+        />
+        <InfoRow
+          label="block cues"
+          value={`${decision.budget.cuesInCurrentBlock} / ${decision.budget.maxCuesPerBlock}`}
+        />
+        <InfoRow
+          label="block rest until"
+          value={
+            decision.budget.blockRestUntil
+              ? new Date(decision.budget.blockRestUntil).toLocaleString()
+              : "off"
+          }
+        />
+      </Card>
+
+      <SectionTitle>Watch signal</SectionTitle>
+      <Card>
+        <InfoRow
+          label="REM probability"
+          value={formatEnginePercent(watch?.remProbability)}
+        />
+        <InfoRow
+          label="REM threshold"
+          value={formatEnginePercent(watch?.remThreshold ?? visibleRemThreshold)}
+        />
+        <InfoRow
+          label="sleep probability"
+          value={formatEnginePercent(watch?.sleepProbability)}
+        />
+        <InfoRow
+          label="sensor quality"
+          value={watch?.sensorQuality ?? "not available yet"}
+        />
+        <InfoRow
+          label="consecutive likely REM"
+          value={watch ? String(watch.consecutiveLikelyRemEpochs) : "not available yet"}
+        />
+        <InfoRow
+          label="connectivity"
+          value={watch?.connectivityState ?? "not available yet"}
+        />
+        <InfoRow label="classifier" value="TBD; no real REM classifier connected" />
+      </Card>
+
+      <SectionTitle>Decision log</SectionTitle>
+      <Card>
+        <InfoRow label="cue history" value="see iPhone runtime timeline" />
+        <InfoRow label="movement events" value="see iPhone runtime timeline" />
+        <InfoRow label="watch epochs" value="no native watch stream connected" />
+        {!showDecisionLog ? (
+          <InfoRow label="latest entries" value="no active overnight engine log" />
+        ) : engineDecisionLog.length === 0 ? (
+          <InfoRow label="latest entries" value="none yet" />
+        ) : (
+          engineDecisionLog.slice(0, 8).map((line) => (
+            <Text
+              selectable
+              key={line}
+              style={{
+                color: colors.textSecondary,
+                fontSize: typography.label.fontSize,
+                lineHeight: typography.label.lineHeight,
+              }}
+            >
+              {line}
+            </Text>
+          ))
+        )}
+      </Card>
+    </Screen>
+  );
+}
+
+export function IphoneRuntimeDataScreen() {
+  const { runtimeLogError, runtimeSession, timelineEvents } = useRuntimeTimeline();
+
+  return (
+    <Screen>
+      <DataPageHeader title="iPhone runtime" />
+
       <Card>
         {runtimeSession ? (
           <InfoRow label="session" value={runtimeSession.id} />
@@ -324,12 +559,37 @@ export function DataScreen() {
         )}
       </Card>
 
-      <SectionTitle>Sleep history calibration</SectionTitle>
+      <Card>
+        <DataNote>
+          This timeline reflects local native iPhone Phone Mode events for the
+          latest active or completed TLR phone session.
+        </DataNote>
+      </Card>
+    </Screen>
+  );
+}
+
+export function SleepHistoryDataScreen() {
+  const { latestEngineSnapshot, sleepHistory } = useAppState();
+  const historicalWindows = latestEngineSnapshot.sleepTiming.predictedRemWindows.filter(
+    (window) => window.source === "historical_sleep",
+  );
+
+  return (
+    <Screen>
+      <DataPageHeader title="Sleep history" />
+
       <Card>
         <InfoRow label="enabled" value={sleepHistory.enabled ? "on" : "off"} />
-        <InfoRow label="source" value={formatSleepHistorySource(sleepHistory.source)} />
+        <InfoRow
+          label="source"
+          value={formatSleepHistorySource(sleepHistory.source)}
+        />
         <InfoRow label="permission" value={sleepHistory.permissionStatus} />
-        <InfoRow label="imported sessions" value={String(sleepHistory.nightsImported)} />
+        <InfoRow
+          label="imported sessions"
+          value={String(sleepHistory.nightsImported)}
+        />
         <InfoRow
           label="prior confidence"
           value={sleepHistory.prior?.confidence ?? "none"}
@@ -358,6 +618,23 @@ export function DataScreen() {
           ))
         )}
       </Card>
+
+      <Card>
+        <DataNote>
+          Sleep-history calibration is local-only by default. No cloud sync, REM
+          classifier, or native watch data path is active yet.
+        </DataNote>
+      </Card>
+    </Screen>
+  );
+}
+
+export function SessionsDataScreen() {
+  const { sessionHistory } = useAppState();
+
+  return (
+    <Screen>
+      <DataPageHeader title="Sessions" />
 
       {sessionHistory.length === 0 ? (
         <Card>
@@ -389,20 +666,6 @@ export function DataScreen() {
           ))}
         </View>
       )}
-
-      <Card>
-        <Text
-          selectable
-          style={{
-            color: colors.textSecondary,
-            fontSize: typography.body.fontSize,
-            lineHeight: typography.body.lineHeight,
-          }}
-        >
-          Sleep-history calibration is local-only by default. No cloud sync, REM
-          classifier, or native watch/overnight data path is active yet.
-        </Text>
-      </Card>
     </Screen>
   );
 }

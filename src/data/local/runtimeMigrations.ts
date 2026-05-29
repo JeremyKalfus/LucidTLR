@@ -218,4 +218,11 @@ create index if not exists idx_sleep_prior_profiles_participant_generated_at
 on sleep_prior_profiles(participant_id, generated_at);
 `,
   },
+  {
+    id: "004_tlr_options",
+    sql: `
+alter table sessions
+add column guided_training_skipped integer not null default 0;
+`,
+  },
 ] as const;

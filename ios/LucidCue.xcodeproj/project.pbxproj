@@ -77,6 +77,15 @@
 			name = LucidCue;
 			sourceTree = "<group>";
 		};
+		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
+				8C62D26F77A8CCE4C01DF72D /* libPods-LucidCue.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		4AFEA00B8B754B4A9CF00001 /* FeasibilityAudioSegments */ = {
 			isa = PBXGroup;
 			children = (
@@ -85,15 +94,6 @@
 				4AFEA00A8B754B4A9CF00001 /* lucidcue_feasibility_high.wav */,
 			);
 			name = FeasibilityAudioSegments;
-			sourceTree = "<group>";
-		};
-		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				8C62D26F77A8CCE4C01DF72D /* libPods-LucidCue.a */,
-			);
-			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		6CD1FFF0E7044AE70602250A /* LucidCue */ = {

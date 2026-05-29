@@ -67,6 +67,7 @@ interface NightSessionRow {
   training_started_at: string | null;
   training_ended_at: string | null;
   cueing_started_at: string | null;
+  guided_training_skipped: number;
 }
 
 interface CueEventRow {
@@ -228,6 +229,7 @@ function toNightSession(row: NightSessionRow): NightSession {
     trainingStartedAt: row.training_started_at ?? undefined,
     trainingEndedAt: row.training_ended_at ?? undefined,
     cueingStartedAt: row.cueing_started_at ?? undefined,
+    guidedTrainingSkipped: row.guided_training_skipped === 1,
   };
 }
 
@@ -316,14 +318,16 @@ export async function upsertLocalSession(input: {
   training_started_at,
   training_ended_at,
   cueing_started_at,
+  guided_training_skipped,
   upload_status
-) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 on conflict(id) do update set
   status = excluded.status,
   ended_at = excluded.ended_at,
   training_started_at = excluded.training_started_at,
   training_ended_at = excluded.training_ended_at,
   cueing_started_at = excluded.cueing_started_at,
+  guided_training_skipped = excluded.guided_training_skipped,
   upload_status = excluded.upload_status`,
     [
       input.session.id,
@@ -337,6 +341,7 @@ on conflict(id) do update set
       input.session.trainingStartedAt ?? null,
       input.session.trainingEndedAt ?? null,
       input.session.cueingStartedAt ?? null,
+      input.session.guidedTrainingSkipped ? 1 : 0,
       input.uploadStatus ?? "local_only",
     ],
   );
@@ -357,7 +362,8 @@ export async function loadLocalSessions(input: {
   ended_at,
   training_started_at,
   training_ended_at,
-  cueing_started_at
+  cueing_started_at,
+  guided_training_skipped
 from sessions
 where participant_id = ?
 order by started_at desc`,

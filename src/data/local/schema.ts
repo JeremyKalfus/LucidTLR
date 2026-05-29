@@ -13,6 +13,10 @@ export const LOCAL_MIGRATIONS = [
     id: "003_sleep_history",
     filename: "003_sleep_history.sql",
   },
+  {
+    id: "004_tlr_options",
+    filename: "004_tlr_options.sql",
+  },
 ] as const;
 
 export const LOCAL_TABLES = [

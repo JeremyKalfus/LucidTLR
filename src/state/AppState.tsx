@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import React from "react";
+import { AppState as NativeAppState } from "react-native";
 
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import {
@@ -26,6 +27,7 @@ import type {
   DreamJournalEntry,
   NightSession,
   SessionType,
+  TlrOptions,
   UploadStatus,
 } from "@/src/domain/types";
 import type {
@@ -33,6 +35,12 @@ import type {
   OnboardingAnswerValue,
   OnboardingStepId,
 } from "@/src/domain/forms";
+import {
+  importPhoneRuntimeLogsToLocalRecords,
+  latestPhoneRuntimeStopTimestamp,
+  phoneRuntime,
+  summarizePhoneRuntimeEvents,
+} from "@/src/native/phoneRuntime";
 import {
   ONBOARDING_FORM_ID,
   STUDY_OPT_IN_VALUE,
@@ -50,6 +58,13 @@ import { createLocalDreamJournalEntry } from "@/src/features/journal/journalType
 import { createNightSession, applySessionEvent } from "@/src/features/sessions/sessionActions";
 import type { SessionEvent } from "@/src/features/sessions/sessionStateMachine";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
+import {
+  createDefaultTlrOptions,
+  mergeTlrOptionsPatch,
+  normalizeTlrOptions,
+  TLR_OPTIONS_KEY,
+  type TlrOptionsPatch,
+} from "@/src/features/tlrOptions/tlrOptions";
 import {
   buildEngineSnapshot,
   buildInactiveEngineSnapshot,
@@ -82,12 +97,14 @@ interface AppStateValue {
   activeSession: NightSession | null;
   sessionHistory: NightSession[];
   journalEntries: DreamJournalEntry[];
+  tlrOptions: TlrOptions;
   engineSettings: CueDecisionSettings;
   latestEngineSnapshot: EngineSnapshot;
   engineDecisionLog: string[];
   sleepHistory: SleepHistoryCalibrationState;
   isSyncingSleepHistory: boolean;
   setSelectedMode: (mode: AppMode) => void;
+  updateTlrOptions: (patch: TlrOptionsPatch) => Promise<void>;
   updateEngineSettings: (patch: Partial<CueDecisionSettings>) => Promise<void>;
   setSleepHistoryEnabled: (enabled: boolean) => Promise<void>;
   syncSleepHistoryNow: () => Promise<void>;
@@ -336,6 +353,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [journalEntries, setJournalEntries] = React.useState<
     DreamJournalEntry[]
   >([]);
+  const [tlrOptions, setTlrOptions] = React.useState(() =>
+    createDefaultTlrOptions(),
+  );
   const [engineSettings, setEngineSettings] = React.useState(() =>
     createDefaultEngineSettings("standard"),
   );
@@ -371,6 +391,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const nextEngineSettings = mergePersistedEngineSettings(
           persistedAnswers,
           persistedEngineSettings,
+        );
+        const persistedTlrOptions = await getAppSetting<TlrOptions>(
+          db,
+          TLR_OPTIONS_KEY,
+        );
+        const nextTlrOptions = normalizeTlrOptions(
+          persistedTlrOptions,
+          nextEngineSettings.typicalWakeTime,
         );
         const persistedSleepHistory = participant
           ? await loadSleepHistoryCalibrationState({
@@ -413,6 +441,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
               session.status !== "morning_review_complete",
           ) ?? null,
         );
+        setTlrOptions(nextTlrOptions);
         setEngineSettings(nextEngineSettings);
         setSleepHistory(persistedSleepHistory);
         setOnboardingComplete(Boolean(completedAt && onboardingVersion));
@@ -592,7 +621,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       await setAppSetting(db, ONBOARDING_COMPLETED_AT_SETTING, now, now);
       await setAppSetting(db, ONBOARDING_VERSION_SETTING, ONBOARDING_FORM_ID, now);
       await setAppSetting(db, ENGINE_SETTINGS_KEY, nextEngineSettings, now);
+      await setAppSetting(
+        db,
+        TLR_OPTIONS_KEY,
+        normalizeTlrOptions(tlrOptions, nextEngineSettings.typicalWakeTime),
+        now,
+      );
       setEngineSettings(nextEngineSettings);
+      setTlrOptions(normalizeTlrOptions(tlrOptions, nextEngineSettings.typicalWakeTime));
       setConsentChoices(nextConsentChoices);
       setOnboardingComplete(true);
     } finally {
@@ -604,6 +640,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     participantCreatedAt,
     participantId,
     selectedMode,
+    tlrOptions,
   ]);
 
   const resetAppData = React.useCallback(async () => {
@@ -622,11 +659,59 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setActiveSession(null);
     setSessionHistory([]);
     setJournalEntries([]);
+    setTlrOptions(createDefaultTlrOptions());
     setEngineSettings(createDefaultEngineSettings("standard"));
     setSleepHistory(emptySleepHistoryState());
     setIsSyncingSleepHistory(false);
     setEngineDecisionLog([]);
   }, []);
+
+  const persistSelectedMode = React.useCallback(
+    (mode: AppMode) => {
+      setSelectedMode(mode);
+
+      if (!onboardingComplete) {
+        return;
+      }
+
+      void getLocalDb().then((db) =>
+        upsertLocalParticipant({
+          db,
+          participantId,
+          appInstallId,
+          createdAt: participantCreatedAt,
+          selectedMode: mode,
+          structuredResearchUploadAccepted:
+            consentChoices.structuredResearchUploadConsent,
+          dreamJournalUploadAccepted: consentChoices.dreamJournalUploadConsent,
+        }),
+      );
+    },
+    [
+      appInstallId,
+      consentChoices.dreamJournalUploadConsent,
+      consentChoices.structuredResearchUploadConsent,
+      onboardingComplete,
+      participantCreatedAt,
+      participantId,
+    ],
+  );
+
+  const updateTlrOptions = React.useCallback(
+    async (patch: TlrOptionsPatch) => {
+      const nextOptions = mergeTlrOptionsPatch(
+        tlrOptions,
+        patch,
+        engineSettings.typicalWakeTime,
+      );
+      const db = await getLocalDb();
+      const now = new Date().toISOString();
+
+      await setAppSetting(db, TLR_OPTIONS_KEY, nextOptions, now);
+      setTlrOptions(nextOptions);
+    },
+    [engineSettings.typicalWakeTime, tlrOptions],
+  );
 
   const updateEngineSettings = React.useCallback(
     async (patch: Partial<CueDecisionSettings>) => {
@@ -763,6 +848,54 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [activeSession],
   );
 
+  const reconcileNativePhoneRuntimeCompletion = React.useCallback(async () => {
+    if (
+      !activeSession ||
+      activeSession.sessionType !== "tlr" ||
+      activeSession.mode !== "phone" ||
+      !canTransitionSession(
+        activeSession.sessionType,
+        activeSession.status,
+        "end_session",
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const status = await phoneRuntime.getPhoneRuntimeStatus();
+
+      if (!status.available || status.running) {
+        return;
+      }
+
+      const logs = await phoneRuntime.getPhoneRuntimeLogs(activeSession.id);
+      const summary = summarizePhoneRuntimeEvents(logs);
+
+      if (!summary.stopped && !summary.completed && !summary.errored) {
+        return;
+      }
+
+      await importPhoneRuntimeLogsToLocalRecords(logs);
+      sendSessionEvent(
+        "end_session",
+        latestPhoneRuntimeStopTimestamp(logs) ?? new Date().toISOString(),
+      );
+    } catch {
+      // Screen-level runtime panels surface actionable native errors.
+    }
+  }, [activeSession, sendSessionEvent]);
+
+  React.useEffect(() => {
+    const subscription = NativeAppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void reconcileNativePhoneRuntimeCompletion();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [reconcileNativePhoneRuntimeCompletion]);
+
   const addJournalEntry = React.useCallback((text: string) => {
     const now = new Date().toISOString();
     const entry = createLocalDreamJournalEntry({
@@ -831,12 +964,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeSession,
       sessionHistory,
       journalEntries,
+      tlrOptions,
       engineSettings,
       latestEngineSnapshot,
       engineDecisionLog,
       sleepHistory,
       isSyncingSleepHistory,
-      setSelectedMode,
+      setSelectedMode: persistSelectedMode,
+      updateTlrOptions,
       updateEngineSettings,
       setSleepHistoryEnabled,
       syncSleepHistoryNow,
@@ -863,6 +998,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       onboardingAnswers,
       onboardingComplete,
       participantId,
+      persistSelectedMode,
       resetAppData,
       selectedMode,
       sendSessionEvent,
@@ -871,7 +1007,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       sleepHistory,
       startSession,
       syncSleepHistoryNow,
+      tlrOptions,
       updateEngineSettings,
+      updateTlrOptions,
     ],
   );
 

@@ -2,6 +2,24 @@ export type AppMode = "phone" | "watch";
 
 export type SoundSensitivityProfile = "sensitive" | "standard" | "hard_to_wake";
 
+export type BackgroundNoiseOption =
+  | "none"
+  | "white_noise"
+  | "binaural_beats";
+
+export interface AlarmOptions {
+  enabled: boolean;
+  time: string;
+  autoShutoff: boolean;
+  ringDurationMinutes: number;
+}
+
+export interface TlrOptions {
+  backgroundNoise: BackgroundNoiseOption;
+  skipGuidedTraining: boolean;
+  alarm: AlarmOptions;
+}
+
 export type WatchSensorQuality = "good" | "degraded" | "missing" | "bad";
 
 export type CueDecisionAction =
@@ -156,6 +174,7 @@ export interface NightSession {
   trainingStartedAt?: string;
   trainingEndedAt?: string;
   cueingStartedAt?: string;
+  guidedTrainingSkipped?: boolean;
 }
 
 export interface CueEvent {

@@ -1,4 +1,13 @@
 import { router } from "expo-router";
+import type { LucideIcon } from "lucide-react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Cpu,
+  SlidersHorizontal,
+  Smartphone,
+  Watch,
+} from "lucide-react-native";
 import React from "react";
 import { Alert, Pressable, Text, TextInput, View } from "react-native";
 
@@ -9,7 +18,7 @@ import {
   Screen,
   SectionTitle,
 } from "@/src/components/ui";
-import type { AppMode } from "@/src/domain/types";
+import { TlrOptionsControls } from "@/src/components/tlr/TlrOptionsControls";
 import {
   formatEnginePercent,
   getProfileDefaults,
@@ -21,47 +30,15 @@ import {
   phoneRuntime,
   type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
-import { cueAudio, TLR_PROTOCOL_VERSION } from "@/src/protocol/tlrProtocol";
+import { TLR_PROTOCOL_VERSION } from "@/src/protocol/tlrProtocol";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
-function ModeButton({
-  mode,
-  active,
-  onPress,
-}: {
-  mode: AppMode;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flex: 1,
-        minHeight: 44,
-        alignItems: "center",
-        justifyContent: "center",
-        borderWidth: borders.hairline,
-        borderRadius: radii.card,
-        borderColor: active ? colors.textMuted : colors.cardBorder,
-        opacity: pressed ? 0.72 : 1,
-      })}
-    >
-      <Text
-        selectable
-        style={{
-          color: active ? colors.textPrimary : colors.textMuted,
-          fontSize: typography.body.fontSize,
-          lineHeight: typography.body.lineHeight,
-        }}
-      >
-        {mode}
-      </Text>
-    </Pressable>
-  );
-}
+type SettingsRoute =
+  | "/settings/ios-phone-mode"
+  | "/settings/android-phone-mode"
+  | "/settings/watch-mode"
+  | "/settings/engine";
 
 function SettingInput({
   label,
@@ -178,6 +155,136 @@ function SensitivityButton({
   );
 }
 
+function SettingsPageHeader({ title }: { title: string }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+      <Pressable
+        accessibilityLabel="Back to settings"
+        accessibilityRole="button"
+        onPress={() => router.replace("/settings")}
+        style={({ pressed }) => ({
+          width: 32,
+          height: 32,
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: pressed ? 0.68 : 1,
+        })}
+      >
+        <ChevronLeft color={colors.textMuted} size={24} strokeWidth={1.8} />
+      </Pressable>
+      <SectionTitle>{title}</SectionTitle>
+    </View>
+  );
+}
+
+function SettingsNavRow({
+  detail,
+  icon: Icon,
+  route,
+  title,
+}: {
+  detail: string;
+  icon: LucideIcon;
+  route: SettingsRoute;
+  title: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => router.push(route)}
+      style={({ pressed }) => ({
+        minHeight: 58,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        opacity: pressed ? 0.72 : 1,
+      })}
+    >
+      <Icon color={colors.textMuted} size={23} strokeWidth={1.8} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text
+          selectable
+          style={{
+            color: colors.textPrimary,
+            fontSize: typography.body.fontSize,
+            lineHeight: typography.body.lineHeight,
+          }}
+        >
+          {title}
+        </Text>
+        <Text
+          selectable
+          style={{
+            color: colors.textMuted,
+            fontSize: typography.label.fontSize,
+            lineHeight: typography.label.lineHeight,
+          }}
+        >
+          {detail}
+        </Text>
+      </View>
+      <ChevronRight color={colors.textDim} size={20} strokeWidth={1.8} />
+    </Pressable>
+  );
+}
+
+function SettingsNote({ children }: { children: string }) {
+  return (
+    <Text
+      selectable
+      style={{
+        color: colors.textSecondary,
+        fontSize: typography.body.fontSize,
+        lineHeight: typography.body.lineHeight,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+function SimpleModeButton({
+  active,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => ({
+        minHeight: 42,
+        alignItems: "center",
+        justifyContent: "center",
+        borderWidth: borders.hairline,
+        borderRadius: radii.card,
+        borderColor: active ? colors.textMuted : colors.cardBorder,
+        opacity: pressed ? 0.72 : 1,
+        paddingHorizontal: 10,
+      })}
+    >
+      <Text
+        selectable
+        adjustsFontSizeToFit
+        minimumFontScale={0.82}
+        numberOfLines={1}
+        style={{
+          color: active ? colors.textPrimary : colors.textMuted,
+          fontSize: typography.label.fontSize,
+          lineHeight: typography.label.lineHeight,
+          textAlign: "center",
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function formatSleepHistorySource(source: ExternalSleepSource | null): string {
   if (source === "apple_health") {
     return "Apple Health";
@@ -194,33 +301,9 @@ function formatOptionalDate(value: string | undefined): string {
   return value ? new Date(value).toLocaleString() : "never";
 }
 
-export function SettingsScreen() {
-  const [isResetting, setIsResetting] = React.useState(false);
-  const [resetError, setResetError] = React.useState<string | null>(null);
+function usePhoneRuntimeStatus() {
   const [runtimeStatus, setRuntimeStatus] =
     React.useState<PhoneRuntimeStatus | null>(null);
-  const {
-    consentChoices,
-    engineSettings,
-    isSyncingSleepHistory,
-    participantId,
-    resetAppData,
-    selectedMode,
-    setSelectedMode,
-    setSleepHistoryEnabled,
-    sleepHistory,
-    syncSleepHistoryNow,
-    updateEngineSettings,
-  } = useAppState();
-  const applySensitivityProfile = React.useCallback(
-    (soundSensitivity: SoundSensitivityProfile) => {
-      void updateEngineSettings({
-        soundSensitivity,
-        ...getProfileDefaults(soundSensitivity),
-      });
-    },
-    [updateEngineSettings],
-  );
 
   React.useEffect(() => {
     let cancelled = false;
@@ -240,6 +323,8 @@ export function SettingsScreen() {
               error instanceof Error ? error.message : "unknown",
             running: false,
             audioBedRunning: false,
+            backgroundAudioRunning: false,
+            alarmRinging: false,
             motionRunning: false,
             cueCount: 0,
             cuesInBlock: 0,
@@ -254,6 +339,18 @@ export function SettingsScreen() {
       cancelled = true;
     };
   }, []);
+
+  return runtimeStatus;
+}
+
+export function SettingsScreen() {
+  const [isResetting, setIsResetting] = React.useState(false);
+  const [resetError, setResetError] = React.useState<string | null>(null);
+  const {
+    consentChoices,
+    participantId,
+    resetAppData,
+  } = useAppState();
 
   const reset = React.useCallback(async () => {
     setIsResetting(true);
@@ -312,48 +409,96 @@ export function SettingsScreen() {
       <SectionTitle>Settings</SectionTitle>
 
       <Card>
-        <Text
-          selectable
-          style={{
-            color: colors.textPrimary,
-            fontSize: typography.body.fontSize,
-            lineHeight: typography.body.lineHeight,
-          }}
-        >
-          Mode
-        </Text>
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <ModeButton
-            mode="phone"
-            active={selectedMode === "phone"}
-            onPress={() => setSelectedMode("phone")}
-          />
-          <ModeButton
-            mode="watch"
-            active={selectedMode === "watch"}
-            onPress={() => setSelectedMode("watch")}
-          />
-        </View>
+        <SettingsNavRow
+          detail="iPhone runtime, audio bed, alarm, and TLR options."
+          icon={Smartphone}
+          route="/settings/ios-phone-mode"
+          title="iOS phone mode"
+        />
+        <SettingsNavRow
+          detail="Android phone runtime status and constraints."
+          icon={Smartphone}
+          route="/settings/android-phone-mode"
+          title="Android phone mode"
+        />
+        <SettingsNavRow
+          detail="Apple Watch mode status and sensing assumptions."
+          icon={Watch}
+          route="/settings/watch-mode"
+          title="Watch mode"
+        />
+        <SettingsNavRow
+          detail="Cue timing, sleep history, volume, and cue budget."
+          icon={SlidersHorizontal}
+          route="/settings/engine"
+          title="Engine"
+        />
       </Card>
 
       <Card>
-        <InfoRow label="cue sound" value={cueAudio.description} />
-        <InfoRow label="structured upload" value={consentChoices.structuredResearchUploadConsent ? "enabled" : "off"} />
-        <InfoRow label="dream upload" value={consentChoices.dreamJournalUploadConsent ? "enabled" : "off"} />
+        <InfoRow
+          label="structured upload"
+          value={consentChoices.structuredResearchUploadConsent ? "enabled" : "off"}
+        />
+        <InfoRow
+          label="dream upload"
+          value={consentChoices.dreamJournalUploadConsent ? "enabled" : "off"}
+        />
       </Card>
 
-      <SectionTitle>iPhone Phone Mode</SectionTitle>
       <Card>
-        <Text
-          selectable
-          style={{
-            color: colors.textPrimary,
-            fontSize: typography.body.fontSize,
-            lineHeight: typography.body.lineHeight,
+        <InfoRow label="participant ID" value={participantId} />
+        <InfoRow label="protocol" value={TLR_PROTOCOL_VERSION} />
+        <InfoRow label="app shell" value="0.1.0" />
+      </Card>
+
+      <Card>
+        <SettingsNote>
+          Reset app and delete local data clears this device. Full remote
+          deletion is not implemented yet.
+        </SettingsNote>
+        {resetError ? <SettingsNote>{resetError}</SettingsNote> : null}
+        <PrimaryPillButton
+          disabled={isResetting}
+          label={isResetting ? "Resetting..." : "Reset app and delete local data"}
+          onPress={confirmReset}
+        />
+      </Card>
+    </Screen>
+  );
+}
+
+export function IosPhoneModeSettingsScreen() {
+  const runtimeStatus = usePhoneRuntimeStatus();
+  const {
+    engineSettings,
+    selectedMode,
+    setSelectedMode,
+    tlrOptions,
+    updateEngineSettings,
+    updateTlrOptions,
+  } = useAppState();
+
+  return (
+    <Screen>
+      <SettingsPageHeader title="iOS phone mode" />
+
+      <Card>
+        <TlrOptionsControls
+          selectedMode={selectedMode}
+          tlrOptions={tlrOptions}
+          typicalWakeTime={engineSettings.typicalWakeTime}
+          onModeChange={setSelectedMode}
+          onOptionsChange={(patch) => {
+            void updateTlrOptions(patch);
           }}
-        >
+        />
+      </Card>
+
+      <Card>
+        <SettingsNote>
           Locked iPhone Phone Mode requires a quiet audio bed.
-        </Text>
+        </SettingsNote>
         <NumericSettingInput
           label="audio bed volume"
           settingKey="phoneAudioBedVolume"
@@ -370,10 +515,97 @@ export function SettingsScreen() {
               : runtimeStatus?.unavailableReason ?? "unknown"
           }
         />
+        <InfoRow
+          label="background audio"
+          value={runtimeStatus?.backgroundAudioRunning ? "running" : "idle"}
+        />
+        <InfoRow
+          label="alarm"
+          value={runtimeStatus?.alarmRinging ? "ringing" : "idle"}
+        />
         <InfoRow label="manual capability" value="unknown" />
       </Card>
+    </Screen>
+  );
+}
 
-      <SectionTitle>Engine assumptions</SectionTitle>
+export function AndroidPhoneModeSettingsScreen() {
+  const { selectedMode, setSelectedMode } = useAppState();
+
+  return (
+    <Screen>
+      <SettingsPageHeader title="Android phone mode" />
+
+      <Card>
+        <SimpleModeButton
+          active={selectedMode === "phone"}
+          label="Use Phone Mode"
+          onPress={() => setSelectedMode("phone")}
+        />
+        <InfoRow label="runtime" value="not implemented" />
+        <InfoRow label="minimum OS" value="Android 10+" />
+        <InfoRow label="watch support" value="excluded" />
+        <SettingsNote>
+          Android Phone Mode will use the same Phone Mode protocol with a Kotlin
+          foreground service, accelerometer monitoring, movement pauses, cue
+          scheduling, and audio playback. Native Android runtime behavior is not
+          wired in this pass.
+        </SettingsNote>
+      </Card>
+    </Screen>
+  );
+}
+
+export function WatchModeSettingsScreen() {
+  const { selectedMode, setSelectedMode } = useAppState();
+
+  return (
+    <Screen>
+      <SettingsPageHeader title="Watch mode" />
+
+      <Card>
+        <SimpleModeButton
+          active={selectedMode === "watch"}
+          label="Use Watch Mode"
+          onPress={() => setSelectedMode("watch")}
+        />
+        <InfoRow label="watch app" value="not implemented" />
+        <InfoRow label="REM classifier" value="TBD" />
+        <InfoRow label="cue audio" value="iPhone" />
+        <SettingsNote>
+          Watch Mode is the Apple Watch sensing path. The watch collects heart
+          rate, motion, and elapsed session time; the iPhone remains the sound
+          source for cue playback.
+        </SettingsNote>
+      </Card>
+    </Screen>
+  );
+}
+
+export function EngineSettingsScreen() {
+  const {
+    engineSettings,
+    isSyncingSleepHistory,
+    setSleepHistoryEnabled,
+    sleepHistory,
+    syncSleepHistoryNow,
+    updateEngineSettings,
+  } = useAppState();
+  const applySensitivityProfile = React.useCallback(
+    (soundSensitivity: SoundSensitivityProfile) => {
+      void updateEngineSettings({
+        soundSensitivity,
+        ...getProfileDefaults(soundSensitivity),
+      });
+    },
+    [updateEngineSettings],
+  );
+
+  return (
+    <Screen>
+      <SettingsPageHeader title="Engine" />
+
+      <SectionTitle>Assumptions</SectionTitle>
       <Card>
         <Text
           selectable
@@ -468,36 +700,29 @@ export function SettingsScreen() {
       <SectionTitle>Sleep history calibration</SectionTitle>
       <Card>
         <InfoRow label="enabled" value={sleepHistory.enabled ? "on" : "off"} />
-        <InfoRow label="source" value={formatSleepHistorySource(sleepHistory.source)} />
+        <InfoRow
+          label="source"
+          value={formatSleepHistorySource(sleepHistory.source)}
+        />
         <InfoRow label="permission" value={sleepHistory.permissionStatus} />
-        <InfoRow label="nights imported" value={String(sleepHistory.nightsImported)} />
-        <InfoRow label="last import" value={formatOptionalDate(sleepHistory.lastImportedAt)} />
+        <InfoRow
+          label="nights imported"
+          value={String(sleepHistory.nightsImported)}
+        />
+        <InfoRow
+          label="last import"
+          value={formatOptionalDate(sleepHistory.lastImportedAt)}
+        />
         <InfoRow
           label="prior confidence"
           value={sleepHistory.prior?.confidence ?? "none"}
         />
         {sleepHistory.lastSyncError ? (
-          <Text
-            selectable
-            style={{
-              color: colors.textSecondary,
-              fontSize: typography.body.fontSize,
-              lineHeight: typography.body.lineHeight,
-            }}
-          >
-            {sleepHistory.lastSyncError}
-          </Text>
+          <SettingsNote>{sleepHistory.lastSyncError}</SettingsNote>
         ) : null}
-        <Text
-          selectable
-          style={{
-            color: colors.textSecondary,
-            fontSize: typography.body.fontSize,
-            lineHeight: typography.body.lineHeight,
-          }}
-        >
+        <SettingsNote>
           Used locally to estimate better cue windows. Not uploaded by default.
-        </Text>
+        </SettingsNote>
         <PrimaryPillButton
           disabled={isSyncingSleepHistory}
           label={
@@ -579,54 +804,11 @@ export function SettingsScreen() {
       </Card>
 
       <Card>
-        <InfoRow label="participant ID" value={participantId} />
-        <InfoRow label="protocol" value={TLR_PROTOCOL_VERSION} />
-        <InfoRow label="app shell" value="0.1.0" />
-      </Card>
-
-      <Card>
-        <Text
-          selectable
-          style={{
-            color: colors.textSecondary,
-            fontSize: typography.body.fontSize,
-            lineHeight: typography.body.lineHeight,
-          }}
-        >
-          Engine settings are stored locally and used by the TypeScript
-          decision engine and native iPhone Phone Mode plan builder.
-        </Text>
-      </Card>
-
-      <Card>
-        <Text
-          selectable
-          style={{
-            color: colors.textSecondary,
-            fontSize: typography.body.fontSize,
-            lineHeight: typography.body.lineHeight,
-          }}
-        >
-          Reset app and delete local data clears this device. Full remote
-          deletion is not implemented yet.
-        </Text>
-        {resetError ? (
-          <Text
-            selectable
-            style={{
-              color: colors.textSecondary,
-              fontSize: typography.body.fontSize,
-              lineHeight: typography.body.lineHeight,
-            }}
-          >
-            {resetError}
-          </Text>
-        ) : null}
-        <PrimaryPillButton
-          disabled={isResetting}
-          label={isResetting ? "Resetting..." : "Reset app and delete local data"}
-          onPress={confirmReset}
-        />
+        <Cpu color={colors.textMuted} size={23} strokeWidth={1.8} />
+        <SettingsNote>
+          Engine settings are stored locally and used by the TypeScript decision
+          engine and native iPhone Phone Mode plan builder.
+        </SettingsNote>
       </Card>
     </Screen>
   );

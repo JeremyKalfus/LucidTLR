@@ -4,10 +4,22 @@ import React
 import UIKit
 
 private struct PhoneRuntimePlan: Codable {
+  struct Training: Codable {
+    let guidedTrainingSkipped: Bool
+  }
+
   struct AudioBed: Codable {
     let enabled: Bool
     let assetId: String
     let volume: Double
+  }
+
+  struct BackgroundAudio: Codable {
+    let option: String
+    let enabled: Bool
+    let volume: Double
+    let binauralCarrierFrequencyHz: Double
+    let binauralBeatFrequencyHz: Double
   }
 
   struct Cue: Codable {
@@ -59,6 +71,14 @@ private struct PhoneRuntimePlan: Codable {
     let stopAt: String?
   }
 
+  struct Alarm: Codable {
+    let enabled: Bool
+    let fireAt: String?
+    let autoShutoff: Bool
+    let ringDurationSeconds: Double?
+    let volume: Double
+  }
+
   let sessionId: String
   let protocolVersion: String
   let nativePolicyVersion: String
@@ -66,13 +86,16 @@ private struct PhoneRuntimePlan: Codable {
   let startedAt: String
   let trainingStartedAt: String
   let trainingEndedAt: String
+  let training: Training
   let audioBed: AudioBed
+  let backgroundAudio: BackgroundAudio
   let cue: Cue
   let timing: Timing
   let movement: Movement
   let budget: Budget
   let pauses: Pauses
   let safety: Safety
+  let alarm: Alarm
 }
 
 private struct PhoneRuntimeState: Codable {
@@ -91,6 +114,9 @@ private struct PhoneRuntimeState: Codable {
   var latestMovementIntensity: String?
   var latestMotionSummaryAt: String?
   var latestRuntimeError: String?
+  var alarmRinging: Bool
+  var alarmFireAt: String?
+  var alarmFiredAt: String?
 }
 
 private struct RuntimeSnapshot: Codable {
@@ -110,9 +136,13 @@ class LucidCuePhoneRuntime: NSObject {
   private var decisionTimer: DispatchSourceTimer?
   private var motionSummaryTimer: DispatchSourceTimer?
   private var batteryTimer: DispatchSourceTimer?
+  private var alarmTimer: DispatchSourceTimer?
+  private var alarmStopTimer: DispatchSourceTimer?
   private var audioEngine: AVAudioEngine?
   private var audioBedPlayer: AVAudioPlayerNode?
+  private var backgroundAudioPlayer: AVAudioPlayerNode?
   private var cuePlayer: AVAudioPlayerNode?
+  private var alarmPlayer: AVAudioPlayerNode?
   private var motionSampleCount = 0
   private var motionMagnitudeSum = 0.0
   private var motionMagnitudeMax = 0.0
@@ -157,7 +187,10 @@ class LucidCuePhoneRuntime: NSObject {
         cueCount: 0,
         cuesInBlock: 0,
         stableLowMovementSeconds: 0,
-        latestDecisionReason: "runtime_started"
+        latestDecisionReason: "runtime_started",
+        alarmRinging: false,
+        alarmFireAt: plan.alarm.fireAt,
+        alarmFiredAt: nil
       )
       self.activeLogs = self.loadLogs(sessionId: plan.sessionId)
 
@@ -169,7 +202,17 @@ class LucidCuePhoneRuntime: NSObject {
         "trainingEndedAt": plan.trainingEndedAt,
         "earliestCueAt": plan.timing.earliestCueAt,
         "latestCueAt": plan.timing.latestCueAt,
+        "predictedRemWindowPolicy": self.usesHistoricalRemWindows(plan: plan)
+          ? "historical_rem_only_no_shoulder"
+          : "broad_cue_window",
         "audioBedAsset": plan.audioBed.assetId,
+        "backgroundAudioOption": plan.backgroundAudio.option,
+        "backgroundAudioEnabled": plan.backgroundAudio.enabled,
+        "guidedTrainingSkipped": plan.training.guidedTrainingSkipped,
+        "alarmEnabled": plan.alarm.enabled,
+        "alarmFireAt": plan.alarm.fireAt ?? "",
+        "alarmAutoShutoff": plan.alarm.autoShutoff,
+        "alarmRingDurationSeconds": plan.alarm.ringDurationSeconds ?? 0,
         "cueAsset": plan.cue.assetId,
         "appState": self.currentAppState()
       ])
@@ -177,10 +220,12 @@ class LucidCuePhoneRuntime: NSObject {
       do {
         try self.configureAudioSession()
         try self.startAudioBed(plan: plan)
+        try self.startBackgroundAudio(plan: plan)
         try self.startMotionSummaries(plan: plan)
         self.logBatterySummary(reason: "runtime_start")
         self.scheduleDecisionLoop()
         self.scheduleBatteryTimer()
+        self.scheduleAlarmIfNeeded(plan: plan)
         self.persistRuntimeSnapshot()
         resolve(nil)
       } catch {
@@ -272,12 +317,49 @@ class LucidCuePhoneRuntime: NSObject {
       throw runtimeError("Phone runtime audio bed volume must be audible.")
     }
 
+    guard
+      plan.backgroundAudio.option == "none" ||
+      plan.backgroundAudio.option == "white_noise" ||
+      plan.backgroundAudio.option == "binaural_beats"
+    else {
+      throw runtimeError("Phone runtime background audio option is invalid.")
+    }
+
+    guard !(plan.backgroundAudio.option == "none" && plan.backgroundAudio.enabled) else {
+      throw runtimeError("Background audio cannot be enabled when option is none.")
+    }
+
+    guard !(plan.backgroundAudio.option != "none" && !plan.backgroundAudio.enabled) else {
+      throw runtimeError("Background audio must be enabled for the selected option.")
+    }
+
+    guard plan.backgroundAudio.volume >= 0 && plan.backgroundAudio.volume <= 1 else {
+      throw runtimeError("Background audio volume must be between 0 and 1.")
+    }
+
     guard !plan.cue.assetId.isEmpty else {
       throw runtimeError("Phone runtime requires a cue WAV asset.")
     }
 
     guard plan.timing.cueIntervalRangeSeconds.count == 2 else {
       throw runtimeError("Phone runtime requires a cue interval range.")
+    }
+
+    if plan.alarm.enabled {
+      guard let fireAt = plan.alarm.fireAt, parseDate(fireAt) != nil else {
+        throw runtimeError("Alarm requires a valid fire time.")
+      }
+
+      guard plan.alarm.volume > 0 && plan.alarm.volume <= 1 else {
+        throw runtimeError("Alarm volume must be between 0 and 1.")
+      }
+
+      if plan.alarm.autoShutoff {
+        guard let ringDurationSeconds = plan.alarm.ringDurationSeconds,
+          ringDurationSeconds > 0 else {
+          throw runtimeError("Alarm auto shutoff requires a positive ring duration.")
+        }
+      }
     }
   }
 
@@ -335,6 +417,52 @@ class LucidCuePhoneRuntime: NSObject {
     ])
   }
 
+  private func startBackgroundAudio(plan: PhoneRuntimePlan) throws {
+    guard plan.backgroundAudio.enabled else {
+      backgroundAudioPlayer?.stop()
+      return
+    }
+
+    let engine = ensureAudioEngine()
+    let format = engine.mainMixerNode.outputFormat(forBus: 0)
+    let buffer: AVAudioPCMBuffer
+
+    switch plan.backgroundAudio.option {
+    case "white_noise":
+      buffer = makeWhiteNoiseBuffer(
+        format: format,
+        durationSeconds: 4,
+        amplitude: 0.22
+      )
+    case "binaural_beats":
+      buffer = makeBinauralBuffer(
+        format: format,
+        carrierFrequency: plan.backgroundAudio.binauralCarrierFrequencyHz,
+        beatFrequency: plan.backgroundAudio.binauralBeatFrequencyHz,
+        durationSeconds: 8,
+        amplitude: 0.18
+      )
+    default:
+      throw runtimeError("Unsupported background audio option.")
+    }
+
+    backgroundAudioPlayer?.stop()
+    backgroundAudioPlayer?.volume = Float(clamp(plan.backgroundAudio.volume, min: 0, max: 1))
+    backgroundAudioPlayer?.scheduleBuffer(buffer, at: nil, options: .loops)
+
+    if !engine.isRunning {
+      try engine.start()
+    }
+
+    backgroundAudioPlayer?.play()
+    appendEvent("background_audio_started", payload: [
+      "option": plan.backgroundAudio.option,
+      "volume": plan.backgroundAudio.volume,
+      "binauralCarrierFrequencyHz": plan.backgroundAudio.binauralCarrierFrequencyHz,
+      "binauralBeatFrequencyHz": plan.backgroundAudio.binauralBeatFrequencyHz
+    ])
+  }
+
   private func recoverAudioBedIfNeeded(reason: String) {
     guard let plan = activePlan, activePlan != nil else {
       return
@@ -342,7 +470,17 @@ class LucidCuePhoneRuntime: NSObject {
 
     do {
       try configureAudioSession()
+      if state?.alarmRinging == true {
+        try startAlarmPlayback(plan: plan)
+        appendEvent("decision_tick", payload: [
+          "reason": "alarm_audio_recovered",
+          "recoveryReason": reason
+        ])
+        return
+      }
+
       try startAudioBed(plan: plan)
+      try startBackgroundAudio(plan: plan)
       appendEvent("decision_tick", payload: [
         "reason": "audio_bed_recovered",
         "recoveryReason": reason
@@ -552,12 +690,150 @@ class LucidCuePhoneRuntime: NSObject {
     }
   }
 
+  private func scheduleAlarmIfNeeded(plan: PhoneRuntimePlan) {
+    alarmTimer?.cancel()
+    alarmTimer = nil
+
+    guard plan.alarm.enabled, let fireAtString = plan.alarm.fireAt,
+      let fireAt = parseDate(fireAtString)
+    else {
+      return
+    }
+
+    if var state {
+      state.alarmFireAt = fireAtString
+      self.state = state
+    }
+
+    let delay = fireAt.timeIntervalSince(Date())
+
+    appendEvent("alarm_scheduled", payload: [
+      "fireAt": fireAtString,
+      "autoShutoff": plan.alarm.autoShutoff,
+      "ringDurationSeconds": plan.alarm.ringDurationSeconds ?? 0,
+      "secondsUntilAlarm": max(0, delay)
+    ])
+
+    if delay <= 0 {
+      startAlarm(plan: plan, fireAt: fireAt)
+      return
+    }
+
+    alarmTimer = makeTimer(after: delay) { [weak self] in
+      self?.startAlarm(plan: plan, fireAt: fireAt)
+    }
+  }
+
+  private func startAlarmIfDue(plan: PhoneRuntimePlan, now: Date) -> Bool {
+    guard plan.alarm.enabled, let fireAt = plan.alarm.fireAt.flatMap(parseDate) else {
+      return false
+    }
+
+    if state?.alarmRinging == true {
+      return true
+    }
+
+    guard now >= fireAt else {
+      return false
+    }
+
+    startAlarm(plan: plan, fireAt: fireAt)
+    return true
+  }
+
+  private func startAlarm(plan: PhoneRuntimePlan, fireAt: Date) {
+    guard var state else {
+      return
+    }
+
+    if state.alarmRinging {
+      return
+    }
+
+    decisionTimer?.cancel()
+    decisionTimer = nil
+    motionSummaryTimer?.cancel()
+    motionSummaryTimer = nil
+    alarmTimer?.cancel()
+    alarmTimer = nil
+
+    if motionManager.isAccelerometerActive {
+      appendMotionSummary()
+      motionManager.stopAccelerometerUpdates()
+    }
+
+    audioBedPlayer?.stop()
+    backgroundAudioPlayer?.stop()
+    cuePlayer?.stop()
+
+    let now = Date()
+    state.alarmRinging = true
+    state.alarmFireAt = plan.alarm.fireAt ?? formatDate(fireAt)
+    state.alarmFiredAt = formatDate(now)
+    state.latestDecisionReason = "alarm_ringing"
+    self.state = state
+
+    do {
+      try startAlarmPlayback(plan: plan)
+      appendEvent("alarm_started", payload: [
+        "fireAt": plan.alarm.fireAt ?? formatDate(fireAt),
+        "actualStartedAt": formatDate(now),
+        "autoShutoff": plan.alarm.autoShutoff,
+        "ringDurationSeconds": plan.alarm.ringDurationSeconds ?? 0,
+        "volume": plan.alarm.volume,
+        "cueingStopped": true
+      ])
+
+      if plan.alarm.autoShutoff {
+        let ringDurationSeconds = max(1, plan.alarm.ringDurationSeconds ?? 300)
+
+        alarmStopTimer?.cancel()
+        alarmStopTimer = makeTimer(after: ringDurationSeconds) { [weak self] in
+          self?.stopRuntime(
+            reason: "alarm_auto_shutoff",
+            errorMessage: nil,
+            logEvent: true
+          )
+        }
+      }
+
+      persistRuntimeSnapshot()
+    } catch {
+      self.state?.latestRuntimeError = error.localizedDescription
+      appendEvent("runtime_error", payload: [
+        "operation": "start_alarm",
+        "error": error.localizedDescription
+      ])
+      stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+    }
+  }
+
+  private func startAlarmPlayback(plan: PhoneRuntimePlan) throws {
+    let engine = ensureAudioEngine()
+    let format = engine.mainMixerNode.outputFormat(forBus: 0)
+    let buffer = makeAlarmBuffer(format: format, durationSeconds: 1.2)
+
+    alarmPlayer?.stop()
+    alarmPlayer?.volume = Float(clamp(plan.alarm.volume, min: 0, max: 1))
+    alarmPlayer?.scheduleBuffer(buffer, at: nil, options: .loops)
+
+    if !engine.isRunning {
+      try engine.start()
+    }
+
+    alarmPlayer?.play()
+  }
+
   private func decisionTick() {
     guard let plan = activePlan, var state else {
       return
     }
 
     let now = Date()
+
+    if startAlarmIfDue(plan: plan, now: now) {
+      return
+    }
 
     if let stopAt = plan.safety.stopAt.flatMap(parseDate), now >= stopAt {
       stopRuntime(reason: "completed", errorMessage: nil, logEvent: true)
@@ -614,6 +890,16 @@ class LucidCuePhoneRuntime: NSObject {
       return "outside_cue_window"
     }
 
+    let remGate = predictedRemGate(plan: plan, now: now)
+
+    if !remGate.allowed {
+      appendCueSuppressed(
+        reason: "outside_predicted_rem_window",
+        nextCheckAt: remGate.nextCheckAt
+      )
+      return "outside_predicted_rem_window"
+    }
+
     if let pauseUntil = state.movementPauseUntil.flatMap(parseDate), now < pauseUntil {
       appendCueSuppressed(reason: "movement", nextCheckAt: pauseUntil)
       return "movement"
@@ -661,7 +947,7 @@ class LucidCuePhoneRuntime: NSObject {
 
     appendEvent("cue_candidate", payload: [
       "candidateAt": state.nextCueCandidateAt ?? formatDate(now),
-      "windowMatch": windowMatch(plan: plan, now: now),
+      "windowMatch": remGate.windowMatch,
       "cueCount": state.cueCount,
       "cuesInBlock": state.cuesInBlock
     ])
@@ -746,12 +1032,21 @@ class LucidCuePhoneRuntime: NSObject {
     let intervalMin = max(1, plan.timing.cueIntervalRangeSeconds[0])
     let intervalMax = max(intervalMin, plan.timing.cueIntervalRangeSeconds[1])
     let interval = Double.random(in: intervalMin...intervalMax)
-    let candidateAt = date.addingTimeInterval(interval)
+    let rawCandidateAt = date.addingTimeInterval(interval)
+    let candidateAt = nextCueCandidateDate(
+      plan: plan,
+      after: date,
+      rawCandidateAt: rawCandidateAt
+    )
 
     state.nextCueCandidateAt = formatDate(candidateAt)
     appendEvent("cue_candidate", payload: [
       "candidateAt": formatDate(candidateAt),
+      "rawCandidateAt": formatDate(rawCandidateAt),
       "intervalSeconds": interval,
+      "windowPolicy": usesHistoricalRemWindows(plan: plan)
+        ? "historical_rem_only_no_shoulder"
+        : "broad_cue_window",
       "reason": "scheduled_next_candidate"
     ])
   }
@@ -865,6 +1160,82 @@ class LucidCuePhoneRuntime: NSObject {
     return "cue_window"
   }
 
+  private func predictedRemGate(
+    plan: PhoneRuntimePlan,
+    now: Date
+  ) -> (allowed: Bool, nextCheckAt: Date?, windowMatch: String) {
+    let windows = historicalRemWindows(plan: plan)
+
+    if windows.isEmpty {
+      return (true, nil, windowMatch(plan: plan, now: now))
+    }
+
+    if windows.contains(where: { now >= $0.start && now <= $0.end }) {
+      return (true, nil, "historical_sleep")
+    }
+
+    let nextWindow = windows
+      .filter { $0.start > now }
+      .sorted { $0.start < $1.start }
+      .first
+
+    return (false, nextWindow?.start, "outside_predicted_rem_window")
+  }
+
+  private func nextCueCandidateDate(
+    plan: PhoneRuntimePlan,
+    after date: Date,
+    rawCandidateAt: Date
+  ) -> Date {
+    let windows = historicalRemWindows(plan: plan)
+
+    if windows.isEmpty {
+      return rawCandidateAt
+    }
+
+    if windows.contains(where: { rawCandidateAt >= $0.start && rawCandidateAt <= $0.end }) {
+      return rawCandidateAt
+    }
+
+    let nextWindowAfterRaw = windows
+      .filter { $0.start >= rawCandidateAt }
+      .sorted { $0.start < $1.start }
+      .first
+
+    if let nextWindow = nextWindowAfterRaw {
+      return nextWindow.start
+    }
+
+    let nextWindowAfterDate = windows
+      .filter { $0.start > date }
+      .sorted { $0.start < $1.start }
+      .first
+
+    if let nextWindow = nextWindowAfterDate {
+      return nextWindow.start
+    }
+
+    return rawCandidateAt
+  }
+
+  private func historicalRemWindows(plan: PhoneRuntimePlan) -> [(start: Date, end: Date)] {
+    plan.timing.predictedRemWindows.compactMap { window in
+      guard window.source == "historical_sleep",
+        let start = parseDate(window.startAt),
+        let end = parseDate(window.endAt),
+        end > start
+      else {
+        return nil
+      }
+
+      return (start, end)
+    }.sorted { $0.start < $1.start }
+  }
+
+  private func usesHistoricalRemWindows(plan: PhoneRuntimePlan) -> Bool {
+    !historicalRemWindows(plan: plan).isEmpty
+  }
+
   private func stopRuntime(
     reason: String,
     errorMessage: String?,
@@ -876,22 +1247,47 @@ class LucidCuePhoneRuntime: NSObject {
     motionSummaryTimer = nil
     batteryTimer?.cancel()
     batteryTimer = nil
+    alarmTimer?.cancel()
+    alarmTimer = nil
+    alarmStopTimer?.cancel()
+    alarmStopTimer = nil
 
     if motionManager.isAccelerometerActive {
       appendMotionSummary()
       motionManager.stopAccelerometerUpdates()
     }
 
+    let wasBackgroundAudioRunning = backgroundAudioPlayer?.isPlaying == true
+    let wasAlarmRinging = state?.alarmRinging == true
+
     audioBedPlayer?.stop()
+    backgroundAudioPlayer?.stop()
     cuePlayer?.stop()
+    alarmPlayer?.stop()
     audioEngine?.stop()
     audioEngine = nil
     audioBedPlayer = nil
+    backgroundAudioPlayer = nil
     cuePlayer = nil
+    alarmPlayer = nil
 
     if logEvent, let plan = activePlan {
       if let errorMessage {
         state?.latestRuntimeError = errorMessage
+      }
+
+      if wasBackgroundAudioRunning {
+        appendEvent("background_audio_stopped", payload: [
+          "reason": reason,
+          "option": plan.backgroundAudio.option
+        ])
+      }
+
+      if wasAlarmRinging {
+        appendEvent("alarm_stopped", payload: [
+          "reason": reason,
+          "stoppedAt": formatDate(Date())
+        ])
       }
 
       appendEvent("runtime_stopped", payload: [
@@ -899,6 +1295,8 @@ class LucidCuePhoneRuntime: NSObject {
         "stoppedAt": formatDate(Date()),
         "cueCount": state?.cueCount ?? 0,
         "cuesInBlock": state?.cuesInBlock ?? 0,
+        "alarmRinging": wasAlarmRinging,
+        "alarmFiredAt": state?.alarmFiredAt ?? "",
         "error": errorMessage ?? ""
       ])
       persistLogs(sessionId: plan.sessionId)
@@ -919,22 +1317,34 @@ class LucidCuePhoneRuntime: NSObject {
 
     let engine = AVAudioEngine()
     let bedPlayer = AVAudioPlayerNode()
+    let backgroundPlayer = AVAudioPlayerNode()
     let cuePlayer = AVAudioPlayerNode()
+    let alarmPlayer = AVAudioPlayerNode()
 
     engine.attach(bedPlayer)
+    engine.attach(backgroundPlayer)
     engine.attach(cuePlayer)
+    engine.attach(alarmPlayer)
     engine.connect(bedPlayer, to: engine.mainMixerNode, format: nil)
+    engine.connect(backgroundPlayer, to: engine.mainMixerNode, format: nil)
     engine.connect(cuePlayer, to: engine.mainMixerNode, format: nil)
+    engine.connect(alarmPlayer, to: engine.mainMixerNode, format: nil)
 
     audioEngine = engine
     audioBedPlayer = bedPlayer
+    backgroundAudioPlayer = backgroundPlayer
     self.cuePlayer = cuePlayer
+    self.alarmPlayer = alarmPlayer
 
     return engine
   }
 
   private func isAudioBedRunning() -> Bool {
     audioEngine?.isRunning == true && audioBedPlayer?.isPlaying == true
+  }
+
+  private func isBackgroundAudioRunning() -> Bool {
+    audioEngine?.isRunning == true && backgroundAudioPlayer?.isPlaying == true
   }
 
   private func makeSineBuffer(
@@ -954,6 +1364,88 @@ class LucidCuePhoneRuntime: NSObject {
 
     for frame in 0..<Int(frameCount) {
       let time = Double(frame) / sampleRate
+      let sample = Float(sin(2 * Double.pi * frequency * time) * amplitude)
+
+      for channelIndex in 0..<Int(format.channelCount) {
+        channels[channelIndex][frame] = sample
+      }
+    }
+
+    return buffer
+  }
+
+  private func makeWhiteNoiseBuffer(
+    format: AVAudioFormat,
+    durationSeconds: Double,
+    amplitude: Double
+  ) -> AVAudioPCMBuffer {
+    let sampleRate = format.sampleRate
+    let frameCount = AVAudioFrameCount(sampleRate * durationSeconds)
+    let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+    buffer.frameLength = frameCount
+
+    guard let channels = buffer.floatChannelData else {
+      return buffer
+    }
+
+    for frame in 0..<Int(frameCount) {
+      for channelIndex in 0..<Int(format.channelCount) {
+        channels[channelIndex][frame] = Float.random(in: -1...1) * Float(amplitude)
+      }
+    }
+
+    return buffer
+  }
+
+  private func makeBinauralBuffer(
+    format: AVAudioFormat,
+    carrierFrequency: Double,
+    beatFrequency: Double,
+    durationSeconds: Double,
+    amplitude: Double
+  ) -> AVAudioPCMBuffer {
+    let sampleRate = format.sampleRate
+    let frameCount = AVAudioFrameCount(sampleRate * durationSeconds)
+    let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+    buffer.frameLength = frameCount
+
+    guard let channels = buffer.floatChannelData else {
+      return buffer
+    }
+
+    let rightFrequency = carrierFrequency + beatFrequency
+
+    for frame in 0..<Int(frameCount) {
+      let time = Double(frame) / sampleRate
+      let leftSample = Float(sin(2 * Double.pi * carrierFrequency * time) * amplitude)
+      let rightSample = Float(sin(2 * Double.pi * rightFrequency * time) * amplitude)
+
+      for channelIndex in 0..<Int(format.channelCount) {
+        channels[channelIndex][frame] = channelIndex == 1 ? rightSample : leftSample
+      }
+    }
+
+    return buffer
+  }
+
+  private func makeAlarmBuffer(
+    format: AVAudioFormat,
+    durationSeconds: Double
+  ) -> AVAudioPCMBuffer {
+    let sampleRate = format.sampleRate
+    let frameCount = AVAudioFrameCount(sampleRate * durationSeconds)
+    let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+    buffer.frameLength = frameCount
+
+    guard let channels = buffer.floatChannelData else {
+      return buffer
+    }
+
+    for frame in 0..<Int(frameCount) {
+      let time = Double(frame) / sampleRate
+      let pulseTime = time.truncatingRemainder(dividingBy: 0.6)
+      let amplitude = pulseTime < 0.28 ? 0.36 : 0
+      let frequency = pulseTime < 0.14 ? 880.0 : 660.0
       let sample = Float(sin(2 * Double.pi * frequency * time) * amplitude)
 
       for channelIndex in 0..<Int(format.channelCount) {
@@ -1085,6 +1577,8 @@ class LucidCuePhoneRuntime: NSObject {
         "available": true,
         "running": false,
         "audioBedRunning": false,
+        "backgroundAudioRunning": false,
+        "alarmRinging": false,
         "motionRunning": false,
         "cueCount": 0,
         "cuesInBlock": 0
@@ -1096,6 +1590,9 @@ class LucidCuePhoneRuntime: NSObject {
       "running": true,
       "sessionId": plan.sessionId,
       "audioBedRunning": isAudioBedRunning(),
+      "backgroundAudioRunning": isBackgroundAudioRunning(),
+      "alarmRinging": state.alarmRinging,
+      "alarmFireAt": state.alarmFireAt ?? plan.alarm.fireAt ?? "",
       "motionRunning": motionManager.isAccelerometerActive,
       "cueCount": state.cueCount,
       "cuesInBlock": state.cuesInBlock,
@@ -1186,10 +1683,23 @@ class LucidCuePhoneRuntime: NSObject {
     queue.async {
       do {
         try self.configureAudioSession()
-        try self.startAudioBed(plan: snapshot.plan)
-        try self.startMotionSummaries(plan: snapshot.plan)
-        self.scheduleDecisionLoop()
-        self.scheduleBatteryTimer()
+        if snapshot.state.alarmRinging ||
+          self.startAlarmIfDue(plan: snapshot.plan, now: Date()) {
+          if snapshot.state.alarmRinging {
+            self.state?.alarmRinging = false
+            self.startAlarm(
+              plan: snapshot.plan,
+              fireAt: snapshot.plan.alarm.fireAt.flatMap(self.parseDate) ?? Date()
+            )
+          }
+        } else {
+          try self.startAudioBed(plan: snapshot.plan)
+          try self.startBackgroundAudio(plan: snapshot.plan)
+          try self.startMotionSummaries(plan: snapshot.plan)
+          self.scheduleDecisionLoop()
+          self.scheduleBatteryTimer()
+          self.scheduleAlarmIfNeeded(plan: snapshot.plan)
+        }
       } catch {
         self.appendEvent("runtime_error", payload: [
           "operation": "restore_runtime",

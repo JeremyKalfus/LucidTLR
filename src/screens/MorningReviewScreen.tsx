@@ -18,6 +18,7 @@ import {
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
 import {
   importPhoneRuntimeLogsToLocalRecords,
+  latestPhoneRuntimeStopTimestamp,
   phoneRuntime,
   summarizePhoneRuntimeEvents,
   type PhoneRuntimeLogSummary,
@@ -154,11 +155,26 @@ export function MorningReviewScreen() {
 
       try {
         const logs = await phoneRuntime.getPhoneRuntimeLogs(activeSession.id);
+        const summary = summarizePhoneRuntimeEvents(logs);
 
         await importPhoneRuntimeLogsToLocalRecords(logs);
 
+        if (
+          (summary.stopped || summary.completed || summary.errored) &&
+          canTransitionSession(
+            activeSession.sessionType,
+            activeSession.status,
+            "end_session",
+          )
+        ) {
+          sendSessionEvent(
+            "end_session",
+            latestPhoneRuntimeStopTimestamp(logs) ?? new Date().toISOString(),
+          );
+        }
+
         if (!cancelled) {
-          setRuntimeSummary(summarizePhoneRuntimeEvents(logs));
+          setRuntimeSummary(summary);
           setRuntimeSummaryError(null);
         }
       } catch (error) {
@@ -177,7 +193,7 @@ export function MorningReviewScreen() {
     return () => {
       cancelled = true;
     };
-  }, [activeSession, usesPhoneRuntime]);
+  }, [activeSession, sendSessionEvent, usesPhoneRuntime]);
 
   return (
     <Screen>

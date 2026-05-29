@@ -95,6 +95,20 @@ export function summarizePhoneRuntimeEvents(
   };
 }
 
+export function latestPhoneRuntimeStopTimestamp(
+  events: NativePhoneRuntimeEvent[],
+): string | null {
+  const stopEvent = [...events]
+    .reverse()
+    .find((event) => event.eventType === "runtime_stopped");
+
+  if (!stopEvent) {
+    return null;
+  }
+
+  return stringPayload(stopEvent.payload, "stoppedAt") ?? stopEvent.timestamp;
+}
+
 export function mapPhoneRuntimeCueEvents(
   events: NativePhoneRuntimeEvent[],
 ): PhoneRuntimeCueRecordDraft[] {

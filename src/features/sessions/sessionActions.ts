@@ -41,10 +41,18 @@ export function applySessionEvent(
 
   if (event === "start_training") {
     nextSession.trainingStartedAt = timestamp;
+    nextSession.guidedTrainingSkipped = false;
+  }
+
+  if (event === "skip_guided_training") {
+    nextSession.trainingStartedAt = timestamp;
+    nextSession.trainingEndedAt = timestamp;
+    nextSession.guidedTrainingSkipped = true;
   }
 
   if (event === "finish_training") {
     nextSession.trainingEndedAt = timestamp;
+    nextSession.guidedTrainingSkipped = false;
   }
 
   if (event === "start_cueing" && session.sessionType === "tlr") {

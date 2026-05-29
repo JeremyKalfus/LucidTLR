@@ -31,6 +31,8 @@ function unavailableStatus(reason: string): PhoneRuntimeStatus {
     unavailableReason: reason,
     running: false,
     audioBedRunning: false,
+    backgroundAudioRunning: false,
+    alarmRinging: false,
     motionRunning: false,
     cueCount: 0,
     cuesInBlock: 0,

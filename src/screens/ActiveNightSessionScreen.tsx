@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import React from "react";
-import { Alert, Text } from "react-native";
+import { Alert, AppState as NativeAppState, Text } from "react-native";
 
 import {
   Card,
@@ -13,7 +13,9 @@ import type { NightSession } from "@/src/domain/types";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
 import {
   importPhoneRuntimeLogsToLocalRecords,
+  latestPhoneRuntimeStopTimestamp,
   phoneRuntime,
+  summarizePhoneRuntimeEvents,
   type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
@@ -73,11 +75,30 @@ export function ActiveNightSessionScreen() {
     }
 
     try {
-      setRuntimeStatus(await phoneRuntime.getPhoneRuntimeStatus());
+      const status = await phoneRuntime.getPhoneRuntimeStatus();
+
+      setRuntimeStatus(status);
+
+      if (!activeSession || status.running || !status.available || !canEnd) {
+        return;
+      }
+
+      const logs = await phoneRuntime.getPhoneRuntimeLogs(activeSession.id);
+      const summary = summarizePhoneRuntimeEvents(logs);
+
+      if (!summary.stopped && !summary.completed && !summary.errored) {
+        return;
+      }
+
+      await importPhoneRuntimeLogsToLocalRecords(logs);
+      sendSessionEvent(
+        "end_session",
+        latestPhoneRuntimeStopTimestamp(logs) ?? new Date().toISOString(),
+      );
     } catch (error) {
       setRuntimeError(errorMessage(error));
     }
-  }, [usesPhoneRuntime]);
+  }, [activeSession, canEnd, sendSessionEvent, usesPhoneRuntime]);
 
   React.useEffect(() => {
     void refreshRuntimeStatus();
@@ -91,6 +112,20 @@ export function ActiveNightSessionScreen() {
     }, 5000);
 
     return () => clearInterval(intervalId);
+  }, [canEnd, refreshRuntimeStatus, usesPhoneRuntime]);
+
+  React.useEffect(() => {
+    if (!usesPhoneRuntime || !canEnd) {
+      return undefined;
+    }
+
+    const subscription = NativeAppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void refreshRuntimeStatus();
+      }
+    });
+
+    return () => subscription.remove();
   }, [canEnd, refreshRuntimeStatus, usesPhoneRuntime]);
 
   async function stopSession() {
@@ -138,6 +173,18 @@ export function ActiveNightSessionScreen() {
             <InfoRow
               label="audio bed"
               value={displayValue(runtimeStatus?.audioBedRunning)}
+            />
+            <InfoRow
+              label="background audio"
+              value={displayValue(runtimeStatus?.backgroundAudioRunning)}
+            />
+            <InfoRow
+              label="alarm"
+              value={displayValue(runtimeStatus?.alarmRinging)}
+            />
+            <InfoRow
+              label="alarm time"
+              value={displayValue(runtimeStatus?.alarmFireAt)}
             />
             <InfoRow
               label="motion"

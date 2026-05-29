@@ -14,7 +14,7 @@ import {
 import { cueAudio, PRESLEEP_SCRIPT_NOTICE, PRESLEEP_SCRIPT_PLACEHOLDER } from "@/src/protocol/tlrProtocol";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
 import {
-  buildNativePhoneSessionPlan,
+  buildNativePhoneSessionPlanFromCompletedSession,
   phoneRuntime,
 } from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
@@ -28,9 +28,10 @@ export function PresleepTrainingScreen() {
   const {
     activeSession,
     engineSettings,
-    latestEngineSnapshot,
     sendSessionEvent,
+    sleepHistory,
     startSession,
+    tlrOptions,
   } = useAppState();
   const [runtimeError, setRuntimeError] = React.useState<string | null>(null);
   const [isStartingRuntime, setIsStartingRuntime] = React.useState(false);
@@ -39,16 +40,22 @@ export function PresleepTrainingScreen() {
   const canStart =
     session?.status === "setup" &&
     canTransitionSession("tlr", session.status, "start_training");
+  const canSkipGuidedTraining =
+    session?.status === "setup" &&
+    tlrOptions.skipGuidedTraining &&
+    canTransitionSession("tlr", session.status, "skip_guided_training");
   const canFinish =
     session?.status === "training" &&
     canTransitionSession("tlr", session.status, "finish_training");
   const canStartRuntime =
     session?.status === "waiting_for_cue_window" && session.mode === "phone";
 
-  async function startPhoneRuntime() {
+  async function startNightSession(options?: { skipGuidedTraining?: boolean }) {
     const timestamp = new Date().toISOString();
     const runtimeSession =
-      session?.status === "training"
+      options?.skipGuidedTraining && session?.status === "setup"
+        ? sendSessionEvent("skip_guided_training", timestamp)
+        : session?.status === "training"
         ? sendSessionEvent("finish_training", timestamp)
         : session;
 
@@ -56,14 +63,25 @@ export function PresleepTrainingScreen() {
       return;
     }
 
+    if (runtimeSession.mode !== "phone") {
+      router.push("/active-night-session");
+      return;
+    }
+
     setRuntimeError(null);
     setIsStartingRuntime(true);
 
     try {
-      const plan = buildNativePhoneSessionPlan({
+      const plan = buildNativePhoneSessionPlanFromCompletedSession({
         session: runtimeSession,
-        sleepTiming: latestEngineSnapshot.sleepTiming,
         settings: engineSettings,
+        tlrOptions,
+        historicalSleepPrior:
+          sleepHistory.enabled &&
+          sleepHistory.prior &&
+          sleepHistory.prior.confidence !== "none"
+            ? sleepHistory.prior
+            : undefined,
       });
 
       await phoneRuntime.startPhoneTlrSession(plan);
@@ -104,7 +122,7 @@ export function PresleepTrainingScreen() {
           disabled={isStartingRuntime}
           label={isStartingRuntime ? "Starting Phone Runtime..." : "Start Night Session"}
           onPress={() => {
-            void startPhoneRuntime();
+            void startNightSession();
           }}
         />
       </Screen>
@@ -133,28 +151,38 @@ export function PresleepTrainingScreen() {
         <InfoRow label="runtime" value="native iPhone Phone Mode after training" />
       </Card>
 
-      <Card>
-        <Text
-          selectable
-          style={{
-            color: colors.textMuted,
-            fontSize: typography.label.fontSize,
-            lineHeight: typography.label.lineHeight,
-          }}
-        >
-          {PRESLEEP_SCRIPT_NOTICE}
-        </Text>
-        <Text
-          selectable
-          style={{
-            color: colors.textSecondary,
-            fontSize: typography.body.fontSize,
-            lineHeight: typography.body.lineHeight,
-          }}
-        >
-          {PRESLEEP_SCRIPT_PLACEHOLDER.trim()}
-        </Text>
-      </Card>
+      {canSkipGuidedTraining ? (
+        <Card compact>
+          <InfoRow label="cue" value={cueAudio.description} />
+          <InfoRow label="training" value="guided script skipped" />
+          <InfoRow label="checkpoint" value="cue-associated lucid mindset" />
+        </Card>
+      ) : null}
+
+      {!tlrOptions.skipGuidedTraining ? (
+        <Card>
+          <Text
+            selectable
+            style={{
+              color: colors.textMuted,
+              fontSize: typography.label.fontSize,
+              lineHeight: typography.label.lineHeight,
+            }}
+          >
+            {PRESLEEP_SCRIPT_NOTICE}
+          </Text>
+          <Text
+            selectable
+            style={{
+              color: colors.textSecondary,
+              fontSize: typography.body.fontSize,
+              lineHeight: typography.body.lineHeight,
+            }}
+          >
+            {PRESLEEP_SCRIPT_PLACEHOLDER.trim()}
+          </Text>
+        </Card>
+      ) : null}
 
       <Card compact>
         <InfoRow label="session status" value={session?.status ?? "none"} />
@@ -168,7 +196,17 @@ export function PresleepTrainingScreen() {
         />
       ) : null}
 
-      {canStart ? (
+      {canSkipGuidedTraining ? (
+        <PrimaryPillButton
+          disabled={isStartingRuntime}
+          label={isStartingRuntime ? "Starting Phone Runtime..." : "Start Night Session"}
+          onPress={() => {
+            void startNightSession({ skipGuidedTraining: true });
+          }}
+        />
+      ) : null}
+
+      {canStart && !tlrOptions.skipGuidedTraining ? (
         <PrimaryPillButton
           label="Start Training"
           onPress={() => sendSessionEvent("start_training")}
@@ -200,7 +238,7 @@ export function PresleepTrainingScreen() {
                   : "Start Native Phone Runtime"
               }
               onPress={() => {
-                void startPhoneRuntime();
+                void startNightSession();
               }}
             />
           ) : null}

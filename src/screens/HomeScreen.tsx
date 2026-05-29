@@ -9,8 +9,8 @@ import {
   InfoRow,
   Screen,
 } from "@/src/components/ui";
+import { TlrOptionsControls } from "@/src/components/tlr/TlrOptionsControls";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
-import { cueAudio } from "@/src/protocol/tlrProtocol";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, shadows, spacing, typography } from "@/src/theme/tokens";
 
@@ -115,10 +115,14 @@ function HomeActionButton({
 
 export function HomeScreen() {
   const {
+    engineSettings,
     latestEngineSnapshot,
     selectedMode,
     sessionHistory,
+    setSelectedMode,
     startSession,
+    tlrOptions,
+    updateTlrOptions,
   } = useAppState();
   const engineValues = latestEngineSnapshot.currentValues;
   const tlrNights = sessionHistory.filter(
@@ -145,26 +149,19 @@ export function HomeScreen() {
         </View>
 
         <Card compact>
-          <InfoRow label="mode" value={selectedMode === "phone" ? "phone only" : "watch"} />
-          <InfoRow label="sound" value={cueAudio.defaultCueId.replaceAll("-", " ")} />
+          <TlrOptionsControls
+            selectedMode={selectedMode}
+            tlrOptions={tlrOptions}
+            typicalWakeTime={engineSettings.typicalWakeTime}
+            onModeChange={setSelectedMode}
+            onOptionsChange={(patch) => {
+              void updateTlrOptions(patch);
+            }}
+          />
           <InfoRow label="nights with TLR" value={String(tlrNights)} />
           <InfoRow label="sensitivity" value={engineValues.sensitivityProfile.replaceAll("_", " ")} />
           <InfoRow label="cues tonight" value={engineValues.cueCountTonight} />
           <InfoRow label="sleep prior" value={`${engineValues.sleepPriorSource} (${engineValues.sleepPriorConfidence})`} />
-        </Card>
-      </View>
-
-      <View style={{ gap: labelToCardGap }}>
-        <HomeSectionLabel>Engine state</HomeSectionLabel>
-        <Card compact>
-          <InfoRow label="cue window" value={engineValues.nextOrActiveCueWindow} />
-          <InfoRow label="cue window source" value={engineValues.cueWindowSource} />
-          <InfoRow label="next predicted REM" value={engineValues.nextPredictedRemWindow} />
-          <InfoRow label="status" value={engineValues.currentEngineStatus} />
-          <InfoRow label="reason" value={engineValues.latestDecisionReason} />
-          <InfoRow label="last cue" value={engineValues.lastCueTime} />
-          <InfoRow label="next check" value={engineValues.nextCheckTime} />
-          <InfoRow label="volume" value={engineValues.currentVolumeLevel} />
         </Card>
       </View>
 
