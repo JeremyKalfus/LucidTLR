@@ -148,6 +148,13 @@ class LucidCuePhoneRuntime: NSObject {
   private var motionMagnitudeMax = 0.0
   private var lastMotionSummaryAt: Date?
   private var lastCueAssociatedMovementAt: String?
+  private var audioInterruptionActive = false
+  private var audioRecoveryGraceUntil: Date?
+  private var nextAudioRecoveryAttemptAt: Date?
+  private let activeInterruptionRecoveryRetrySeconds: TimeInterval = 15
+  private let postInterruptionRecoveryGraceSeconds: TimeInterval = 30
+  private let routeChangeRecoveryGraceSeconds: TimeInterval = 20
+  private let routeChangeRecoveryDelaySeconds: TimeInterval = 2
 
   override init() {
     isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -181,6 +188,9 @@ class LucidCuePhoneRuntime: NSObject {
     queue.async {
       self.stopRuntime(reason: "replaced_by_new_session", errorMessage: nil, logEvent: true)
       self.activePlan = plan
+      self.audioInterruptionActive = false
+      self.audioRecoveryGraceUntil = nil
+      self.nextAudioRecoveryAttemptAt = nil
       self.state = PhoneRuntimeState(
         sessionId: plan.sessionId,
         runtimeStartedAt: self.formatDate(Date()),
@@ -463,38 +473,52 @@ class LucidCuePhoneRuntime: NSObject {
     ])
   }
 
-  private func recoverAudioBedIfNeeded(reason: String) {
-    guard let plan = activePlan, activePlan != nil else {
-      return
+  private func recoverAudioBedIfNeeded(
+    reason: String,
+    stopOnFailure: Bool = true
+  ) -> Bool {
+    guard let plan = activePlan else {
+      return false
     }
 
     do {
       try configureAudioSession()
       if state?.alarmRinging == true {
         try startAlarmPlayback(plan: plan)
+        audioInterruptionActive = false
+        audioRecoveryGraceUntil = nil
+        nextAudioRecoveryAttemptAt = nil
         appendEvent("decision_tick", payload: [
           "reason": "alarm_audio_recovered",
           "recoveryReason": reason
         ])
-        return
+        return true
       }
 
       try startAudioBed(plan: plan)
       try startBackgroundAudio(plan: plan)
+      audioInterruptionActive = false
+      audioRecoveryGraceUntil = nil
+      nextAudioRecoveryAttemptAt = nil
       appendEvent("decision_tick", payload: [
         "reason": "audio_bed_recovered",
         "recoveryReason": reason
       ])
+      return true
     } catch {
       appendEvent("audio_bed_failed", payload: [
         "reason": reason,
-        "error": error.localizedDescription
+        "error": error.localizedDescription,
+        "willRetry": !stopOnFailure
       ])
-      appendEvent("runtime_error", payload: [
-        "operation": "recover_audio_bed",
-        "error": error.localizedDescription
-      ])
-      stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+      if stopOnFailure {
+        appendEvent("runtime_error", payload: [
+          "operation": "recover_audio_bed",
+          "error": error.localizedDescription
+        ])
+        stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+      }
+      return false
     }
   }
 
@@ -840,11 +864,8 @@ class LucidCuePhoneRuntime: NSObject {
       return
     }
 
-    guard isAudioBedRunning() else {
-      appendEvent("audio_bed_failed", payload: [
-        "reason": "not_running_at_decision_tick"
-      ])
-      stopRuntime(reason: "error", errorMessage: "Audio bed stopped.", logEvent: true)
+    if !isAudioBedRunning(),
+      handleStoppedAudioBedDuringDecision(state: &state, now: now) {
       return
     }
 
@@ -861,6 +882,92 @@ class LucidCuePhoneRuntime: NSObject {
       "appState": currentAppState()
     ])
     persistRuntimeSnapshot()
+  }
+
+  private func handleStoppedAudioBedDuringDecision(
+    state: inout PhoneRuntimeState,
+    now: Date
+  ) -> Bool {
+    if audioInterruptionActive {
+      if shouldAttemptAudioRecovery(now: now),
+        recoverAudioBedIfNeeded(reason: "active_interruption_retry", stopOnFailure: false) {
+        state.latestDecisionReason = "audio_bed_recovered"
+        return false
+      }
+
+      let nextCheckAt = nextAudioRecoveryAttemptAt ?? now.addingTimeInterval(
+        activeInterruptionRecoveryRetrySeconds
+      )
+      state.latestDecisionReason = "audio_interruption"
+      self.state = state
+      appendCueSuppressed(reason: "audio_interruption", nextCheckAt: nextCheckAt)
+      appendAudioRecoveryDecisionTick(
+        reason: "audio_interruption",
+        state: state,
+        nextCheckAt: nextCheckAt
+      )
+      persistRuntimeSnapshot()
+      return true
+    }
+
+    if let graceUntil = audioRecoveryGraceUntil, now < graceUntil {
+      if shouldAttemptAudioRecovery(now: now),
+        recoverAudioBedIfNeeded(reason: "audio_recovery_grace", stopOnFailure: false) {
+        state.latestDecisionReason = "audio_bed_recovered"
+        return false
+      }
+
+      let nextCheckAt = nextAudioRecoveryAttemptAt ?? graceUntil
+      state.latestDecisionReason = "audio_recovery_pending"
+      self.state = state
+      appendCueSuppressed(reason: "audio_recovery_pending", nextCheckAt: nextCheckAt)
+      appendAudioRecoveryDecisionTick(
+        reason: "audio_recovery_pending",
+        state: state,
+        nextCheckAt: nextCheckAt
+      )
+      persistRuntimeSnapshot()
+      return true
+    }
+
+    if recoverAudioBedIfNeeded(reason: "decision_tick_audio_bed_stopped", stopOnFailure: false) {
+      state.latestDecisionReason = "audio_bed_recovered"
+      return false
+    }
+
+    appendEvent("runtime_error", payload: [
+      "operation": "decision_tick_audio_bed",
+      "error": "Audio bed stopped."
+    ])
+    stopRuntime(reason: "error", errorMessage: "Audio bed stopped.", logEvent: true)
+    return true
+  }
+
+  private func shouldAttemptAudioRecovery(now: Date) -> Bool {
+    if let nextAudioRecoveryAttemptAt, now < nextAudioRecoveryAttemptAt {
+      return false
+    }
+
+    nextAudioRecoveryAttemptAt = now.addingTimeInterval(activeInterruptionRecoveryRetrySeconds)
+    return true
+  }
+
+  private func appendAudioRecoveryDecisionTick(
+    reason: String,
+    state: PhoneRuntimeState,
+    nextCheckAt: Date?
+  ) {
+    appendEvent("decision_tick", payload: [
+      "reason": reason,
+      "cueCount": state.cueCount,
+      "cuesInBlock": state.cuesInBlock,
+      "stableLowMovementSeconds": state.stableLowMovementSeconds,
+      "nextCueCandidateAt": state.nextCueCandidateAt ?? "",
+      "nextCheckAt": nextCheckAt.map(formatDate) ?? "",
+      "audioInterruptionActive": audioInterruptionActive,
+      "audioRecoveryGraceUntil": audioRecoveryGraceUntil.map(formatDate) ?? "",
+      "appState": currentAppState()
+    ])
   }
 
   private func evaluateDecision(
@@ -1306,6 +1413,9 @@ class LucidCuePhoneRuntime: NSObject {
     state = nil
     activeLogs = []
     lastCueAssociatedMovementAt = nil
+    audioInterruptionActive = false
+    audioRecoveryGraceUntil = nil
+    nextAudioRecoveryAttemptAt = nil
     clearRuntimeSnapshot()
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
@@ -1533,13 +1643,25 @@ class LucidCuePhoneRuntime: NSObject {
     ]
 
     if type == .began {
-      logEvent("interruption_started", payload: payload)
+      queue.async {
+        self.audioInterruptionActive = self.activePlan != nil
+        self.audioRecoveryGraceUntil = nil
+        self.nextAudioRecoveryAttemptAt = Date().addingTimeInterval(
+          self.activeInterruptionRecoveryRetrySeconds
+        )
+        self.appendEvent("interruption_started", payload: payload)
+      }
       return
     }
 
-    logEvent("interruption_ended", payload: payload)
     queue.async {
-      self.recoverAudioBedIfNeeded(reason: "interruption_ended")
+      self.audioInterruptionActive = false
+      self.audioRecoveryGraceUntil = Date().addingTimeInterval(
+        self.postInterruptionRecoveryGraceSeconds
+      )
+      self.nextAudioRecoveryAttemptAt = Date()
+      self.appendEvent("interruption_ended", payload: payload)
+      _ = self.recoverAudioBedIfNeeded(reason: "interruption_ended", stopOnFailure: false)
     }
   }
 
@@ -1550,7 +1672,35 @@ class LucidCuePhoneRuntime: NSObject {
     payload["reason"] = reason?.description ?? "unknown"
     payload["rawReason"] = rawReason ?? 0
 
-    logEvent("route_changed", payload: payload)
+    queue.async {
+      self.appendEvent("route_changed", payload: payload)
+
+      guard self.activePlan != nil else {
+        return
+      }
+
+      self.audioRecoveryGraceUntil = Date().addingTimeInterval(
+        self.routeChangeRecoveryGraceSeconds
+      )
+      self.nextAudioRecoveryAttemptAt = Date().addingTimeInterval(
+        self.routeChangeRecoveryDelaySeconds
+      )
+
+      let recoveryReason = "route_change_\(reason?.description ?? "unknown")"
+      self.queue.asyncAfter(deadline: .now() + self.routeChangeRecoveryDelaySeconds) { [weak self] in
+        guard let self, self.activePlan != nil, !self.audioInterruptionActive else {
+          return
+        }
+
+        guard !self.isAudioBedRunning() else {
+          self.audioRecoveryGraceUntil = nil
+          self.nextAudioRecoveryAttemptAt = nil
+          return
+        }
+
+        _ = self.recoverAudioBedIfNeeded(reason: recoveryReason, stopOnFailure: false)
+      }
+    }
   }
 
   @objc private func handleBatteryChange() {
