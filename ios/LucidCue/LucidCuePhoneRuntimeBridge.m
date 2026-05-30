@@ -17,6 +17,9 @@ RCT_EXTERN_METHOD(stopPhoneTlrSession:(NSDictionary *)options
 RCT_EXTERN_METHOD(getPhoneRuntimeStatus:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(getPhoneRuntimeLogSessionIds:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(getPhoneRuntimeLogs:(NSString *)sessionId
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

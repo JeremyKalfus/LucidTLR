@@ -22,6 +22,7 @@ import {
 } from "@/src/components/ui";
 import type {
   ExternalSleepSource,
+  NightSession,
   PredictedRemWindow,
   RemDensityBin,
 } from "@/src/domain/types";
@@ -40,6 +41,11 @@ type DataRoute =
   | "/data/iphone-runtime"
   | "/data/sleep-history"
   | "/data/sessions";
+
+type RuntimeLogSessionRef = {
+  id: string;
+  session?: NightSession;
+};
 
 function isOvernightEngineStatus(status: string): boolean {
   return (
@@ -113,6 +119,46 @@ function formatBytes(bytes: number): string {
   }
 
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function phoneSessionStartedMs(session: NightSession): number {
+  const startedMs = Date.parse(session.startedAt);
+
+  return Number.isFinite(startedMs) ? startedMs : 0;
+}
+
+function localPhoneSessions(
+  activeSession: NightSession | null,
+  sessionHistory: NightSession[],
+): NightSession[] {
+  const byId = new Map<string, NightSession>();
+
+  for (const session of [activeSession, ...sessionHistory]) {
+    if (
+      session &&
+      session.sessionType === "tlr" &&
+      session.mode === "phone" &&
+      !byId.has(session.id)
+    ) {
+      byId.set(session.id, session);
+    }
+  }
+
+  return [...byId.values()].sort(
+    (a, b) => phoneSessionStartedMs(b) - phoneSessionStartedMs(a),
+  );
+}
+
+function latestRuntimeEventMs(events: NativePhoneRuntimeEvent[]): number {
+  const latestEvent = events[events.length - 1];
+
+  if (!latestEvent) {
+    return 0;
+  }
+
+  const timestampMs = Date.parse(latestEvent.timestamp);
+
+  return Number.isFinite(timestampMs) ? timestampMs : 0;
 }
 
 function isTimelineEvent(event: NativePhoneRuntimeEvent): boolean {
@@ -231,33 +277,65 @@ function useRuntimeTimeline() {
   const [runtimeLogs, setRuntimeLogs] = React.useState<NativePhoneRuntimeEvent[]>(
     [],
   );
+  const [runtimeSession, setRuntimeSession] =
+    React.useState<RuntimeLogSessionRef | null>(null);
+  const [scannedSessionCount, setScannedSessionCount] = React.useState(0);
   const [runtimeLogError, setRuntimeLogError] = React.useState<string | null>(
     null,
   );
   const { activeSession, sessionHistory } = useAppState();
-  const runtimeSession =
-    activeSession?.sessionType === "tlr" && activeSession.mode === "phone"
-      ? activeSession
-      : sessionHistory.find(
-          (session) =>
-            session.sessionType === "tlr" && session.mode === "phone",
-        );
+  const candidateSessions = React.useMemo(
+    () => localPhoneSessions(activeSession, sessionHistory),
+    [activeSession, sessionHistory],
+  );
   const timelineEvents = runtimeLogs.filter(isTimelineEvent).slice(-40).reverse();
 
   React.useEffect(() => {
     let cancelled = false;
 
     async function loadRuntimeLogs() {
-      if (!runtimeSession) {
-        setRuntimeLogs([]);
-        return;
-      }
-
       try {
-        const logs = await phoneRuntime.getPhoneRuntimeLogs(runtimeSession.id);
+        const nativeLogSessionIds = await phoneRuntime.getPhoneRuntimeLogSessionIds();
+        const localSessionById = new Map(
+          candidateSessions.map((session) => [session.id, session]),
+        );
+        const candidateIds = [
+          ...candidateSessions.map((session) => session.id),
+          ...nativeLogSessionIds,
+        ].filter((id, index, ids) => ids.indexOf(id) === index);
+
+        if (candidateIds.length === 0) {
+          if (!cancelled) {
+            setRuntimeLogs([]);
+            setRuntimeSession(null);
+            setScannedSessionCount(0);
+          }
+
+          return;
+        }
+
+        const candidatesWithLogs = await Promise.all(
+          candidateIds.map(async (sessionId) => ({
+            ref: {
+              id: sessionId,
+              session: localSessionById.get(sessionId),
+            },
+            logs: await phoneRuntime.getPhoneRuntimeLogs(sessionId),
+          })),
+        );
+        const selected =
+          [...candidatesWithLogs]
+            .filter((candidate) => candidate.logs.length > 0)
+            .sort(
+              (a, b) =>
+                latestRuntimeEventMs(b.logs) - latestRuntimeEventMs(a.logs),
+            )[0] ??
+          candidatesWithLogs[0];
 
         if (!cancelled) {
-          setRuntimeLogs(logs);
+          setRuntimeLogs(selected.logs);
+          setRuntimeSession(selected.ref);
+          setScannedSessionCount(candidatesWithLogs.length);
           setRuntimeLogError(null);
         }
       } catch (error) {
@@ -276,12 +354,13 @@ function useRuntimeTimeline() {
     return () => {
       cancelled = true;
     };
-  }, [runtimeSession]);
+  }, [candidateSessions]);
 
   return {
     runtimeLogs,
     runtimeLogError,
     runtimeSession,
+    scannedSessionCount,
     timelineEvents,
   };
 }
@@ -552,8 +631,13 @@ export function TlrEngineDataScreen() {
 }
 
 export function IphoneRuntimeDataScreen() {
-  const { runtimeLogs, runtimeLogError, runtimeSession, timelineEvents } =
-    useRuntimeTimeline();
+  const {
+    runtimeLogs,
+    runtimeLogError,
+    runtimeSession,
+    scannedSessionCount,
+    timelineEvents,
+  } = useRuntimeTimeline();
   const [exportError, setExportError] = React.useState<string | null>(null);
   const [exportInfo, setExportInfo] = React.useState<string | null>(null);
   const [isExportingLogs, setIsExportingLogs] = React.useState(false);
@@ -574,7 +658,9 @@ export function IphoneRuntimeDataScreen() {
       const payload = {
         exportSchema: "lucidcue-phone-runtime-export-v1",
         exportedAt: new Date().toISOString(),
-        session: runtimeSession,
+        sessionId: runtimeSession.id,
+        session: runtimeSession.session ?? null,
+        scannedSessionCount,
         status,
         summary: summarizePhoneRuntimeEvents(logs),
         eventCount: logs.length,
@@ -628,6 +714,13 @@ export function IphoneRuntimeDataScreen() {
         ) : (
           <InfoRow label="session" value="none yet" />
         )}
+        {runtimeSession?.session ? null : runtimeSession ? (
+          <InfoRow label="session source" value="native log file" />
+        ) : null}
+        <InfoRow
+          label="sessions scanned"
+          value={String(scannedSessionCount)}
+        />
         {runtimeLogError ? (
           <InfoRow label="runtime logs" value={runtimeLogError} />
         ) : timelineEvents.length === 0 ? (
@@ -665,8 +758,8 @@ export function IphoneRuntimeDataScreen() {
       <Card>
         <DataNote>
           This timeline reflects local native iPhone Phone Mode events for the
-          latest active or completed TLR phone session. Raw JSON export stays
-          local until you choose where to share it.
+          newest local TLR phone session with native events. Raw JSON export
+          stays local until you choose where to share it.
         </DataNote>
       </Card>
     </Screen>

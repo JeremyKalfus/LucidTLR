@@ -330,6 +330,16 @@ class LucidCuePhoneRuntime: NSObject {
     }
   }
 
+  @objc(getPhoneRuntimeLogSessionIds:rejecter:)
+  func getPhoneRuntimeLogSessionIds(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      resolve(self.listLogSessionIds())
+    }
+  }
+
   @objc(getPhoneRuntimeLogs:resolver:rejecter:)
   func getPhoneRuntimeLogs(
     _ sessionId: NSString,
@@ -2175,6 +2185,34 @@ class LucidCuePhoneRuntime: NSObject {
     }
 
     return logs
+  }
+
+  private func listLogSessionIds() -> [String] {
+    let suffix = "-events.json"
+
+    guard
+      let files = try? FileManager.default.contentsOfDirectory(
+        at: storageDirectory(),
+        includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsHiddenFiles]
+      )
+    else {
+      return []
+    }
+
+    return files
+      .filter { $0.lastPathComponent.hasSuffix(suffix) }
+      .sorted { left, right in
+        let leftDate = ((try? left.resourceValues(forKeys: [.contentModificationDateKey]))?
+          .contentModificationDate) ?? Date.distantPast
+        let rightDate = ((try? right.resourceValues(forKeys: [.contentModificationDateKey]))?
+          .contentModificationDate) ?? Date.distantPast
+
+        return leftDate > rightDate
+      }
+      .map { file in
+        String(file.lastPathComponent.dropLast(suffix.count))
+      }
   }
 
   private func persistRuntimeSnapshot() {

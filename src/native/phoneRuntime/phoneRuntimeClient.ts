@@ -17,6 +17,7 @@ export interface NativePhoneRuntimeModule {
   ) => Promise<void>;
   stopPhoneTlrSession: (options?: RuntimeStopOptions) => Promise<void>;
   getPhoneRuntimeStatus: () => Promise<PhoneRuntimeStatus>;
+  getPhoneRuntimeLogSessionIds?: () => Promise<string[]>;
   getPhoneRuntimeLogs: (
     sessionId: string,
   ) => Promise<NativePhoneRuntimeEvent[]>;
@@ -87,6 +88,14 @@ export function createPhoneRuntimeClient(options: PhoneRuntimeClientOptions) {
       }
 
       return options.nativeModule.getPhoneRuntimeStatus();
+    },
+
+    getPhoneRuntimeLogSessionIds() {
+      if (options.platform !== "ios" || !options.nativeModule) {
+        return Promise.resolve([]);
+      }
+
+      return options.nativeModule.getPhoneRuntimeLogSessionIds?.() ?? Promise.resolve([]);
     },
 
     getPhoneRuntimeLogs(sessionId: string) {
