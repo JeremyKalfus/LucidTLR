@@ -525,6 +525,18 @@ export function IosPhoneModeSettingsScreen() {
         />
         <InfoRow label="manual capability" value="unknown" />
       </Card>
+
+      {__DEV__ ? (
+        <Card>
+          <SettingsNote>
+            Development-only locked runtime smoke test.
+          </SettingsNote>
+          <PrimaryPillButton
+            label="10-minute kitchen sink"
+            onPress={() => router.push("/debug/iphone-kitchen-sink")}
+          />
+        </Card>
+      ) : null}
     </Screen>
   );
 }

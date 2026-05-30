@@ -7,6 +7,10 @@ import {
 } from "@/src/engine";
 import { createDefaultTlrOptions } from "@/src/features/tlrOptions/tlrOptions";
 import {
+  DEV_KITCHEN_SINK_DURATION_SECONDS,
+  buildDevKitchenSinkPhoneSessionPlan,
+} from "@/src/native/phoneRuntime/buildDevKitchenSinkPhoneSessionPlan";
+import {
   buildNativePhoneSessionPlan,
   buildNativePhoneSessionPlanFromCompletedSession,
 } from "@/src/native/phoneRuntime/buildNativePhoneSessionPlan";
@@ -243,5 +247,46 @@ describe("buildNativePhoneSessionPlan", () => {
         },
       }),
     ).toContain("Phone runtime requires an audible audio bed.");
+  });
+
+  it("builds a dev-only 10-minute kitchen sink plan with explicit REM gating", () => {
+    const settings = {
+      ...createDefaultEngineSettings("standard"),
+      phoneAudioBedVolume: 0.01,
+    };
+    const now = "2026-01-20T04:01:00.000Z";
+    const plan = buildDevKitchenSinkPhoneSessionPlan({
+      session: {
+        ...session(),
+        status: "cueing",
+        trainingStartedAt: now,
+        trainingEndedAt: now,
+        cueingStartedAt: now,
+        guidedTrainingSkipped: true,
+      },
+      settings,
+      now,
+    });
+
+    expect(plan.nativePolicyVersion).toContain("dev-kitchen-sink-10m");
+    expect(plan.audioBed.enabled).toBe(true);
+    expect(plan.audioBed.volume).toBe(0.03);
+    expect(plan.safety.stopAt).toBe(
+      "2026-01-20T04:11:00.000Z",
+    );
+    expect(
+      Date.parse(plan.safety.stopAt ?? "") - Date.parse(now),
+    ).toBe(DEV_KITCHEN_SINK_DURATION_SECONDS * 1000);
+    expect(plan.timing.predictedRemWindows).toEqual([
+      {
+        startAt: "2026-01-20T04:01:20.000Z",
+        endAt: "2026-01-20T04:10:40.000Z",
+        confidence: 1,
+        source: "historical_sleep",
+      },
+    ]);
+    expect(nativePhoneSessionUsesPredictedRemWindows(plan)).toBe(true);
+    expect(plan.timing.cueIntervalRangeSeconds).toEqual([20, 30]);
+    expect(plan.alarm.enabled).toBe(false);
   });
 });

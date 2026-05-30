@@ -92,3 +92,17 @@ The hidden native locked-background harness lives at:
 
 See [iphone-feasibility.md](iphone-feasibility.md) for the physical-device test
 matrix and decision tree.
+
+## 10-Minute Production Runtime Smoke Test
+
+Development builds also include a hidden production-runtime smoke test:
+
+```text
+/debug/iphone-kitchen-sink
+```
+
+This route is dev-only. It starts the real native iPhone Phone runtime with a
+compressed 10-minute test plan, an audible audio bed, motion summaries, native
+cue scheduling, a test-only predicted REM window, local native logs, and log
+sharing/import controls. It is for locked-device stress testing only and does
+not change the public Phone Mode protocol.
