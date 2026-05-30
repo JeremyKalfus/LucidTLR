@@ -11,10 +11,20 @@ import {
   InfoRow,
   Screen,
 } from "@/src/components/ui";
+import { SleepNightGraph } from "@/src/components/sleep/SleepNightGraph";
 import { TlrOptionsControls } from "@/src/components/tlr/TlrOptionsControls";
 import { getCueAppAsset } from "@/src/audio/cueAssets";
+import {
+  loadArchivedPhoneRuntimeLogs,
+  saveArchivedPhoneRuntimeLogs,
+} from "@/src/data/local/fullDataBackup";
+import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import type { TlrOptionsPatch } from "@/src/features/tlrOptions/tlrOptions";
+import {
+  phoneRuntime,
+  type NativePhoneRuntimeEvent,
+} from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, shadows, spacing, typography } from "@/src/theme/tokens";
 
@@ -150,6 +160,9 @@ export function HomeScreen() {
     (session) => session.sessionType === "tlr",
   ).length;
   const lastSession = sessionHistory[0] ?? null;
+  const [lastSleepLogs, setLastSleepLogs] = React.useState<
+    NativePhoneRuntimeEvent[]
+  >([]);
   const handleTlrOptionsChange = React.useCallback(
     (patch: TlrOptionsPatch) => {
       void updateTlrOptions(patch);
@@ -202,6 +215,57 @@ export function HomeScreen() {
     cuePreviewRequest,
     cuePreviewStatus.isLoaded,
   ]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadLastSleepLogs() {
+      if (!lastSession) {
+        setLastSleepLogs([]);
+        return;
+      }
+
+      try {
+        const db = await getLocalDb();
+        const archivedLogs = await loadArchivedPhoneRuntimeLogs(db);
+        let logs = archivedLogs[lastSession.id] ?? [];
+
+        if (lastSession.sessionType === "tlr" && lastSession.mode === "phone") {
+          try {
+            const nativeLogs = await phoneRuntime.getPhoneRuntimeLogs(lastSession.id);
+
+            if (nativeLogs.length > 0) {
+              logs = nativeLogs;
+              await saveArchivedPhoneRuntimeLogs({
+                db,
+                logs: {
+                  ...archivedLogs,
+                  [lastSession.id]: nativeLogs,
+                },
+                updatedAt: new Date().toISOString(),
+              });
+            }
+          } catch {
+            // Archived logs still let Home render the latest imported night.
+          }
+        }
+
+        if (!cancelled) {
+          setLastSleepLogs(logs);
+        }
+      } catch {
+        if (!cancelled) {
+          setLastSleepLogs([]);
+        }
+      }
+    }
+
+    void loadLastSleepLogs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lastSession]);
 
   return (
     <Screen>
@@ -276,15 +340,17 @@ export function HomeScreen() {
         <Card>
           <View style={{ minHeight: 280, justifyContent: "center" }}>
             {lastSession ? (
-              <View style={{ gap: 10 }}>
-                <InfoRow label="type" value={lastSession.sessionType} />
-                <InfoRow label="mode" value={lastSession.mode ?? "none"} />
-                <InfoRow label="status" value={lastSession.status.replaceAll("_", " ")} />
-                <InfoRow label="length" value={formatSessionLength(lastSession)} />
-                <InfoRow
-                  label="started"
-                  value={new Date(lastSession.startedAt).toLocaleString()}
+              <View style={{ gap: 12 }}>
+                <SleepNightGraph
+                  endAt={lastSession.endedAt}
+                  logs={lastSleepLogs}
+                  startAt={
+                    lastSession.trainingStartedAt ?? lastSession.startedAt
+                  }
                 />
+                <InfoRow label="type" value={lastSession.sessionType} />
+                <InfoRow label="length" value={formatSessionLength(lastSession)} />
+                <InfoRow label="mode" value={lastSession.mode ?? "none"} />
               </View>
             ) : (
               <Text

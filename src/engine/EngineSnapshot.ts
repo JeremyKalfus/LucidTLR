@@ -142,7 +142,65 @@ function formatHealthHistoryStatus(decision: CueDecision): string {
   return `${formatSource(prior.source)}; ${prior.nightsIncluded} nights; ${prior.confidence}`;
 }
 
+function formatPhoneNightCalibrationStatus(decision: CueDecision): string {
+  const prior = decision.sleepTiming.phoneNightPrior;
+
+  if (!prior || prior.nightsIncluded === 0) {
+    return "not enough Phone Mode nights";
+  }
+
+  return `${prior.nightsIncluded} local night${prior.nightsIncluded === 1 ? "" : "s"}; ${prior.confidence}`;
+}
+
+function formatPhoneNightObservedEnd(decision: CueDecision): string {
+  const minutes =
+    decision.sleepTiming.phoneNightPrior?.medianObservedEndMinutesAfterTraining;
+
+  return typeof minutes === "number"
+    ? `${Math.round(minutes / 60)}h after training`
+    : "not available";
+}
+
+function formatPhoneNightQuietRuntime(decision: CueDecision): string {
+  const prior = decision.sleepTiming.phoneNightPrior;
+
+  if (!prior || prior.medianQuietRuntimeRatio === null) {
+    return "not available";
+  }
+
+  const quiet = formatPercent(prior.medianQuietRuntimeRatio);
+  const quietStart =
+    typeof prior.medianQuietStartMinutesAfterTraining === "number"
+      ? `; quiet after ${Math.round(prior.medianQuietStartMinutesAfterTraining)}m`
+      : "";
+
+  return `${quiet}${quietStart}`;
+}
+
+function formatPhoneNightBudgetAdjustment(decision: CueDecision): string {
+  const prior = decision.sleepTiming.phoneNightPrior;
+
+  if (!prior || prior.nightsIncluded === 0) {
+    return "not available";
+  }
+
+  const exhausted = formatPercent(prior.budgetExhaustedRate);
+
+  if (
+    prior.recommendedMaxCuesPerNightMultiplier === 1 &&
+    prior.recommendedVolumeMultiplier === 1
+  ) {
+    return `${exhausted} exhausted; no reduction`;
+  }
+
+  return `${exhausted} exhausted; conservative reduction active`;
+}
+
 function formatCueWindowSource(decision: CueDecision): string {
+  if (decision.sleepTiming.source === "local_phone_runtime") {
+    return "local Phone Mode timing plus protocol gate";
+  }
+
   return decision.sleepTiming.predictedRemWindows.some(
     (window) => window.source === "historical_sleep",
   )
@@ -248,6 +306,10 @@ export function buildEngineSnapshot(input: {
           ? formatReason(decision.reason)
           : "none",
       healthHistoryCalibrationStatus: formatHealthHistoryStatus(decision),
+      phoneNightCalibrationStatus: formatPhoneNightCalibrationStatus(decision),
+      phoneNightObservedEnd: formatPhoneNightObservedEnd(decision),
+      phoneNightQuietRuntime: formatPhoneNightQuietRuntime(decision),
+      phoneNightBudgetAdjustment: formatPhoneNightBudgetAdjustment(decision),
       sleepPriorSource: formatSource(decision.sleepTiming.source),
       nextPredictedRemWindow: formatNextPredictedRemWindow(
         decision,
@@ -280,6 +342,7 @@ export function buildInactiveEngineSnapshot(input: {
     trainingEndedAt,
     settings: context.settings,
     historicalSleepPrior: context.historicalSleepPrior,
+    phoneNightPrior: context.phoneNightPrior,
   });
   const decision: CueDecision = {
     action: "idle",

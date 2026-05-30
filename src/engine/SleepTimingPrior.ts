@@ -6,7 +6,9 @@ import type {
   SleepTimingPrior,
   SleepTimingSource,
 } from "./CueDecisionTypes";
+import type { PhoneNightCalibrationPrior } from "@/src/domain/types";
 import { addSeconds } from "./CueDecisionTypes";
+import { isUsablePhoneNightCalibrationPrior } from "./PhoneNightCalibration";
 
 const wakeBufferSeconds = 20 * 60;
 const earliestHistoricalPhoneCueStartSeconds = 4 * 3600;
@@ -81,6 +83,20 @@ function timingConfidenceFromHistorical(
     return "high";
   }
 
+  if (prior.confidence === "medium") {
+    return "medium";
+  }
+
+  if (prior.confidence === "low") {
+    return "low";
+  }
+
+  return null;
+}
+
+function timingConfidenceFromPhoneNight(
+  prior: PhoneNightCalibrationPrior,
+): SleepTimingConfidence | null {
   if (prior.confidence === "medium") {
     return "medium";
   }
@@ -189,14 +205,19 @@ export function buildSleepTimingPrior(input: {
   trainingEndedAt: string;
   settings: CueDecisionSettings;
   historicalSleepPrior?: HistoricalSleepPrior;
+  phoneNightPrior?: PhoneNightCalibrationPrior;
 }): SleepTimingPrior {
-  const { historicalSleepPrior, settings, trainingEndedAt } = input;
+  const { historicalSleepPrior, phoneNightPrior, settings, trainingEndedAt } =
+    input;
   const selfReportedSleepOnsetAt = addSeconds(
     trainingEndedAt,
     settings.selfReportedSleepLatencyMinutes * 60,
   );
   const usableHistoricalPrior = isUsableHistoricalPrior(historicalSleepPrior)
     ? historicalSleepPrior
+    : undefined;
+  const usablePhoneNightPrior = isUsablePhoneNightCalibrationPrior(phoneNightPrior)
+    ? phoneNightPrior
     : undefined;
   const historicalSleepOnsetAt =
     usableHistoricalPrior?.medianSleepOnsetMinutesAfterMidnight !== null &&
@@ -214,9 +235,29 @@ export function buildSleepTimingPrior(input: {
     historicalOnsetMs !== null &&
     historicalOnsetMs >= trainingEndMs &&
     historicalOnsetMs - trainingEndMs <= 4 * 3600000;
+  const phoneQuietStartAt =
+    !useHistoricalOnset &&
+    usablePhoneNightPrior?.medianQuietStartMinutesAfterTraining !== null &&
+    usablePhoneNightPrior?.medianQuietStartMinutesAfterTraining !== undefined
+      ? addSeconds(
+          trainingEndedAt,
+          usablePhoneNightPrior.medianQuietStartMinutesAfterTraining * 60,
+        )
+      : null;
+  const phoneQuietStartMs = phoneQuietStartAt
+    ? Date.parse(phoneQuietStartAt)
+    : null;
+  const usePhoneQuietOnset =
+    phoneQuietStartMs !== null &&
+    phoneQuietStartMs >= trainingEndMs &&
+    phoneQuietStartMs - trainingEndMs <= 2 * 3600000;
   const estimatedSleepOnsetAt = useHistoricalOnset && historicalSleepOnsetAt
     ? historicalSleepOnsetAt
-    : selfReportedSleepOnsetAt;
+    : usePhoneQuietOnset && phoneQuietStartAt
+      ? new Date(
+          Math.max(Date.parse(selfReportedSleepOnsetAt), Date.parse(phoneQuietStartAt)),
+        ).toISOString()
+      : selfReportedSleepOnsetAt;
   const historicalWakeFromClock =
     usableHistoricalPrior?.medianWakeMinutesAfterMidnight !== null &&
     usableHistoricalPrior?.medianWakeMinutesAfterMidnight !== undefined
@@ -227,12 +268,32 @@ export function buildSleepTimingPrior(input: {
       : null;
   const wakeFromClock =
     historicalWakeFromClock ?? clockTimeAfter(trainingEndedAt, settings.typicalWakeTime);
+  const phoneObservedWakeAt =
+    !historicalWakeFromClock &&
+    usablePhoneNightPrior?.medianObservedEndMinutesAfterTraining !== null &&
+    usablePhoneNightPrior?.medianObservedEndMinutesAfterTraining !== undefined
+      ? addSeconds(
+          trainingEndedAt,
+          usablePhoneNightPrior.medianObservedEndMinutesAfterTraining * 60,
+        )
+      : null;
+  const phoneObservedWakeMs = phoneObservedWakeAt
+    ? Date.parse(phoneObservedWakeAt)
+    : null;
+  const usePhoneObservedWake =
+    phoneObservedWakeMs !== null &&
+    phoneObservedWakeMs > Date.parse(estimatedSleepOnsetAt) + 4 * 3600000 &&
+    phoneObservedWakeMs - trainingEndMs <= 12 * 3600000;
   const wakeFromDuration = addSeconds(
     estimatedSleepOnsetAt,
     (usableHistoricalPrior?.medianSleepDurationMinutes ??
       settings.typicalSleepDurationHours * 60) * 60,
   );
-  const expectedWakeAt = wakeFromClock ?? wakeFromDuration;
+  const expectedWakeAt =
+    historicalWakeFromClock ??
+    (usePhoneObservedWake && phoneObservedWakeAt ? phoneObservedWakeAt : null) ??
+    wakeFromClock ??
+    wakeFromDuration;
   const defaultPhoneCueWindowStart = addSeconds(
     trainingEndedAt,
     settings.cueStartDelayHoursAfterTraining * 3600,
@@ -258,8 +319,14 @@ export function buildSleepTimingPrior(input: {
   const historicalConfidence = usableHistoricalPrior
     ? timingConfidenceFromHistorical(usableHistoricalPrior)
     : null;
+  const phoneNightConfidence =
+    !usableHistoricalPrior && usablePhoneNightPrior
+      ? timingConfidenceFromPhoneNight(usablePhoneNightPrior)
+      : null;
   const confidence = historicalConfidence
     ? betterConfidence(baseConfidence, historicalConfidence)
+    : phoneNightConfidence
+      ? betterConfidence(baseConfidence, phoneNightConfidence)
     : baseConfidence;
 
   return {
@@ -269,7 +336,12 @@ export function buildSleepTimingPrior(input: {
     likelyPhoneCueWindowEnd,
     predictedRemWindows,
     historicalSleepPrior: usableHistoricalPrior,
+    phoneNightPrior: usablePhoneNightPrior,
     confidence,
-    source: usableHistoricalPrior ? "historical_sleep" : inferSource(settings),
+    source: usableHistoricalPrior
+      ? "historical_sleep"
+      : usablePhoneNightPrior
+        ? "local_phone_runtime"
+        : inferSource(settings),
   };
 }

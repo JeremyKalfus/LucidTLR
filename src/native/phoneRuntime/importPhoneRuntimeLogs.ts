@@ -2,10 +2,12 @@ import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import {
   savePhoneRuntimeCueRecords,
   savePhoneRuntimeMovementRecords,
+  upsertPhoneNightCalibrationNight,
 } from "@/src/data/local/repositories";
 
 import type { NativePhoneRuntimeEvent } from "./NativePhoneSessionPlan";
 import {
+  buildPhoneNightCalibrationNightFromRuntimeLogs,
   mapPhoneRuntimeCueEvents,
   mapPhoneRuntimeMovementEvents,
 } from "./phoneRuntimeLogMapping";
@@ -27,4 +29,14 @@ export async function importPhoneRuntimeLogsToLocalRecords(
     db,
     records: mapPhoneRuntimeMovementEvents(events),
   });
+
+  const calibrationNight = buildPhoneNightCalibrationNightFromRuntimeLogs(events);
+
+  if (calibrationNight) {
+    await upsertPhoneNightCalibrationNight({
+      db,
+      night: calibrationNight,
+      updatedAt: calibrationNight.generatedAt,
+    });
+  }
 }

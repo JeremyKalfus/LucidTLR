@@ -51,15 +51,25 @@ function scoreTimeOpportunity(
 }
 
 function scoreUserTolerance(context: CueDecisionContext): number {
+  const phoneNightMultiplier = context.phoneNightPrior
+    ? Math.min(
+        context.phoneNightPrior.recommendedMaxCuesPerNightMultiplier,
+        context.phoneNightPrior.recommendedVolumeMultiplier,
+      )
+    : 1;
+  const localCalibrationMultiplier = clamp(phoneNightMultiplier, 0.25, 1);
+
   if (context.settings.soundSensitivity === "sensitive") {
-    return context.userFeedback.cueWokeUser ? 0.4 : 0.8;
+    return (context.userFeedback.cueWokeUser ? 0.4 : 0.8) *
+      localCalibrationMultiplier;
   }
 
   if (context.settings.soundSensitivity === "hard_to_wake") {
-    return 1;
+    return localCalibrationMultiplier;
   }
 
-  return context.userFeedback.cueWokeUser ? 0.6 : 1;
+  return (context.userFeedback.cueWokeUser ? 0.6 : 1) *
+    localCalibrationMultiplier;
 }
 
 function scoreSleepPrior(now: string, timing: SleepTimingPrior): number {

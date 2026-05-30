@@ -1,6 +1,7 @@
 import type {
   HistoricalSleepPrior,
   NightSession,
+  PhoneNightCalibrationPrior,
   TlrOptions,
 } from "@/src/domain/types";
 import type { CueDecisionSettings, SleepTimingPrior } from "@/src/engine";
@@ -42,6 +43,7 @@ export type BuildNativePhoneSessionPlanFromCompletedSessionInput = Omit<
   "sleepTiming"
 > & {
   historicalSleepPrior?: HistoricalSleepPrior;
+  phoneNightPrior?: PhoneNightCalibrationPrior;
 };
 
 export type BuildNativePhoneSessionPlanForLockedTrainingInput = Omit<
@@ -197,6 +199,7 @@ export function buildNativePhoneSessionPlanFromCompletedSession(
       trainingEndedAt: input.session.trainingEndedAt,
       settings: input.settings,
       historicalSleepPrior: input.historicalSleepPrior,
+      phoneNightPrior: input.phoneNightPrior,
     }),
   });
 }

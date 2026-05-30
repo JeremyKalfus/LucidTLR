@@ -1,4 +1,7 @@
-import type { CueSuppressionReason } from "@/src/domain/types";
+import type {
+  CueSuppressionReason,
+  PhoneNightCalibrationNight,
+} from "@/src/domain/types";
 
 import type {
   NativePhoneRuntimeEvent,
@@ -39,6 +42,56 @@ function movementIntensityScore(value: string | undefined): number {
   }
 
   return 0;
+}
+
+function firstEventTimestamp(
+  events: NativePhoneRuntimeEvent[],
+  eventType: NativePhoneRuntimeEvent["eventType"],
+): string | null {
+  return events.find((event) => event.eventType === eventType)?.timestamp ?? null;
+}
+
+function isQuietMotion(event: NativePhoneRuntimeEvent): boolean {
+  const roughMovementIntensity = stringPayload(
+    event.payload,
+    "roughMovementIntensity",
+  );
+
+  return roughMovementIntensity === "still" || roughMovementIntensity === "light";
+}
+
+function isLargeMotion(event: NativePhoneRuntimeEvent): boolean {
+  return stringPayload(event.payload, "roughMovementIntensity") === "large";
+}
+
+function stableQuietStart(input: {
+  motionSummaries: NativePhoneRuntimeEvent[];
+  trainingEndedAt: string;
+  requiredConsecutiveSummaries: number;
+}): string | null {
+  let streakStart: string | null = null;
+  let streakCount = 0;
+  const trainingEndMs = Date.parse(input.trainingEndedAt);
+
+  for (const event of input.motionSummaries) {
+    if (Date.parse(event.timestamp) < trainingEndMs) {
+      continue;
+    }
+
+    if (isQuietMotion(event)) {
+      streakStart = streakStart ?? event.timestamp;
+      streakCount += 1;
+
+      if (streakCount >= input.requiredConsecutiveSummaries) {
+        return streakStart;
+      }
+    } else {
+      streakStart = null;
+      streakCount = 0;
+    }
+  }
+
+  return null;
 }
 
 function cueSuppressionReason(
@@ -183,4 +236,73 @@ export function mapPhoneRuntimeMovementEvents(
       },
     ];
   });
+}
+
+export function buildPhoneNightCalibrationNightFromRuntimeLogs(
+  events: NativePhoneRuntimeEvent[],
+): PhoneNightCalibrationNight | null {
+  if (events.length === 0) {
+    return null;
+  }
+
+  const sessionId = events[0].sessionId;
+  const trainingEndedAt = latestPhoneTrainingCompletedTimestamp(events);
+  const runtimeStartedAt = firstEventTimestamp(events, "runtime_started");
+  const runtimeStoppedAt = latestPhoneRuntimeStopTimestamp(events);
+
+  if (!trainingEndedAt || !runtimeStoppedAt) {
+    return null;
+  }
+
+  const trainingEndMs = Date.parse(trainingEndedAt);
+  const runtimeStopMs = Date.parse(runtimeStoppedAt);
+
+  if (!Number.isFinite(trainingEndMs) || runtimeStopMs <= trainingEndMs) {
+    return null;
+  }
+
+  const motionSummaries = events.filter(
+    (event) => event.eventType === "motion_summary",
+  );
+  const runtimeMotionSummaries = motionSummaries.filter(
+    (event) => Date.parse(event.timestamp) >= trainingEndMs,
+  );
+  const quietMotionCount = runtimeMotionSummaries.filter(isQuietMotion).length;
+  const quietStart = stableQuietStart({
+    motionSummaries,
+    trainingEndedAt,
+    requiredConsecutiveSummaries: 12,
+  });
+  const summary = summarizePhoneRuntimeEvents(events);
+  const cueCount = events.filter((event) => event.eventType === "cue_played").length;
+  const cueBudgetExhausted = events.some(
+    (event) =>
+      event.eventType === "budget_exhausted" ||
+      (event.eventType === "cue_suppressed" &&
+        stringPayload(event.payload, "reason") === "cue_budget_exhausted"),
+  );
+
+  return {
+    sessionId,
+    generatedAt: new Date().toISOString(),
+    trainingEndedAt,
+    runtimeStartedAt: runtimeStartedAt ?? undefined,
+    runtimeStoppedAt,
+    runtimeDurationMinutes: (runtimeStopMs - trainingEndMs) / 60000,
+    observedEndMinutesAfterTraining: (runtimeStopMs - trainingEndMs) / 60000,
+    quietStartMinutesAfterTraining: quietStart
+      ? (Date.parse(quietStart) - trainingEndMs) / 60000
+      : undefined,
+    quietRuntimeRatio:
+      runtimeMotionSummaries.length > 0
+        ? quietMotionCount / runtimeMotionSummaries.length
+        : undefined,
+    cueCount,
+    cueFailures: summary.cueFailures,
+    cueBudgetExhausted,
+    movementPauseCount: summary.movementPauses,
+    largeMovementCount: runtimeMotionSummaries.filter(isLargeMotion).length,
+    interrupted: summary.interruptions > 0,
+    errored: summary.errored,
+  };
 }

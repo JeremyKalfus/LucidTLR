@@ -10,8 +10,10 @@ import type {
   ExternalSleepStageSegment,
   HistoricalSleepPrior,
   HistoricalSleepPriorConfidence,
+  MorningReport,
   MovementEvent,
   NightSession,
+  PhoneNightCalibrationNight,
   RemDensityBin,
   SessionStatus,
   SessionType,
@@ -33,6 +35,8 @@ export const SLEEP_HISTORY_PERMISSION_STATUS_SETTING =
   "sleep_history_permission_status";
 export const SLEEP_HISTORY_NIGHTS_IMPORTED_SETTING =
   "sleep_history_nights_imported";
+export const PHONE_NIGHT_CALIBRATION_NIGHTS_SETTING =
+  "phone_night_calibration_nights_v1";
 
 export interface LocalParticipantRow {
   id: string;
@@ -90,6 +94,19 @@ interface MovementEventRow {
   was_cue_associated: number;
   pause_started_at: string | null;
   pause_ended_at: string | null;
+}
+
+interface MorningReportRow {
+  id: string;
+  session_id: string;
+  submitted_at: string;
+  remembered_dream: number;
+  lucid_dream: number | null;
+  heard_cue: number | null;
+  cue_incorporated: number | null;
+  cue_woke_user: number | null;
+  returned_to_sleep: number | null;
+  sleep_quality_rating: number | null;
 }
 
 interface ExternalSleepSessionRow {
@@ -262,6 +279,29 @@ function toMovementEvent(row: MovementEventRow): MovementEvent {
     wasCueAssociated: row.was_cue_associated === 1,
     pauseStartedAt: row.pause_started_at ?? undefined,
     pauseEndedAt: row.pause_ended_at ?? undefined,
+  };
+}
+
+function nullableBoolean(value: number | null): boolean | null {
+  if (value === null) {
+    return null;
+  }
+
+  return value === 1;
+}
+
+function toMorningReport(row: MorningReportRow): MorningReport {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    submittedAt: row.submitted_at,
+    rememberedDream: row.remembered_dream === 1,
+    lucidDream: nullableBoolean(row.lucid_dream),
+    heardCue: nullableBoolean(row.heard_cue),
+    cueIncorporated: nullableBoolean(row.cue_incorporated),
+    cueWokeUser: nullableBoolean(row.cue_woke_user),
+    returnedToSleep: nullableBoolean(row.returned_to_sleep),
+    sleepQualityRating: row.sleep_quality_rating ?? undefined,
   };
 }
 
@@ -485,6 +525,165 @@ order by timestamp asc`,
   );
 
   return rows.map(toMovementEvent);
+}
+
+export async function saveMorningReport(input: {
+  db: LocalDb;
+  report: MorningReport;
+  uploadStatus?: UploadStatus;
+}): Promise<void> {
+  await input.db.execute(
+    `insert into morning_reports (
+  id,
+  session_id,
+  submitted_at,
+  remembered_dream,
+  lucid_dream,
+  heard_cue,
+  cue_incorporated,
+  cue_woke_user,
+  returned_to_sleep,
+  sleep_quality_rating,
+  upload_status
+) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+on conflict(id) do update set
+  submitted_at = excluded.submitted_at,
+  remembered_dream = excluded.remembered_dream,
+  lucid_dream = excluded.lucid_dream,
+  heard_cue = excluded.heard_cue,
+  cue_incorporated = excluded.cue_incorporated,
+  cue_woke_user = excluded.cue_woke_user,
+  returned_to_sleep = excluded.returned_to_sleep,
+  sleep_quality_rating = excluded.sleep_quality_rating,
+  upload_status = excluded.upload_status`,
+    [
+      input.report.id,
+      input.report.sessionId,
+      input.report.submittedAt,
+      input.report.rememberedDream ? 1 : 0,
+      input.report.lucidDream === null ? null : input.report.lucidDream ? 1 : 0,
+      input.report.heardCue === null ? null : input.report.heardCue ? 1 : 0,
+      input.report.cueIncorporated === null
+        ? null
+        : input.report.cueIncorporated
+          ? 1
+          : 0,
+      input.report.cueWokeUser === null
+        ? null
+        : input.report.cueWokeUser
+          ? 1
+          : 0,
+      input.report.returnedToSleep === null
+        ? null
+        : input.report.returnedToSleep
+          ? 1
+          : 0,
+      input.report.sleepQualityRating ?? null,
+      input.uploadStatus ?? "local_only",
+    ],
+  );
+}
+
+export async function loadMorningReportForSession(input: {
+  db: LocalDb;
+  sessionId: string;
+}): Promise<MorningReport | null> {
+  const row = await input.db.queryOne<MorningReportRow>(
+    `select id,
+  session_id,
+  submitted_at,
+  remembered_dream,
+  lucid_dream,
+  heard_cue,
+  cue_incorporated,
+  cue_woke_user,
+  returned_to_sleep,
+  sleep_quality_rating
+from morning_reports
+where session_id = ?
+order by submitted_at desc
+limit 1`,
+    [input.sessionId],
+  );
+
+  return row ? toMorningReport(row) : null;
+}
+
+export async function loadPhoneNightCalibrationNights(
+  db: LocalDb,
+): Promise<PhoneNightCalibrationNight[]> {
+  return (
+    (await getAppSetting<PhoneNightCalibrationNight[]>(
+      db,
+      PHONE_NIGHT_CALIBRATION_NIGHTS_SETTING,
+    )) ?? []
+  );
+}
+
+export async function upsertPhoneNightCalibrationNight(input: {
+  db: LocalDb;
+  night: PhoneNightCalibrationNight;
+  updatedAt: string;
+}): Promise<void> {
+  const existing = await loadPhoneNightCalibrationNights(input.db);
+  const existingNight = existing.find(
+    (night) => night.sessionId === input.night.sessionId,
+  );
+  const mergedNight: PhoneNightCalibrationNight = existingNight
+    ? {
+        ...existingNight,
+        ...input.night,
+        cueWokeUser: input.night.cueWokeUser ?? existingNight.cueWokeUser,
+        sleepQualityRating:
+          input.night.sleepQualityRating ?? existingNight.sleepQualityRating,
+      }
+    : input.night;
+  const next = [
+    mergedNight,
+    ...existing.filter((night) => night.sessionId !== mergedNight.sessionId),
+  ]
+    .sort((a, b) => Date.parse(b.trainingEndedAt) - Date.parse(a.trainingEndedAt))
+    .slice(0, 30);
+
+  await setAppSetting(
+    input.db,
+    PHONE_NIGHT_CALIBRATION_NIGHTS_SETTING,
+    next,
+    input.updatedAt,
+  );
+}
+
+export async function updatePhoneNightCalibrationFeedback(input: {
+  db: LocalDb;
+  sessionId: string;
+  cueWokeUser?: boolean | null;
+  sleepQualityRating?: number;
+  updatedAt: string;
+}): Promise<void> {
+  const existing = await loadPhoneNightCalibrationNights(input.db);
+  const found = existing.some((night) => night.sessionId === input.sessionId);
+
+  if (!found) {
+    return;
+  }
+
+  const next = existing.map((night) =>
+    night.sessionId === input.sessionId
+      ? {
+          ...night,
+          generatedAt: input.updatedAt,
+          cueWokeUser: input.cueWokeUser,
+          sleepQualityRating: input.sleepQualityRating,
+        }
+      : night,
+  );
+
+  await setAppSetting(
+    input.db,
+    PHONE_NIGHT_CALIBRATION_NIGHTS_SETTING,
+    next,
+    input.updatedAt,
+  );
 }
 
 export async function replaceStructuredConsent(input: {

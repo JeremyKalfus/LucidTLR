@@ -10,6 +10,12 @@ import {
   SectionTitle,
   TextField,
 } from "@/src/components/ui";
+import { getLocalDb } from "@/src/data/local/expoSqliteDb";
+import {
+  saveMorningReport,
+  updatePhoneNightCalibrationFeedback,
+} from "@/src/data/local/repositories";
+import type { MorningReport } from "@/src/domain/types";
 import {
   MORNING_REPORT_CORE_FIELDS,
   MORNING_REPORT_OPTIONAL_LUCIDITY_FIELDS,
@@ -28,6 +34,18 @@ import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
 type FieldValue = boolean | number | null;
+
+function createId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function nullableBoolean(value: FieldValue): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function numberValue(value: FieldValue): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
 
 function FieldControl({
   field,
@@ -130,7 +148,8 @@ function ReviewField({
 }
 
 export function MorningReviewScreen() {
-  const { activeSession, sendSessionEvent } = useAppState();
+  const { activeSession, refreshPhoneNightCalibration, sendSessionEvent } =
+    useAppState();
   const [answers, setAnswers] = useState<Record<string, FieldValue>>({});
   const [showOptional, setShowOptional] = useState(false);
   const [runtimeSummary, setRuntimeSummary] =
@@ -154,6 +173,7 @@ export function MorningReviewScreen() {
         const summary = summarizePhoneRuntimeEvents(logs);
 
         await importPhoneRuntimeLogsToLocalRecords(logs);
+        await refreshPhoneNightCalibration();
 
         if (
           (summary.stopped || summary.completed || summary.errored) &&
@@ -189,7 +209,12 @@ export function MorningReviewScreen() {
     return () => {
       cancelled = true;
     };
-  }, [activeSession, sendSessionEvent, usesPhoneRuntime]);
+  }, [
+    activeSession,
+    refreshPhoneNightCalibration,
+    sendSessionEvent,
+    usesPhoneRuntime,
+  ]);
 
   return (
     <Screen>
@@ -312,16 +337,42 @@ export function MorningReviewScreen() {
 
       <PrimaryPillButton
         label="Save Review"
-        onPress={() => {
-          if (
-            activeSession &&
-            canTransitionSession(
-              activeSession.sessionType,
-              activeSession.status,
-              "complete_morning_review",
-            )
-          ) {
-            sendSessionEvent("complete_morning_review");
+        onPress={async () => {
+          if (activeSession) {
+            const submittedAt = new Date().toISOString();
+            const report: MorningReport = {
+              id: createId("morning-report"),
+              sessionId: activeSession.id,
+              submittedAt,
+              rememberedDream: answers.remembered_dream === true,
+              lucidDream: nullableBoolean(answers.lucid_dream),
+              heardCue: nullableBoolean(answers.heard_cue),
+              cueIncorporated: nullableBoolean(answers.cue_incorporated),
+              cueWokeUser: nullableBoolean(answers.cue_woke_user),
+              returnedToSleep: nullableBoolean(answers.returned_to_sleep),
+              sleepQualityRating: numberValue(answers.sleep_quality_rating),
+            };
+            const db = await getLocalDb();
+
+            await saveMorningReport({ db, report });
+            await updatePhoneNightCalibrationFeedback({
+              db,
+              sessionId: activeSession.id,
+              cueWokeUser: report.cueWokeUser,
+              sleepQualityRating: report.sleepQualityRating,
+              updatedAt: submittedAt,
+            });
+            await refreshPhoneNightCalibration();
+
+            if (
+              canTransitionSession(
+                activeSession.sessionType,
+                activeSession.status,
+                "complete_morning_review",
+              )
+            ) {
+              sendSessionEvent("complete_morning_review");
+            }
           }
 
           router.push("/data");

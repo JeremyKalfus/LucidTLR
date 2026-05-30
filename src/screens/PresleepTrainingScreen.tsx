@@ -21,6 +21,7 @@ import { getCueAppAsset } from "@/src/audio/cueAssets";
 import { FINAL_LUCID_TRAINING_AUDIO_ASSET } from "@/src/audio/trainingAssets";
 import { PRESLEEP_SCRIPT_NOTICE, PRESLEEP_SCRIPT_PLACEHOLDER } from "@/src/protocol/tlrProtocol";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
+import { applyPhoneNightCalibrationToSettings } from "@/src/engine";
 import {
   buildNativePhoneSessionPlanForLockedTraining,
   buildNativePhoneSessionPlanFromCompletedSession,
@@ -58,6 +59,7 @@ export function PresleepTrainingScreen() {
   const {
     activeSession,
     engineSettings,
+    phoneNightCalibration,
     sendSessionEvent,
     sleepHistory,
     startSession,
@@ -65,6 +67,16 @@ export function PresleepTrainingScreen() {
   } = useAppState();
   const session =
     activeSession?.sessionType === "tlr" ? activeSession : null;
+  const effectiveEngineSettings = React.useMemo(
+    () =>
+      applyPhoneNightCalibrationToSettings(
+        engineSettings,
+        phoneNightCalibration.nightsIncluded > 0
+          ? phoneNightCalibration
+          : undefined,
+      ),
+    [engineSettings, phoneNightCalibration],
+  );
   const sessionCue = getBuiltInCue(session?.selectedCueId ?? tlrOptions.selectedCueId);
   const cueAppAsset = React.useMemo(
     () => getCueAppAsset(sessionCue.id),
@@ -258,13 +270,17 @@ export function PresleepTrainingScreen() {
         const plan = buildNativePhoneSessionPlanForLockedTraining({
           session,
           trainingStartedAt: timestamp,
-          settings: engineSettings,
+          settings: effectiveEngineSettings,
           tlrOptions,
           historicalSleepPrior:
             sleepHistory.enabled &&
             sleepHistory.prior &&
             sleepHistory.prior.confidence !== "none"
               ? sleepHistory.prior
+              : undefined,
+          phoneNightPrior:
+            phoneNightCalibration.nightsIncluded > 0
+              ? phoneNightCalibration
               : undefined,
         });
 
@@ -406,13 +422,17 @@ export function PresleepTrainingScreen() {
     try {
       const plan = buildNativePhoneSessionPlanFromCompletedSession({
         session: runtimeSession,
-        settings: engineSettings,
+        settings: effectiveEngineSettings,
         tlrOptions,
         historicalSleepPrior:
           sleepHistory.enabled &&
           sleepHistory.prior &&
           sleepHistory.prior.confidence !== "none"
             ? sleepHistory.prior
+            : undefined,
+        phoneNightPrior:
+          phoneNightCalibration.nightsIncluded > 0
+            ? phoneNightCalibration
             : undefined,
       });
 

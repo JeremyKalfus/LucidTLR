@@ -2,7 +2,6 @@ import { router } from "expo-router";
 import type { LucideIcon } from "lucide-react-native";
 import {
   Activity,
-  BarChart3,
   ChevronLeft,
   ChevronRight,
   History,
@@ -11,8 +10,12 @@ import {
 } from "lucide-react-native";
 import React from "react";
 import * as FileSystem from "expo-file-system/legacy";
-import { Platform, Pressable, Share, Text, View } from "react-native";
+import { Alert, Platform, Pressable, Share, Text, View } from "react-native";
 
+import {
+  graphPointsForLogs,
+  SleepNightGraph,
+} from "@/src/components/sleep/SleepNightGraph";
 import {
   Card,
   InfoRow,
@@ -20,8 +23,19 @@ import {
   Screen,
   SectionTitle,
 } from "@/src/components/ui";
+import {
+  exportFullLocalData,
+  loadArchivedPhoneRuntimeLogs,
+  parseFullLocalDataExport,
+  replaceFullLocalData,
+  saveArchivedPhoneRuntimeLogs,
+  type FullLocalDataExport,
+} from "@/src/data/local/fullDataBackup";
+import { getLocalDb } from "@/src/data/local/expoSqliteDb";
+import { loadMorningReportForSession } from "@/src/data/local/repositories";
 import type {
   ExternalSleepSource,
+  MorningReport,
   NightSession,
   PredictedRemWindow,
   RemDensityBin,
@@ -45,6 +59,13 @@ type DataRoute =
 type RuntimeLogSessionRef = {
   id: string;
   session?: NightSession;
+};
+
+type SleepNightRecord = {
+  id: string;
+  session?: NightSession;
+  morningReport?: MorningReport | null;
+  logs: NativePhoneRuntimeEvent[];
 };
 
 function isOvernightEngineStatus(status: string): boolean {
@@ -103,6 +124,222 @@ function runtimeEventLabel(event: NativePhoneRuntimeEvent): string {
       : "";
 
   return `${new Date(event.timestamp).toLocaleTimeString()} / ${event.eventType}${reason}${cueAsset}${movement}`;
+}
+
+function localSessionRecords(
+  activeSession: NightSession | null,
+  sessionHistory: NightSession[],
+): NightSession[] {
+  const byId = new Map<string, NightSession>();
+
+  for (const session of [activeSession, ...sessionHistory]) {
+    if (session && !byId.has(session.id)) {
+      byId.set(session.id, session);
+    }
+  }
+
+  return [...byId.values()].sort(
+    (a, b) => phoneSessionStartedMs(b) - phoneSessionStartedMs(a),
+  );
+}
+
+function numberPayload(
+  payload: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = payload[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringPayload(
+  payload: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = payload[key];
+
+  return typeof value === "string" ? value : undefined;
+}
+
+function eventTypeCount(
+  logs: NativePhoneRuntimeEvent[],
+  eventType: NativePhoneRuntimeEvent["eventType"],
+): number {
+  return logs.filter((event) => event.eventType === eventType).length;
+}
+
+function firstLogTimestamp(logs: NativePhoneRuntimeEvent[]): string | undefined {
+  return logs[0]?.timestamp;
+}
+
+function lastLogTimestamp(logs: NativePhoneRuntimeEvent[]): string | undefined {
+  return logs[logs.length - 1]?.timestamp;
+}
+
+function runtimeStopTimestamp(logs: NativePhoneRuntimeEvent[]): string | undefined {
+  return [...logs]
+    .reverse()
+    .find((event) => event.eventType === "runtime_stopped")
+    ?.timestamp;
+}
+
+function nightStartedAt(record: SleepNightRecord): string | undefined {
+  return (
+    record.session?.trainingStartedAt ??
+    record.session?.startedAt ??
+    firstLogTimestamp(record.logs)
+  );
+}
+
+function nightEndedAt(record: SleepNightRecord): string | undefined {
+  return (
+    record.session?.endedAt ??
+    runtimeStopTimestamp(record.logs) ??
+    lastLogTimestamp(record.logs)
+  );
+}
+
+function formatNightTitle(record: SleepNightRecord): string {
+  const startAt = nightStartedAt(record);
+
+  if (!startAt) {
+    return "Unknown night";
+  }
+
+  return new Date(startAt).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatNightInterval(record: SleepNightRecord): string {
+  const startAt = nightStartedAt(record);
+  const endAt = nightEndedAt(record);
+
+  if (!startAt) {
+    return record.id;
+  }
+
+  if (!endAt) {
+    return `${new Date(startAt).toLocaleTimeString()} - running`;
+  }
+
+  return `${new Date(startAt).toLocaleTimeString()} - ${new Date(
+    endAt,
+  ).toLocaleTimeString()}`;
+}
+
+function compactTimelineEvents(logs: NativePhoneRuntimeEvent[]): NativePhoneRuntimeEvent[] {
+  return logs
+    .filter(
+      (event) =>
+        event.eventType !== "decision_tick" &&
+        event.eventType !== "motion_summary" &&
+        event.eventType !== "battery_summary",
+    )
+    .slice(-60)
+    .reverse();
+}
+
+function nullableBooleanLabel(value: boolean | null | undefined): string {
+  if (value === undefined || value === null) {
+    return "skipped";
+  }
+
+  return value ? "yes" : "no";
+}
+
+function durationLabel(startAt?: string, endAt?: string): string {
+  if (!startAt || !endAt) {
+    return "not available";
+  }
+
+  const durationMs = Date.parse(endAt) - Date.parse(startAt);
+
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return "not available";
+  }
+
+  const minutes = Math.round(durationMs / 60000);
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+
+  return hours > 0 ? `${hours}h ${remainder}m` : `${minutes}m`;
+}
+
+function minMaxLabel(values: number[], format: (value: number) => string): string {
+  const finite = values.filter((value) => Number.isFinite(value));
+
+  if (finite.length === 0) {
+    return "not available";
+  }
+
+  return `${format(Math.min(...finite))} - ${format(Math.max(...finite))}`;
+}
+
+function batteryLevelLabel(logs: NativePhoneRuntimeEvent[]): string {
+  return minMaxLabel(
+    logs.flatMap((event) => {
+      const level = numberPayload(event.payload, "batteryLevel");
+
+      return event.eventType === "battery_summary" && typeof level === "number"
+        ? [level]
+        : [];
+    }),
+    (value) => `${Math.round(value * 100)}%`,
+  );
+}
+
+function uniquePayloadValues(
+  logs: NativePhoneRuntimeEvent[],
+  eventType: NativePhoneRuntimeEvent["eventType"],
+  key: string,
+): string {
+  const values = logs.flatMap((event) => {
+    const value = stringPayload(event.payload, key);
+
+    return event.eventType === eventType && value ? [value] : [];
+  });
+  const unique = [...new Set(values)];
+
+  return unique.length > 0 ? unique.join(", ") : "none";
+}
+
+function countPayloadMatches(
+  logs: NativePhoneRuntimeEvent[],
+  eventType: NativePhoneRuntimeEvent["eventType"],
+  key: string,
+  value: string | boolean,
+): number {
+  return logs.filter(
+    (event) => event.eventType === eventType && event.payload[key] === value,
+  ).length;
+}
+
+function motionIntensityCounts(logs: NativePhoneRuntimeEvent[]): string {
+  const counts = new Map<string, number>();
+
+  for (const event of logs) {
+    if (event.eventType !== "motion_summary") {
+      continue;
+    }
+
+    const intensity = stringPayload(event.payload, "roughMovementIntensity") ?? "unknown";
+    counts.set(intensity, (counts.get(intensity) ?? 0) + 1);
+  }
+
+  if (counts.size === 0) {
+    return "none";
+  }
+
+  return ["still", "light", "moderate", "large", "unknown"]
+    .flatMap((key) => {
+      const count = counts.get(key);
+
+      return count ? [`${key} ${count}`] : [];
+    })
+    .join(" / ");
 }
 
 function safeFilePart(value: string): string {
@@ -365,8 +602,319 @@ function useRuntimeTimeline() {
   };
 }
 
+function useSleepNightRecords() {
+  const { activeSession, sessionHistory } = useAppState();
+  const localSessions = React.useMemo(
+    () => localSessionRecords(activeSession, sessionHistory),
+    [activeSession, sessionHistory],
+  );
+  const [records, setRecords] = React.useState<SleepNightRecord[]>([]);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadRecords() {
+      try {
+        const nativeLogSessionIds = await phoneRuntime.getPhoneRuntimeLogSessionIds();
+        const db = await getLocalDb();
+        const archivedRuntimeLogs = await loadArchivedPhoneRuntimeLogs(db);
+        const localSessionById = new Map(
+          localSessions.map((session) => [session.id, session]),
+        );
+        const candidateIds = [
+          ...localSessions.map((session) => session.id),
+          ...nativeLogSessionIds,
+          ...Object.keys(archivedRuntimeLogs),
+        ].filter((id, index, ids) => ids.indexOf(id) === index);
+        const loaded = await Promise.all(
+          candidateIds.map(async (id) => {
+            const session = localSessionById.get(id);
+            const shouldTryNativeLogs =
+              nativeLogSessionIds.includes(id) ||
+              (session?.sessionType === "tlr" && session.mode === "phone");
+            let nativeLogs: NativePhoneRuntimeEvent[] = [];
+
+            if (shouldTryNativeLogs) {
+              try {
+                nativeLogs = await phoneRuntime.getPhoneRuntimeLogs(id);
+              } catch {
+                nativeLogs = [];
+              }
+            }
+
+            return {
+              id,
+              session,
+              morningReport: session
+                ? await loadMorningReportForSession({ db, sessionId: id })
+                : null,
+              logs: nativeLogs.length > 0
+                ? nativeLogs
+                : archivedRuntimeLogs[id] ?? [],
+            };
+          }),
+        );
+        const sorted = loaded.sort((a, b) => {
+          const bStart = Date.parse(nightStartedAt(b) ?? "");
+          const aStart = Date.parse(nightStartedAt(a) ?? "");
+
+          return (Number.isFinite(bStart) ? bStart : 0) -
+            (Number.isFinite(aStart) ? aStart : 0);
+        });
+
+        if (!cancelled) {
+          setRecords(sorted);
+          setError(null);
+        }
+
+        const nextArchive = { ...archivedRuntimeLogs };
+        let archiveChanged = false;
+
+        for (const record of loaded) {
+          if (record.logs.length > 0 && nextArchive[record.id] !== record.logs) {
+            nextArchive[record.id] = record.logs;
+            archiveChanged = true;
+          }
+        }
+
+        if (archiveChanged) {
+          await saveArchivedPhoneRuntimeLogs({
+            db,
+            logs: nextArchive,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setRecords(
+            localSessions.map((session) => ({
+              id: session.id,
+              session,
+              morningReport: null,
+              logs: [],
+            })),
+          );
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Could not load local sleep history.",
+          );
+        }
+      }
+    }
+
+    void loadRecords();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [localSessions]);
+
+  return { error, records };
+}
+
+async function collectPhoneRuntimeLogsForExport(
+  db: Awaited<ReturnType<typeof getLocalDb>>,
+): Promise<Record<string, NativePhoneRuntimeEvent[]>> {
+  const archivedLogs = await loadArchivedPhoneRuntimeLogs(db);
+  const localPhoneSessions = await db.query<{ id: string }>(
+    `select id from sessions
+where session_type = 'tlr'
+  and mode = 'phone'
+order by started_at desc`,
+  );
+  const nativeLogSessionIds = await phoneRuntime.getPhoneRuntimeLogSessionIds();
+  const nativeLogs = { ...archivedLogs };
+  const candidateSessionIds = [
+    ...localPhoneSessions.map((session) => session.id),
+    ...nativeLogSessionIds,
+  ].filter((id, index, ids) => ids.indexOf(id) === index);
+
+  for (const sessionId of candidateSessionIds) {
+    try {
+      const logs = await phoneRuntime.getPhoneRuntimeLogs(sessionId);
+
+      if (logs.length > 0) {
+        nativeLogs[sessionId] = logs;
+      }
+    } catch {
+      // Keep exporting the rest of the local account if one native log fails.
+    }
+  }
+
+  return nativeLogs;
+}
+
+function confirmFullDataImport(): Promise<boolean> {
+  if (Platform.OS === "web") {
+    return Promise.resolve(
+      globalThis.confirm(
+        "Importing this file will overwrite all local LucidCue data on this device.",
+      ),
+    );
+  }
+
+  return new Promise((resolve) => {
+    Alert.alert(
+      "Overwrite local data?",
+      "Importing this file will replace the entire local LucidCue account on this device, including engine settings, sessions, dream journal, and local logs.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => resolve(false),
+        },
+        {
+          text: "Overwrite",
+          style: "destructive",
+          onPress: () => resolve(true),
+        },
+      ],
+    );
+  });
+}
+
+async function shareFullLocalDataExport(snapshot: FullLocalDataExport) {
+  const json = JSON.stringify(snapshot, null, 2);
+  const fileName = `lucidcue-full-data-${safeFilePart(snapshot.exportedAt)}.json`;
+  const message = `LucidCue full local data export\nexportedAt: ${snapshot.exportedAt}`;
+
+  if (Platform.OS === "ios" && FileSystem.documentDirectory) {
+    const exportDirectory = `${FileSystem.documentDirectory}lucidcue-exports/`;
+    const fileUri = `${exportDirectory}${fileName}`;
+
+    await FileSystem.makeDirectoryAsync(exportDirectory, {
+      intermediates: true,
+    });
+    await FileSystem.writeAsStringAsync(fileUri, json, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    await Share.share({
+      title: fileName,
+      message,
+      url: fileUri,
+    });
+    return `${fileName} (${formatBytes(json.length)})`;
+  }
+
+  await Share.share({
+    title: fileName,
+    message: `${message}\n\n${json}`,
+  });
+  return `pasteable JSON (${formatBytes(json.length)})`;
+}
+
+async function pickFullLocalDataImportFile() {
+  let DocumentPicker: typeof import("expo-document-picker");
+
+  try {
+    DocumentPicker = await import("expo-document-picker");
+  } catch {
+    throw new Error(
+      "Full Data Import needs the next development build. Full Data Export works in this build, so export before rebuilding.",
+    );
+  }
+
+  return DocumentPicker.getDocumentAsync({
+    type: "application/json",
+    copyToCacheDirectory: true,
+  });
+}
+
 export function DataScreen() {
-  const { latestEngineSnapshot, sessionHistory, sleepHistory } = useAppState();
+  const { reloadLocalData } = useAppState();
+  const [dataTransferError, setDataTransferError] = React.useState<string | null>(
+    null,
+  );
+  const [dataTransferInfo, setDataTransferInfo] = React.useState<string | null>(
+    null,
+  );
+  const [isExportingFullData, setIsExportingFullData] = React.useState(false);
+  const [isImportingFullData, setIsImportingFullData] = React.useState(false);
+
+  async function exportFullData() {
+    setIsExportingFullData(true);
+    setDataTransferError(null);
+
+    try {
+      const db = await getLocalDb();
+      const nativePhoneRuntimeLogs = await collectPhoneRuntimeLogsForExport(db);
+      await saveArchivedPhoneRuntimeLogs({
+        db,
+        logs: nativePhoneRuntimeLogs,
+        updatedAt: new Date().toISOString(),
+      });
+      const snapshot = await exportFullLocalData({
+        db,
+        nativePhoneRuntimeLogs,
+      });
+      const exportLabel = await shareFullLocalDataExport(snapshot);
+
+      setDataTransferInfo(`Shared ${exportLabel}.`);
+    } catch (error) {
+      setDataTransferError(
+        error instanceof Error ? error.message : "Could not export local data.",
+      );
+    } finally {
+      setIsExportingFullData(false);
+    }
+  }
+
+  async function importFullData() {
+    setIsImportingFullData(true);
+    setDataTransferError(null);
+
+    try {
+      const picked = await pickFullLocalDataImportFile();
+
+      if (picked.canceled) {
+        return;
+      }
+
+      const asset = picked.assets[0];
+
+      if (!asset) {
+        throw new Error("No import file selected.");
+      }
+
+      const json = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      const snapshot = parseFullLocalDataExport(json);
+      const confirmed = await confirmFullDataImport();
+
+      if (!confirmed) {
+        return;
+      }
+
+      const db = await getLocalDb();
+
+      await replaceFullLocalData({ db, snapshot });
+      await saveArchivedPhoneRuntimeLogs({
+        db,
+        logs: snapshot.nativePhoneRuntimeLogs,
+        updatedAt: new Date().toISOString(),
+      });
+
+      try {
+        await phoneRuntime.clearPhoneRuntimeLogs();
+      } catch {
+        // Native runtime logs are best-effort; imported archive remains in SQLite.
+      }
+
+      await reloadLocalData();
+      setDataTransferInfo(
+        `Imported ${asset.name ?? "LucidCue export"} and replaced local data.`,
+      );
+    } catch (error) {
+      setDataTransferError(
+        error instanceof Error ? error.message : "Could not import local data.",
+      );
+    } finally {
+      setIsImportingFullData(false);
+    }
+  }
 
   return (
     <Screen>
@@ -400,27 +948,24 @@ export function DataScreen() {
       </Card>
 
       <Card>
-        <InfoRow
-          label="engine status"
-          value={latestEngineSnapshot.currentValues.currentEngineStatus}
+        <PrimaryPillButton
+          disabled={isExportingFullData || isImportingFullData}
+          label={isExportingFullData ? "Preparing Export..." : "Full Data Export"}
+          onPress={() => {
+            void exportFullData();
+          }}
         />
-        <InfoRow
-          label="decision reason"
-          value={latestEngineSnapshot.currentValues.latestDecisionReason}
+        <PrimaryPillButton
+          disabled={isExportingFullData || isImportingFullData}
+          label={isImportingFullData ? "Importing..." : "Full Data Import"}
+          onPress={() => {
+            void importFullData();
+          }}
         />
-        <InfoRow label="local sessions" value={String(sessionHistory.length)} />
-        <InfoRow
-          label="sleep history"
-          value={sleepHistory.enabled ? "on" : "off"}
-        />
-      </Card>
-
-      <Card>
-        <BarChart3 color={colors.textMuted} size={23} strokeWidth={1.8} />
-        <DataNote>
-          Data stays local by default. Structured research upload and dream
-          journal upload remain separate opt-ins.
-        </DataNote>
+        {dataTransferInfo ? <DataNote>{dataTransferInfo}</DataNote> : null}
+        {dataTransferError ? (
+          <InfoRow label="data transfer" value={dataTransferError} />
+        ) : null}
       </Card>
     </Screen>
   );
@@ -501,6 +1046,22 @@ export function TlrEngineDataScreen() {
         <InfoRow
           label="source"
           value={latestEngineSnapshot.sleepTiming.source.replaceAll("_", " ")}
+        />
+        <InfoRow
+          label="local phone nights"
+          value={latestEngineSnapshot.currentValues.phoneNightCalibrationStatus}
+        />
+        <InfoRow
+          label="observed night end"
+          value={latestEngineSnapshot.currentValues.phoneNightObservedEnd}
+        />
+        <InfoRow
+          label="quiet runtime"
+          value={latestEngineSnapshot.currentValues.phoneNightQuietRuntime}
+        />
+        <InfoRow
+          label="budget adjustment"
+          value={latestEngineSnapshot.currentValues.phoneNightBudgetAdjustment}
         />
       </Card>
 
@@ -768,14 +1329,303 @@ export function IphoneRuntimeDataScreen() {
 
 export function SleepHistoryDataScreen() {
   const { latestEngineSnapshot, sleepHistory } = useAppState();
+  const { error, records } = useSleepNightRecords();
+  const [selectedIndex, setSelectedIndex] = React.useState(0);
   const historicalWindows = latestEngineSnapshot.sleepTiming.predictedRemWindows.filter(
     (window) => window.source === "historical_sleep",
   );
+  const selectedRecord = records[selectedIndex] ?? records[0];
+  const logs = selectedRecord?.logs ?? [];
+  const morningReport = selectedRecord?.morningReport;
+  const startAt = selectedRecord ? nightStartedAt(selectedRecord) : undefined;
+  const endAt = selectedRecord ? nightEndedAt(selectedRecord) : undefined;
+  const motionSummaries = eventTypeCount(logs, "motion_summary");
+  const cuesPlayed = eventTypeCount(logs, "cue_played");
+  const trainingCuesPlayed = eventTypeCount(logs, "training_cue_played");
+  const cueFailures = eventTypeCount(logs, "cue_failed") +
+    eventTypeCount(logs, "training_cue_failed");
+  const movementPauses = eventTypeCount(logs, "movement_pause_started");
+  const interruptions = eventTypeCount(logs, "interruption_started") +
+    eventTypeCount(logs, "interruption_ended");
+  const routeChanges = eventTypeCount(logs, "route_changed");
+  const runtimeErrors = eventTypeCount(logs, "runtime_error");
+  const graph = graphPointsForLogs(logs);
 
   return (
     <Screen>
       <DataPageHeader title="Sleep history" />
 
+      {selectedRecord ? (
+        <>
+          <Card>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <Pressable
+                accessibilityLabel="Previous night"
+                accessibilityRole="button"
+                disabled={selectedIndex >= records.length - 1}
+                onPress={() =>
+                  setSelectedIndex((index) =>
+                    Math.min(records.length - 1, index + 1),
+                  )
+                }
+                style={({ pressed }) => ({
+                  width: 44,
+                  height: 40,
+                  borderRadius: 8,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: colors.cardBorder,
+                  opacity:
+                    selectedIndex >= records.length - 1 ? 0.35 : pressed ? 0.72 : 1,
+                })}
+              >
+                <ChevronLeft color={colors.textPrimary} size={22} />
+              </Pressable>
+              <View style={{ flex: 1, alignItems: "center", gap: 2 }}>
+                <Text
+                  selectable
+                  style={{
+                    color: colors.textPrimary,
+                    fontSize: typography.title.fontSize,
+                    lineHeight: typography.title.lineHeight,
+                    textAlign: "center",
+                  }}
+                >
+                  {formatNightTitle(selectedRecord)}
+                </Text>
+                <Text
+                  selectable
+                  style={{
+                    color: colors.textMuted,
+                    fontSize: typography.label.fontSize,
+                    lineHeight: typography.label.lineHeight,
+                    textAlign: "center",
+                  }}
+                >
+                  {formatNightInterval(selectedRecord)}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Next night"
+                accessibilityRole="button"
+                disabled={selectedIndex <= 0}
+                onPress={() => setSelectedIndex((index) => Math.max(0, index - 1))}
+                style={({ pressed }) => ({
+                  width: 44,
+                  height: 40,
+                  borderRadius: 8,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: colors.cardBorder,
+                  opacity: selectedIndex <= 0 ? 0.35 : pressed ? 0.72 : 1,
+                })}
+              >
+                <ChevronRight color={colors.textPrimary} size={22} />
+              </Pressable>
+            </View>
+            <InfoRow
+              label="night"
+              value={`${selectedIndex + 1} / ${records.length}`}
+            />
+            <InfoRow
+              label="type"
+              value={
+                selectedRecord.session
+                  ? `${selectedRecord.session.sessionType.replaceAll("_", " ")} / ${selectedRecord.session.mode ?? "none"}`
+                  : "native phone log"
+              }
+            />
+            <InfoRow
+              label="duration"
+              value={
+                selectedRecord.session
+                  ? formatSessionLength(selectedRecord.session)
+                  : durationLabel(startAt, endAt)
+              }
+            />
+            <InfoRow
+              label="status"
+              value={selectedRecord.session?.status.replaceAll("_", " ") ?? "native log only"}
+            />
+            {error ? <InfoRow label="history load" value={error} /> : null}
+          </Card>
+
+          <SectionTitle>Night graph</SectionTitle>
+          <Card>
+            <SleepNightGraph endAt={endAt} logs={logs} startAt={startAt} />
+            <InfoRow label="motion points" value={String(graph.motion.length)} />
+            <InfoRow label="battery points" value={String(graph.battery.length)} />
+            <InfoRow label="cue markers" value={String(graph.cues.length)} />
+          </Card>
+
+          <SectionTitle>Session data</SectionTitle>
+          <Card>
+            <InfoRow label="session id" value={selectedRecord.id} />
+            <InfoRow
+              label="started"
+              value={startAt ? new Date(startAt).toLocaleString() : "not available"}
+            />
+            <InfoRow
+              label="ended"
+              value={endAt ? new Date(endAt).toLocaleString() : "not available"}
+            />
+            <InfoRow
+              label="training started"
+              value={
+                selectedRecord.session?.trainingStartedAt
+                  ? new Date(
+                      selectedRecord.session.trainingStartedAt,
+                    ).toLocaleString()
+                  : "not available"
+              }
+            />
+            <InfoRow
+              label="training ended"
+              value={
+                selectedRecord.session?.trainingEndedAt
+                  ? new Date(selectedRecord.session.trainingEndedAt).toLocaleString()
+                  : "not available"
+              }
+            />
+            <InfoRow
+              label="selected cue"
+              value={selectedRecord.session?.selectedCueId ?? "not available"}
+            />
+            <InfoRow
+              label="guided training"
+              value={
+                selectedRecord.session?.guidedTrainingSkipped === undefined
+                  ? "not available"
+                  : selectedRecord.session.guidedTrainingSkipped
+                    ? "skipped"
+                    : "completed"
+              }
+            />
+          </Card>
+
+          <SectionTitle>Runtime data</SectionTitle>
+          <Card>
+            <InfoRow label="raw native events" value={String(logs.length)} />
+            <InfoRow label="training cues" value={String(trainingCuesPlayed)} />
+            <InfoRow label="runtime cues" value={String(cuesPlayed)} />
+            <InfoRow label="cue failures" value={String(cueFailures)} />
+            <InfoRow label="motion summaries" value={String(motionSummaries)} />
+            <InfoRow
+              label="motion intensity"
+              value={motionIntensityCounts(logs)}
+            />
+            <InfoRow label="movement pauses" value={String(movementPauses)} />
+            <InfoRow label="interruptions" value={String(interruptions)} />
+            <InfoRow label="route changes" value={String(routeChanges)} />
+            <InfoRow label="runtime errors" value={String(runtimeErrors)} />
+            <InfoRow
+              label="battery range"
+              value={batteryLevelLabel(logs)}
+            />
+            <InfoRow
+              label="Low Power samples"
+              value={String(
+                countPayloadMatches(
+                  logs,
+                  "battery_summary",
+                  "lowPowerMode",
+                  true,
+                ),
+              )}
+            />
+            <InfoRow
+              label="thermal states"
+              value={uniquePayloadValues(logs, "battery_summary", "thermalState")}
+            />
+          </Card>
+
+          <SectionTitle>Morning review</SectionTitle>
+          <Card>
+            {morningReport ? (
+              <>
+                <InfoRow
+                  label="remembered dream"
+                  value={morningReport.rememberedDream ? "yes" : "no"}
+                />
+                <InfoRow
+                  label="lucid dream"
+                  value={nullableBooleanLabel(morningReport.lucidDream)}
+                />
+                <InfoRow
+                  label="heard cue"
+                  value={nullableBooleanLabel(morningReport.heardCue)}
+                />
+                <InfoRow
+                  label="cue in dream"
+                  value={nullableBooleanLabel(morningReport.cueIncorporated)}
+                />
+                <InfoRow
+                  label="cue woke user"
+                  value={nullableBooleanLabel(morningReport.cueWokeUser)}
+                />
+                <InfoRow
+                  label="returned to sleep"
+                  value={nullableBooleanLabel(morningReport.returnedToSleep)}
+                />
+                <InfoRow
+                  label="sleep quality"
+                  value={
+                    morningReport.sleepQualityRating
+                      ? String(morningReport.sleepQualityRating)
+                      : "skipped"
+                  }
+                />
+              </>
+            ) : (
+              <InfoRow label="report" value="not saved for this night" />
+            )}
+          </Card>
+
+          <SectionTitle>Event listing</SectionTitle>
+          <Card>
+            {compactTimelineEvents(logs).length === 0 ? (
+              <InfoRow label="events" value="none for this night" />
+            ) : (
+              compactTimelineEvents(logs).map((event) => (
+                <Text
+                  selectable
+                  key={event.id}
+                  style={{
+                    color: colors.textSecondary,
+                    fontSize: typography.label.fontSize,
+                    lineHeight: typography.label.lineHeight,
+                  }}
+                >
+                  {runtimeEventLabel(event)}
+                </Text>
+              ))
+            )}
+          </Card>
+        </>
+      ) : (
+        <Card>
+          <Text
+            selectable
+            style={{
+              color: colors.textDim,
+              fontSize: typography.body.fontSize,
+              lineHeight: typography.body.lineHeight,
+              textAlign: "center",
+            }}
+          >
+            No local sleep sessions yet.
+          </Text>
+        </Card>
+      )}
+
+      <SectionTitle>External sleep prior</SectionTitle>
       <Card>
         <InfoRow label="enabled" value={sleepHistory.enabled ? "on" : "off"} />
         <InfoRow

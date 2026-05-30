@@ -8,6 +8,7 @@ import {
   clearAllLocalData,
   getAppSetting,
   getLocalParticipant,
+  loadPhoneNightCalibrationNights,
   loadLocalSessions,
   loadOnboardingResponses,
   ONBOARDING_COMPLETED_AT_SETTING,
@@ -69,7 +70,10 @@ import {
 import {
   buildEngineSnapshot,
   buildInactiveEngineSnapshot,
+  applyPhoneNightCalibrationToSettings,
+  buildPhoneNightCalibrationPrior,
   createDefaultEngineSettings,
+  emptyPhoneNightCalibrationPrior,
   ENGINE_SETTINGS_KEY,
   evaluateCueDecision,
   isCueingSessionActive,
@@ -77,6 +81,7 @@ import {
   type CueDecisionContext,
   type CueDecisionSettings,
   type EngineSnapshot,
+  type PhoneNightCalibrationPrior,
   type SoundSensitivityProfile,
 } from "@/src/engine";
 
@@ -103,7 +108,10 @@ interface AppStateValue {
   latestEngineSnapshot: EngineSnapshot;
   engineDecisionLog: string[];
   sleepHistory: SleepHistoryCalibrationState;
+  phoneNightCalibration: PhoneNightCalibrationPrior;
   isSyncingSleepHistory: boolean;
+  refreshPhoneNightCalibration: () => Promise<void>;
+  reloadLocalData: () => Promise<void>;
   setSelectedMode: (mode: AppMode) => void;
   updateTlrOptions: (patch: TlrOptionsPatch) => Promise<void>;
   updateEngineSettings: (patch: Partial<CueDecisionSettings>) => Promise<void>;
@@ -293,6 +301,7 @@ function buildEngineContext(input: {
   activeSession: NightSession | null;
   engineSettings: CueDecisionSettings;
   sleepHistory: SleepHistoryCalibrationState;
+  phoneNightCalibration: PhoneNightCalibrationPrior;
 }): CueDecisionContext {
   const mode = input.activeSession?.mode ?? input.selectedMode;
   const historicalSleepPrior =
@@ -301,29 +310,72 @@ function buildEngineContext(input: {
     input.sleepHistory.prior.confidence !== "none"
       ? input.sleepHistory.prior
       : undefined;
+  const phoneNightPrior =
+    input.phoneNightCalibration.nightsIncluded > 0
+      ? input.phoneNightCalibration
+      : undefined;
+  const settings = applyPhoneNightCalibrationToSettings(
+    input.engineSettings,
+    phoneNightPrior,
+  );
 
   return {
     now: input.now,
     mode: mode ?? input.selectedMode,
     session: input.activeSession,
-    settings: input.engineSettings,
+    settings,
     cueHistory: {
       previousCues: [],
       numberOfCuesTonight: 0,
       numberOfCuesInCurrentBlock: 0,
-      latestVolumeLevel: input.engineSettings.volumeStartLevel,
+      latestVolumeLevel: settings.volumeStartLevel,
     },
     movement: {
       recentMovementIntensity: 0,
       stableLowMovementSeconds:
-        input.engineSettings.stableLowMovementRequiredSeconds,
+        settings.stableLowMovementRequiredSeconds,
       phonePickedUpRecently: false,
       orientationChangedRecently: false,
       largeMovementEvents: [],
     },
     userFeedback: {},
     historicalSleepPrior,
+    phoneNightPrior,
   };
+}
+
+async function importCompletedPhoneRuntimeCalibrations(
+  sessions: NightSession[],
+): Promise<void> {
+  if (!phoneRuntime.isAvailable()) {
+    return;
+  }
+
+  const db = await getLocalDb();
+  const existingSessionIds = new Set(
+    (await loadPhoneNightCalibrationNights(db)).map((night) => night.sessionId),
+  );
+  const completedPhoneSessions = sessions
+    .filter(
+      (session) =>
+        session.sessionType === "tlr" &&
+        session.mode === "phone" &&
+        Boolean(session.trainingEndedAt) &&
+        (session.status === "ended" ||
+          session.status === "morning_review_complete") &&
+        !existingSessionIds.has(session.id),
+    )
+    .slice(0, 5);
+
+  for (const session of completedPhoneSessions) {
+    try {
+      const logs = await phoneRuntime.getPhoneRuntimeLogs(session.id);
+
+      await importPhoneRuntimeLogsToLocalRecords(logs);
+    } catch {
+      // Missing native logs should not block app hydration.
+    }
+  }
 }
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
@@ -362,6 +414,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
   const [sleepHistory, setSleepHistory] = React.useState(
     emptySleepHistoryState,
+  );
+  const [phoneNightCalibration, setPhoneNightCalibration] = React.useState(() =>
+    emptyPhoneNightCalibrationPrior(),
   );
   const [isSyncingSleepHistory, setIsSyncingSleepHistory] =
     React.useState(false);
@@ -413,6 +468,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
               participantId: participant.id,
             })
           : [];
+        await importCompletedPhoneRuntimeCalibrations(persistedSessions);
+        const persistedPhoneNightCalibration = buildPhoneNightCalibrationPrior({
+          nights: await loadPhoneNightCalibrationNights(db),
+        });
 
         if (cancelled) {
           return;
@@ -445,6 +504,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setTlrOptions(nextTlrOptions);
         setEngineSettings(nextEngineSettings);
         setSleepHistory(persistedSleepHistory);
+        setPhoneNightCalibration(persistedPhoneNightCalibration);
         setOnboardingComplete(Boolean(completedAt && onboardingVersion));
       } catch (error) {
         if (!cancelled) {
@@ -465,6 +525,86 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  const reloadLocalData = React.useCallback(async () => {
+    const db = await getLocalDb();
+    const participant = await getLocalParticipant(db);
+    const completedAt = await getAppSetting<string>(
+      db,
+      ONBOARDING_COMPLETED_AT_SETTING,
+    );
+    const onboardingVersion = await getAppSetting<string>(
+      db,
+      ONBOARDING_VERSION_SETTING,
+    );
+    const persistedAnswers = participant
+      ? await loadOnboardingResponses(db, participant.id)
+      : [];
+    const persistedEngineSettings =
+      await getAppSetting<CueDecisionSettings>(db, ENGINE_SETTINGS_KEY);
+    const nextEngineSettings = mergePersistedEngineSettings(
+      persistedAnswers,
+      persistedEngineSettings,
+    );
+    const persistedTlrOptions = await getAppSetting<TlrOptions>(
+      db,
+      TLR_OPTIONS_KEY,
+    );
+    const nextTlrOptions = normalizeTlrOptions(
+      persistedTlrOptions,
+      nextEngineSettings.typicalWakeTime,
+    );
+    const persistedSleepHistory = participant
+      ? await loadSleepHistoryCalibrationState({
+          db,
+          participantId: participant.id,
+        })
+      : emptySleepHistoryState();
+    const persistedSessions = participant
+      ? await loadLocalSessions({
+          db,
+          participantId: participant.id,
+        })
+      : [];
+
+    await importCompletedPhoneRuntimeCalibrations(persistedSessions);
+
+    if (participant) {
+      setParticipantId(participant.id);
+      setAppInstallId(participant.app_install_id);
+      setParticipantCreatedAt(participant.created_at);
+      setConsentChoices({
+        structuredResearchUploadConsent:
+          participant.structured_upload_consent === 1,
+        dreamJournalUploadConsent: participant.dream_upload_consent === 1,
+      });
+
+      if (isAppMode(participant.selected_mode)) {
+        setSelectedMode(participant.selected_mode);
+      }
+    }
+
+    setOnboardingAnswers(persistedAnswers);
+    setSessionHistory(persistedSessions);
+    setActiveSession(
+      persistedSessions.find(
+        (session) =>
+          session.status !== "ended" &&
+          session.status !== "morning_review_complete",
+      ) ?? null,
+    );
+    setTlrOptions(nextTlrOptions);
+    setEngineSettings(nextEngineSettings);
+    setSleepHistory(persistedSleepHistory);
+    setPhoneNightCalibration(
+      buildPhoneNightCalibrationPrior({
+        nights: await loadPhoneNightCalibrationNights(db),
+      }),
+    );
+    setOnboardingComplete(Boolean(completedAt && onboardingVersion));
+    setEngineDecisionLog([]);
+    setHydrationError(null);
   }, []);
 
   React.useEffect(() => {
@@ -663,6 +803,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setTlrOptions(createDefaultTlrOptions());
     setEngineSettings(createDefaultEngineSettings("standard"));
     setSleepHistory(emptySleepHistoryState());
+    setPhoneNightCalibration(emptyPhoneNightCalibrationPrior());
     setIsSyncingSleepHistory(false);
     setEngineDecisionLog([]);
   }, []);
@@ -788,6 +929,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [participantId, syncSleepHistoryNow],
   );
 
+  const refreshPhoneNightCalibration = React.useCallback(async () => {
+    const db = await getLocalDb();
+
+    setPhoneNightCalibration(
+      buildPhoneNightCalibrationPrior({
+        nights: await loadPhoneNightCalibrationNights(db),
+      }),
+    );
+  }, []);
+
   const startSession = React.useCallback(
     (sessionType: SessionType) => {
       const now = new Date().toISOString();
@@ -906,6 +1057,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
 
       await importPhoneRuntimeLogsToLocalRecords(logs);
+      await refreshPhoneNightCalibration();
       sendSessionEvent(
         "end_session",
         latestPhoneRuntimeStopTimestamp(logs) ?? new Date().toISOString(),
@@ -913,17 +1065,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     } catch {
       // Screen-level runtime panels surface actionable native errors.
     }
-  }, [activeSession, sendSessionEvent]);
+  }, [activeSession, refreshPhoneNightCalibration, sendSessionEvent]);
 
   React.useEffect(() => {
     const subscription = NativeAppState.addEventListener("change", (state) => {
       if (state === "active") {
         void reconcileNativePhoneRuntimeCompletion();
+        void importCompletedPhoneRuntimeCalibrations(sessionHistory).then(
+          refreshPhoneNightCalibration,
+        );
       }
     });
 
     return () => subscription.remove();
-  }, [reconcileNativePhoneRuntimeCompletion]);
+  }, [
+    reconcileNativePhoneRuntimeCompletion,
+    refreshPhoneNightCalibration,
+    sessionHistory,
+  ]);
 
   const addJournalEntry = React.useCallback((text: string) => {
     const now = new Date().toISOString();
@@ -947,8 +1106,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         activeSession,
         engineSettings,
         sleepHistory,
+        phoneNightCalibration,
       }),
-    [activeSession, engineNowMs, engineSettings, selectedMode, sleepHistory],
+    [
+      activeSession,
+      engineNowMs,
+      engineSettings,
+      phoneNightCalibration,
+      selectedMode,
+      sleepHistory,
+    ],
   );
   const latestEngineSnapshot = React.useMemo(() => {
     if (!shouldRecordEngineDecisions) {
@@ -998,7 +1165,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       latestEngineSnapshot,
       engineDecisionLog,
       sleepHistory,
+      phoneNightCalibration,
       isSyncingSleepHistory,
+      refreshPhoneNightCalibration,
+      reloadLocalData,
       setSelectedMode: persistSelectedMode,
       updateTlrOptions,
       updateEngineSettings,
@@ -1027,7 +1197,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       onboardingAnswers,
       onboardingComplete,
       participantId,
+      phoneNightCalibration,
       persistSelectedMode,
+      refreshPhoneNightCalibration,
+      reloadLocalData,
       resetAppData,
       selectedMode,
       sendSessionEvent,

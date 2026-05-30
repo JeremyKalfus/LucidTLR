@@ -4,6 +4,7 @@ import type {
   CueDecisionReason,
   HistoricalSleepPrior,
   NightSession,
+  PhoneNightCalibrationPrior,
   PredictedRemWindow,
   SessionStatus,
   SoundSensitivityProfile,
@@ -28,7 +29,11 @@ export type {
 };
 
 export type SleepTimingConfidence = "low" | "medium" | "high";
-export type SleepTimingSource = "default" | "self_report" | "historical_sleep";
+export type SleepTimingSource =
+  | "default"
+  | "self_report"
+  | "historical_sleep"
+  | "local_phone_runtime";
 export type WatchConnectivityState = "connected" | "disconnected" | "unknown";
 
 export interface CueDecisionSettings {
@@ -126,6 +131,7 @@ export interface CueDecisionContext {
   userFeedback: UserFeedbackContext;
   watchSignal?: WatchEpochSignal;
   historicalSleepPrior?: HistoricalSleepPrior;
+  phoneNightPrior?: PhoneNightCalibrationPrior;
 }
 
 export interface SleepTimingPrior {
@@ -135,6 +141,7 @@ export interface SleepTimingPrior {
   likelyPhoneCueWindowEnd: string;
   predictedRemWindows: PredictedRemWindow[];
   historicalSleepPrior?: HistoricalSleepPrior;
+  phoneNightPrior?: PhoneNightCalibrationPrior;
   confidence: SleepTimingConfidence;
   source: SleepTimingSource;
 }
@@ -255,6 +262,10 @@ export interface EngineSnapshot {
     userReportedAwakeningPause: string;
     suppressionReason: string;
     healthHistoryCalibrationStatus: string;
+    phoneNightCalibrationStatus: string;
+    phoneNightObservedEnd: string;
+    phoneNightQuietRuntime: string;
+    phoneNightBudgetAdjustment: string;
     sleepPriorSource: string;
     nextPredictedRemWindow: string;
     cueWindowSource: string;

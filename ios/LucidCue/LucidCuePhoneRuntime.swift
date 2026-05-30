@@ -471,6 +471,14 @@ class LucidCuePhoneRuntime: NSObject {
       "trainingEndedAt": plan.trainingEndedAt,
       "earliestCueAt": plan.timing.earliestCueAt,
       "latestCueAt": plan.timing.latestCueAt,
+      "predictedRemWindows": plan.timing.predictedRemWindows.map { window in
+        [
+          "startAt": window.startAt,
+          "endAt": window.endAt,
+          "confidence": window.confidence,
+          "source": window.source
+        ]
+      },
       "predictedRemWindowPolicy": usesHistoricalRemWindows(plan: plan)
         ? "historical_rem_only_no_shoulder"
         : "broad_cue_window",

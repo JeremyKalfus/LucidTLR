@@ -30,6 +30,7 @@ function fallbackSleepTiming(context: CueDecisionContext): SleepTimingPrior {
     trainingEndedAt,
     settings: context.settings,
     historicalSleepPrior: context.historicalSleepPrior,
+    phoneNightPrior: context.phoneNightPrior,
   });
 }
 

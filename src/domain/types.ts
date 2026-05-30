@@ -108,6 +108,8 @@ export type HistoricalSleepPriorConfidence =
   | "medium"
   | "high";
 
+export type PhoneNightCalibrationConfidence = "none" | "low" | "medium";
+
 export interface HistoricalRemWindow {
   startMinutesAfterSleepOnset: number;
   endMinutesAfterSleepOnset: number;
@@ -270,4 +272,41 @@ export interface HistoricalSleepPrior {
   remWindows: HistoricalRemWindow[];
   remDensityByMinute: RemDensityBin[];
   generatedAt: string;
+}
+
+export interface PhoneNightCalibrationNight {
+  sessionId: string;
+  generatedAt: string;
+  trainingEndedAt: string;
+  runtimeStartedAt?: string;
+  runtimeStoppedAt?: string;
+  runtimeDurationMinutes: number;
+  observedEndMinutesAfterTraining: number;
+  quietStartMinutesAfterTraining?: number;
+  quietRuntimeRatio?: number;
+  cueCount: number;
+  cueFailures: number;
+  cueBudgetExhausted: boolean;
+  movementPauseCount: number;
+  largeMovementCount: number;
+  interrupted: boolean;
+  errored: boolean;
+  cueWokeUser?: boolean | null;
+  sleepQualityRating?: number;
+}
+
+export interface PhoneNightCalibrationPrior {
+  source: "local_phone_runtime";
+  nightsIncluded: number;
+  confidence: PhoneNightCalibrationConfidence;
+  generatedAt: string;
+  medianRuntimeDurationMinutes: number | null;
+  medianObservedEndMinutesAfterTraining: number | null;
+  medianQuietStartMinutesAfterTraining: number | null;
+  medianQuietRuntimeRatio: number | null;
+  budgetExhaustedRate: number;
+  cueWokeUserRate: number | null;
+  medianSleepQualityRating: number | null;
+  recommendedMaxCuesPerNightMultiplier: number;
+  recommendedVolumeMultiplier: number;
 }
