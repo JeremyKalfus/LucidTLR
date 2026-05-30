@@ -796,6 +796,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         sessionType,
         mode: selectedMode,
         startedAt: now,
+        selectedCueId: tlrOptions.selectedCueId,
       });
       const nextSession =
         sessionType === "sleep_log"
@@ -812,7 +813,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       );
       return nextSession;
     },
-    [participantId, selectedMode],
+    [participantId, selectedMode, tlrOptions.selectedCueId],
   );
 
   const sendSessionEvent = React.useCallback(

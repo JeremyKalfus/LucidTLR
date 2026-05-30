@@ -17,6 +17,10 @@ export const LOCAL_MIGRATIONS = [
     id: "004_tlr_options",
     filename: "004_tlr_options.sql",
   },
+  {
+    id: "005_selected_cue",
+    filename: "005_selected_cue.sql",
+  },
 ] as const;
 
 export const LOCAL_TABLES = [

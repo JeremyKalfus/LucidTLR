@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_CUE_ID } from "@/src/audio/cueCatalog";
 import {
   createDefaultTlrOptions,
   mergeTlrOptionsPatch,
@@ -12,6 +13,7 @@ describe("TLR options", () => {
     const options = createDefaultTlrOptions("6:45");
 
     expect(options).toMatchObject({
+      selectedCueId: DEFAULT_CUE_ID,
       backgroundNoise: "none",
       skipGuidedTraining: false,
       alarm: {
@@ -27,6 +29,7 @@ describe("TLR options", () => {
     const options = normalizeTlrOptions(
       {
         backgroundNoise: "rain" as never,
+        selectedCueId: "too-long-remembrance-harp",
         skipGuidedTraining: true,
         alarm: {
           enabled: true,
@@ -39,6 +42,7 @@ describe("TLR options", () => {
     );
 
     expect(options).toEqual({
+      selectedCueId: DEFAULT_CUE_ID,
       backgroundNoise: "none",
       skipGuidedTraining: true,
       alarm: {
@@ -64,6 +68,16 @@ describe("TLR options", () => {
       autoShutoff: true,
       ringDurationMinutes: 5,
     });
+  });
+
+  it("merges selected cue patches without dropping other options", () => {
+    const options = mergeTlrOptionsPatch(createDefaultTlrOptions("07:00"), {
+      selectedCueId: "dx-harp-c5",
+    });
+
+    expect(options.selectedCueId).toBe("dx-harp-c5");
+    expect(options.alarm.time).toBe("07:00");
+    expect(options.backgroundNoise).toBe("none");
   });
 
   it("resolves alarm fire times across midnight in local clock time", () => {

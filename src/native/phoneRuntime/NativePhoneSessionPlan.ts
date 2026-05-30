@@ -2,13 +2,12 @@ import type {
   BackgroundNoiseOption,
   CueSuppressionReason,
 } from "@/src/domain/types";
+import { MAX_BUILT_IN_CUE_DURATION_SECONDS } from "@/src/audio/cueCatalog";
 
 export const NATIVE_PHONE_POLICY_VERSION = "iphone-phone-runtime-2026-001";
 
 export const DEFAULT_PHONE_AUDIO_BED_ASSET_ID =
   "lucidcue-audible-bed-sine-220hz";
-
-export const DEFAULT_PHONE_CUE_ASSET_ID = "lucidcue_feasibility_medium";
 
 export type NativePhoneSessionPlan = {
   sessionId: string;
@@ -41,6 +40,8 @@ export type NativePhoneSessionPlan = {
   cue: {
     cueId: string;
     assetId: string;
+    resourceName: string;
+    resourceExtension: "mp3" | "wav";
     durationSeconds: number;
     startVolume: number;
     rampPerCue: number;
@@ -230,8 +231,22 @@ export function validateNativePhoneSessionPlan(
     errors.push("Phone runtime requires an audio bed asset id.");
   }
 
-  if (!plan.cue.assetId) {
+  if (!plan.cue.assetId || !plan.cue.resourceName) {
     errors.push("Phone runtime requires a cue asset id.");
+  }
+
+  if (
+    plan.cue.resourceExtension !== "mp3" &&
+    plan.cue.resourceExtension !== "wav"
+  ) {
+    errors.push("Phone runtime cue resource extension is invalid.");
+  }
+
+  if (
+    plan.cue.durationSeconds <= 0 ||
+    plan.cue.durationSeconds > MAX_BUILT_IN_CUE_DURATION_SECONDS
+  ) {
+    errors.push("Phone runtime cue duration must be 3 seconds or shorter.");
   }
 
   if (plan.timing.cueIntervalRangeSeconds[0] > plan.timing.cueIntervalRangeSeconds[1]) {

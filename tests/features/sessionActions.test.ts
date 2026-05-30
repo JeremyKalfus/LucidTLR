@@ -45,4 +45,17 @@ describe("session actions", () => {
     expect(session.status).toBe("waiting_for_cue_window");
     expect(session.guidedTrainingSkipped).toBe(false);
   });
+
+  it("snapshots the selected cue for TLR sessions", () => {
+    const session = createNightSession({
+      id: "session-2",
+      participantId: "participant-1",
+      sessionType: "tlr",
+      mode: "phone",
+      startedAt: "2026-01-20T03:50:00.000Z",
+      selectedCueId: "dx-harp-c5",
+    });
+
+    expect(session.selectedCueId).toBe("dx-harp-c5");
+  });
 });

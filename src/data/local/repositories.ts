@@ -1,4 +1,5 @@
 import type { LocalDb } from "./localDb";
+import { normalizeCueId } from "@/src/audio/cueCatalog";
 import type { OnboardingAnswer, OnboardingAnswerValue } from "@/src/domain/forms";
 import type {
   AppMode,
@@ -67,6 +68,7 @@ interface NightSessionRow {
   training_started_at: string | null;
   training_ended_at: string | null;
   cueing_started_at: string | null;
+  selected_cue_id: string | null;
   guided_training_skipped: number;
 }
 
@@ -229,6 +231,10 @@ function toNightSession(row: NightSessionRow): NightSession {
     trainingStartedAt: row.training_started_at ?? undefined,
     trainingEndedAt: row.training_ended_at ?? undefined,
     cueingStartedAt: row.cueing_started_at ?? undefined,
+    selectedCueId:
+      row.session_type === "tlr"
+        ? normalizeCueId(row.selected_cue_id)
+        : undefined,
     guidedTrainingSkipped: row.guided_training_skipped === 1,
   };
 }
@@ -318,15 +324,17 @@ export async function upsertLocalSession(input: {
   training_started_at,
   training_ended_at,
   cueing_started_at,
+  selected_cue_id,
   guided_training_skipped,
   upload_status
-) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 on conflict(id) do update set
   status = excluded.status,
   ended_at = excluded.ended_at,
   training_started_at = excluded.training_started_at,
   training_ended_at = excluded.training_ended_at,
   cueing_started_at = excluded.cueing_started_at,
+  selected_cue_id = excluded.selected_cue_id,
   guided_training_skipped = excluded.guided_training_skipped,
   upload_status = excluded.upload_status`,
     [
@@ -341,6 +349,7 @@ on conflict(id) do update set
       input.session.trainingStartedAt ?? null,
       input.session.trainingEndedAt ?? null,
       input.session.cueingStartedAt ?? null,
+      input.session.selectedCueId ?? null,
       input.session.guidedTrainingSkipped ? 1 : 0,
       input.uploadStatus ?? "local_only",
     ],
@@ -363,6 +372,7 @@ export async function loadLocalSessions(input: {
   training_started_at,
   training_ended_at,
   cueing_started_at,
+  selected_cue_id,
   guided_training_skipped
 from sessions
 where participant_id = ?

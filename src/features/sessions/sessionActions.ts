@@ -1,5 +1,6 @@
 import { TLR_PROTOCOL_VERSION } from "../../protocol/tlrProtocol";
 import type { AppMode, NightSession, SessionType } from "../../domain/types";
+import { normalizeCueId } from "@/src/audio/cueCatalog";
 import {
   type SessionEvent,
   transitionSessionStatus,
@@ -11,6 +12,7 @@ export function createNightSession(input: {
   sessionType: SessionType;
   mode: AppMode | null;
   startedAt: string;
+  selectedCueId?: string;
 }): NightSession {
   return {
     id: input.id,
@@ -20,6 +22,8 @@ export function createNightSession(input: {
     status: "setup",
     protocolVersion: TLR_PROTOCOL_VERSION,
     startedAt: input.startedAt,
+    selectedCueId:
+      input.sessionType === "tlr" ? normalizeCueId(input.selectedCueId) : undefined,
   };
 }
 

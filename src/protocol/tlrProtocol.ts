@@ -1,9 +1,13 @@
+import { DEFAULT_CUE_ID, getBuiltInCue } from "@/src/audio/cueCatalog";
+
 export const TLR_PROTOCOL_VERSION = "tlr-2026-001";
 
+const defaultCue = getBuiltInCue(DEFAULT_CUE_ID);
+
 export const cueAudio = {
-  defaultCueId: "soft-harp-3s",
-  durationSeconds: 3,
-  description: "3-second soft harp/melodic cue with fade-in/fade-out",
+  defaultCueId: defaultCue.id,
+  durationSeconds: defaultCue.durationSeconds,
+  description: "short soft cue, 3 seconds maximum after silence trim",
 } as const;
 
 export const presleepTraining = {

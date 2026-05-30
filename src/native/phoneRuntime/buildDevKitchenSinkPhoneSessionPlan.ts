@@ -8,7 +8,7 @@ import {
 } from "./NativePhoneSessionPlan";
 import { buildNativePhoneSessionPlanFromCompletedSession } from "./buildNativePhoneSessionPlan";
 
-export const DEV_KITCHEN_SINK_DURATION_SECONDS = 10 * 60;
+export const DEV_KITCHEN_SINK_DURATION_SECONDS = 45 * 60;
 const DEV_KITCHEN_SINK_CUE_START_OFFSET_SECONDS = 20;
 const DEV_KITCHEN_SINK_CUE_END_BUFFER_SECONDS = 20;
 
@@ -47,7 +47,7 @@ export function buildDevKitchenSinkPhoneSessionPlan(
   });
   const kitchenSinkPlan: NativePhoneSessionPlan = {
     ...plan,
-    nativePolicyVersion: `${NATIVE_PHONE_POLICY_VERSION}-dev-kitchen-sink-10m`,
+    nativePolicyVersion: `${NATIVE_PHONE_POLICY_VERSION}-dev-kitchen-sink-45m`,
     audioBed: {
       ...plan.audioBed,
       volume: Math.max(plan.audioBed.volume, 0.03),

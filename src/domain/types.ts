@@ -15,6 +15,7 @@ export interface AlarmOptions {
 }
 
 export interface TlrOptions {
+  selectedCueId: string;
   backgroundNoise: BackgroundNoiseOption;
   skipGuidedTraining: boolean;
   alarm: AlarmOptions;
@@ -174,6 +175,7 @@ export interface NightSession {
   trainingStartedAt?: string;
   trainingEndedAt?: string;
   cueingStartedAt?: string;
+  selectedCueId?: string;
   guidedTrainingSkipped?: boolean;
 }
 

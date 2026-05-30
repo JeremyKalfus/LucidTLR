@@ -3,6 +3,7 @@ import { Pressable, Switch, Text, TextInput, View } from "react-native";
 import { ChevronDown } from "lucide-react-native";
 
 import { InfoRow } from "@/src/components/ui";
+import { builtInCues, getBuiltInCue } from "@/src/audio/cueCatalog";
 import type { AppMode, TlrOptions } from "@/src/domain/types";
 import {
   backgroundNoiseOptions,
@@ -10,7 +11,6 @@ import {
   normalizeAlarmTime,
   type TlrOptionsPatch,
 } from "@/src/features/tlrOptions/tlrOptions";
-import { cueAudio } from "@/src/protocol/tlrProtocol";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
 function RowLabel({ children }: { children: string }) {
@@ -151,7 +151,9 @@ export function TlrOptionsControls({
   onModeChange: (mode: AppMode) => void;
   onOptionsChange: (patch: TlrOptionsPatch) => void;
 }) {
+  const [cueOpen, setCueOpen] = React.useState(false);
   const [noiseOpen, setNoiseOpen] = React.useState(false);
+  const selectedCue = getBuiltInCue(tlrOptions.selectedCueId);
 
   return (
     <View style={{ gap: 9 }}>
@@ -171,7 +173,54 @@ export function TlrOptionsControls({
         </View>
       </View>
 
-      <InfoRow label="sound" value={cueAudio.defaultCueId.replaceAll("-", " ")} />
+      <View style={{ gap: 7 }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Choose cue sound"
+          onPress={() => setCueOpen((open) => !open)}
+          style={({ pressed }) => ({
+            minHeight: 34,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            opacity: pressed ? 0.72 : 1,
+          })}
+        >
+          <RowLabel>cue sound</RowLabel>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text
+              selectable
+              style={{
+                color: colors.textPrimary,
+                flexShrink: 1,
+                textAlign: "right",
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+              }}
+            >
+              {selectedCue.label}
+            </Text>
+            <ChevronDown color={colors.textMuted} size={16} strokeWidth={1.8} />
+          </View>
+        </Pressable>
+        {cueOpen ? (
+          <View style={{ gap: 7 }}>
+            {builtInCues.map((cue) => (
+              <SegmentButton
+                key={cue.id}
+                active={selectedCue.id === cue.id}
+                fill={false}
+                label={cue.label}
+                onPress={() => {
+                  onOptionsChange({ selectedCueId: cue.id });
+                  setCueOpen(false);
+                }}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
 
       <View style={{ gap: 7 }}>
         <Pressable

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { getBuiltInCue } from "@/src/audio/cueCatalog";
 import type { HistoricalSleepPrior, NightSession } from "@/src/domain/types";
 import {
   buildSleepTimingPrior,
@@ -163,6 +164,11 @@ describe("buildNativePhoneSessionPlan", () => {
       enabled: false,
     });
     expect(plan.cue).toMatchObject({
+      cueId: "harp-flourish",
+      assetId: "harp-flourish",
+      resourceName: "harp_flourish",
+      resourceExtension: "mp3",
+      durationSeconds: getBuiltInCue("harp-flourish").durationSeconds,
       startVolume: 0.12,
       rampPerCue: 0.002,
       capVolume: 0.5,
@@ -178,6 +184,26 @@ describe("buildNativePhoneSessionPlan", () => {
       maxCuesPerBlock: 4,
       maxBlockDurationMinutes: 8,
       minRestBetweenBlocksMinutes: 18,
+    });
+  });
+
+  it("uses the session-selected cue for native one-off cue playback", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const selectedCue = getBuiltInCue("dx-harp-c5");
+    const plan = buildNativePhoneSessionPlanFromCompletedSession({
+      session: {
+        ...session(),
+        selectedCueId: selectedCue.id,
+      },
+      settings,
+    });
+
+    expect(plan.cue).toMatchObject({
+      cueId: selectedCue.id,
+      assetId: selectedCue.id,
+      resourceName: selectedCue.nativeResourceName,
+      resourceExtension: selectedCue.nativeResourceExtension,
+      durationSeconds: selectedCue.durationSeconds,
     });
   });
 
@@ -249,7 +275,7 @@ describe("buildNativePhoneSessionPlan", () => {
     ).toContain("Phone runtime requires an audible audio bed.");
   });
 
-  it("builds a dev-only 10-minute kitchen sink plan with explicit REM gating", () => {
+  it("builds a dev-only 45-minute kitchen sink plan with explicit REM gating", () => {
     const settings = {
       ...createDefaultEngineSettings("standard"),
       phoneAudioBedVolume: 0.01,
@@ -262,17 +288,18 @@ describe("buildNativePhoneSessionPlan", () => {
         trainingStartedAt: now,
         trainingEndedAt: now,
         cueingStartedAt: now,
+        selectedCueId: "clear-bell-chime",
         guidedTrainingSkipped: true,
       },
       settings,
       now,
     });
 
-    expect(plan.nativePolicyVersion).toContain("dev-kitchen-sink-10m");
+    expect(plan.nativePolicyVersion).toContain("dev-kitchen-sink-45m");
     expect(plan.audioBed.enabled).toBe(true);
     expect(plan.audioBed.volume).toBe(0.03);
     expect(plan.safety.stopAt).toBe(
-      "2026-01-20T04:11:00.000Z",
+      "2026-01-20T04:46:00.000Z",
     );
     expect(
       Date.parse(plan.safety.stopAt ?? "") - Date.parse(now),
@@ -280,13 +307,14 @@ describe("buildNativePhoneSessionPlan", () => {
     expect(plan.timing.predictedRemWindows).toEqual([
       {
         startAt: "2026-01-20T04:01:20.000Z",
-        endAt: "2026-01-20T04:10:40.000Z",
+        endAt: "2026-01-20T04:45:40.000Z",
         confidence: 1,
         source: "historical_sleep",
       },
     ]);
     expect(nativePhoneSessionUsesPredictedRemWindows(plan)).toBe(true);
     expect(plan.timing.cueIntervalRangeSeconds).toEqual([20, 30]);
+    expect(plan.cue.cueId).toBe("clear-bell-chime");
     expect(plan.alarm.enabled).toBe(false);
   });
 });

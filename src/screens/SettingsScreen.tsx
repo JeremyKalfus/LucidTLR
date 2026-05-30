@@ -532,7 +532,7 @@ export function IosPhoneModeSettingsScreen() {
             Development-only locked runtime smoke test.
           </SettingsNote>
           <PrimaryPillButton
-            label="10-minute kitchen sink"
+            label="45-minute kitchen sink"
             onPress={() => router.push("/debug/iphone-kitchen-sink")}
           />
         </Card>

@@ -4,7 +4,8 @@ import type {
   TlrOptions,
 } from "@/src/domain/types";
 import type { CueDecisionSettings, SleepTimingPrior } from "@/src/engine";
-import { buildCueId, buildSleepTimingPrior } from "@/src/engine";
+import { buildSleepTimingPrior } from "@/src/engine";
+import { getBuiltInCue } from "@/src/audio/cueCatalog";
 import {
   BACKGROUND_AUDIO_VOLUME,
   BINAURAL_BEAT_FREQUENCY_HZ,
@@ -13,11 +14,10 @@ import {
   normalizeTlrOptions,
   resolveAlarmFireAt,
 } from "@/src/features/tlrOptions/tlrOptions";
-import { cueAudio, phoneCueing } from "@/src/protocol/tlrProtocol";
+import { phoneCueing } from "@/src/protocol/tlrProtocol";
 
 import {
   DEFAULT_PHONE_AUDIO_BED_ASSET_ID,
-  DEFAULT_PHONE_CUE_ASSET_ID,
   NATIVE_PHONE_POLICY_VERSION,
   type NativePhoneSessionPlan,
   validateNativePhoneSessionPlan,
@@ -29,7 +29,6 @@ export type BuildNativePhoneSessionPlanInput = {
   settings: CueDecisionSettings;
   tlrOptions?: TlrOptions;
   audioBedAssetId?: string;
-  cueAssetId?: string;
 };
 
 export type BuildNativePhoneSessionPlanFromCompletedSessionInput = Omit<
@@ -52,6 +51,9 @@ export function buildNativePhoneSessionPlan(
   const tlrOptions = normalizeTlrOptions(
     input.tlrOptions,
     settings.typicalWakeTime,
+  );
+  const selectedCue = getBuiltInCue(
+    session.selectedCueId ?? tlrOptions.selectedCueId,
   );
   const alarmFireAt = tlrOptions.alarm.enabled
     ? resolveAlarmFireAt({
@@ -96,9 +98,11 @@ export function buildNativePhoneSessionPlan(
       binauralBeatFrequencyHz: BINAURAL_BEAT_FREQUENCY_HZ,
     },
     cue: {
-      cueId: buildCueId(),
-      assetId: input.cueAssetId ?? DEFAULT_PHONE_CUE_ASSET_ID,
-      durationSeconds: cueAudio.durationSeconds,
+      cueId: selectedCue.id,
+      assetId: selectedCue.id,
+      resourceName: selectedCue.nativeResourceName,
+      resourceExtension: selectedCue.nativeResourceExtension,
+      durationSeconds: selectedCue.durationSeconds,
       startVolume: settings.volumeStartLevel,
       rampPerCue: settings.volumeRampPerCue,
       capVolume: settings.volumeCap,

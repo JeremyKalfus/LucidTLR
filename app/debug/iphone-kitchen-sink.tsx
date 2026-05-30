@@ -37,6 +37,7 @@ const DEV_KITCHEN_SINK_SESSION_ID_SETTING =
 function createDevSession(input: {
   participantId: string;
   now: string;
+  selectedCueId: string;
 }): NightSession {
   const startedAt = new Date(Date.parse(input.now) - 30 * 1000).toISOString();
 
@@ -51,6 +52,7 @@ function createDevSession(input: {
     trainingStartedAt: startedAt,
     trainingEndedAt: input.now,
     cueingStartedAt: input.now,
+    selectedCueId: input.selectedCueId,
     guidedTrainingSkipped: true,
   };
 }
@@ -177,7 +179,11 @@ export default function IPhoneKitchenSinkRoute() {
 
     try {
       const now = new Date().toISOString();
-      const session = createDevSession({ participantId, now });
+      const session = createDevSession({
+        participantId,
+        now,
+        selectedCueId: tlrOptions.selectedCueId,
+      });
       const plan = buildDevKitchenSinkPhoneSessionPlan({
         session,
         settings: engineSettings,
@@ -256,6 +262,7 @@ export default function IPhoneKitchenSinkRoute() {
             trainingStartedAt: nextLogs[0]?.timestamp ?? stoppedAt,
             trainingEndedAt: nextLogs[0]?.timestamp ?? stoppedAt,
             cueingStartedAt: nextLogs[0]?.timestamp ?? stoppedAt,
+            selectedCueId: tlrOptions.selectedCueId,
             guidedTrainingSkipped: true,
           },
         });
@@ -283,13 +290,13 @@ export default function IPhoneKitchenSinkRoute() {
         null,
         2,
       ),
-      title: "LucidCue 10-minute kitchen sink logs",
+      title: "LucidCue 45-minute kitchen sink logs",
     });
   }
 
   return (
     <Screen bottomNav={false}>
-      <SectionTitle>10-minute kitchen sink</SectionTitle>
+      <SectionTitle>45-minute kitchen sink</SectionTitle>
 
       <Card>
         <InfoRow label="dev-only" value="production native runtime smoke test" />
@@ -357,7 +364,7 @@ export default function IPhoneKitchenSinkRoute() {
       <View style={{ gap: 8 }}>
         <PrimaryPillButton
           disabled={Boolean(busyLabel)}
-          label={busyLabel ?? "Start 10-minute locked kitchen sink"}
+          label={busyLabel ?? "Start 45-minute locked kitchen sink"}
           onPress={() => void startTest()}
         />
         <PrimaryPillButton

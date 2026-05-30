@@ -3,6 +3,7 @@ import type {
   BackgroundNoiseOption,
   TlrOptions,
 } from "@/src/domain/types";
+import { DEFAULT_CUE_ID, normalizeCueId } from "@/src/audio/cueCatalog";
 
 export const TLR_OPTIONS_KEY = "tlr_options_v1";
 export const DEFAULT_ALARM_RING_DURATION_MINUTES = 5;
@@ -73,6 +74,7 @@ export function createDefaultTlrOptions(
   typicalWakeTime = "07:00",
 ): TlrOptions {
   return {
+    selectedCueId: DEFAULT_CUE_ID,
     backgroundNoise: "none",
     skipGuidedTraining: false,
     alarm: {
@@ -97,6 +99,7 @@ export function normalizeTlrOptions(
       : defaults.alarm.ringDurationMinutes;
 
   return {
+    selectedCueId: normalizeCueId(value?.selectedCueId),
     backgroundNoise: isBackgroundNoiseOption(value?.backgroundNoise)
       ? value.backgroundNoise
       : defaults.backgroundNoise,

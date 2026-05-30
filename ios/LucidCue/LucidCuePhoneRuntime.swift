@@ -25,6 +25,8 @@ private struct PhoneRuntimePlan: Codable {
   struct Cue: Codable {
     let cueId: String
     let assetId: String
+    let resourceName: String
+    let resourceExtension: String
     let durationSeconds: Double
     let startVolume: Double
     let rampPerCue: Double
@@ -224,6 +226,9 @@ class LucidCuePhoneRuntime: NSObject {
         "alarmAutoShutoff": plan.alarm.autoShutoff,
         "alarmRingDurationSeconds": plan.alarm.ringDurationSeconds ?? 0,
         "cueAsset": plan.cue.assetId,
+        "cueId": plan.cue.cueId,
+        "cueResourceName": plan.cue.resourceName,
+        "cueResourceExtension": plan.cue.resourceExtension,
         "appState": self.currentAppState()
       ])
 
@@ -347,8 +352,16 @@ class LucidCuePhoneRuntime: NSObject {
       throw runtimeError("Background audio volume must be between 0 and 1.")
     }
 
-    guard !plan.cue.assetId.isEmpty else {
-      throw runtimeError("Phone runtime requires a cue WAV asset.")
+    guard !plan.cue.assetId.isEmpty && !plan.cue.resourceName.isEmpty else {
+      throw runtimeError("Phone runtime requires a bundled cue asset.")
+    }
+
+    guard plan.cue.resourceExtension == "mp3" || plan.cue.resourceExtension == "wav" else {
+      throw runtimeError("Phone runtime cue resource extension is invalid.")
+    }
+
+    guard plan.cue.durationSeconds > 0 && plan.cue.durationSeconds <= 3 else {
+      throw runtimeError("Phone runtime cue duration must be 3 seconds or shorter.")
     }
 
     guard plan.timing.cueIntervalRangeSeconds.count == 2 else {
@@ -1176,11 +1189,13 @@ class LucidCuePhoneRuntime: NSObject {
       plan.cue.startVolume + plan.cue.rampPerCue * Double(state.cueCount)
     )
     let driftMs = Int(attemptAt.timeIntervalSince(plannedAt) * 1000)
-    let cueAsset = cueResourceName(assetId: plan.cue.assetId)
+    let cueAsset = "\(plan.cue.resourceName).\(plan.cue.resourceExtension)"
 
     appendEvent("cue_play_attempted", payload: [
       "cueId": plan.cue.cueId,
-      "cueAsset": "\(cueAsset).wav",
+      "cueAsset": cueAsset,
+      "cueResourceName": plan.cue.resourceName,
+      "cueResourceExtension": plan.cue.resourceExtension,
       "plannedCueAt": formatDate(plannedAt),
       "actualCueAttemptAt": formatDate(attemptAt),
       "volume": volume,
@@ -1188,8 +1203,11 @@ class LucidCuePhoneRuntime: NSObject {
     ])
 
     do {
-      guard let url = Bundle.main.url(forResource: cueAsset, withExtension: "wav") else {
-        throw runtimeError("Missing bundled cue WAV \(cueAsset).wav.")
+      guard let url = Bundle.main.url(
+        forResource: plan.cue.resourceName,
+        withExtension: plan.cue.resourceExtension
+      ) else {
+        throw runtimeError("Missing bundled cue asset \(cueAsset).")
       }
 
       let engine = ensureAudioEngine()
@@ -1215,7 +1233,9 @@ class LucidCuePhoneRuntime: NSObject {
 
       appendEvent("cue_played", payload: [
         "cueId": plan.cue.cueId,
-        "cueAsset": "\(cueAsset).wav",
+        "cueAsset": cueAsset,
+        "cueResourceName": plan.cue.resourceName,
+        "cueResourceExtension": plan.cue.resourceExtension,
         "plannedCueAt": formatDate(plannedAt),
         "actualCueAttemptAt": formatDate(attemptAt),
         "actualCuePlayedAt": formatDate(Date()),
@@ -1229,7 +1249,9 @@ class LucidCuePhoneRuntime: NSObject {
     } catch {
       appendEvent("cue_failed", payload: [
         "cueId": plan.cue.cueId,
-        "cueAsset": "\(cueAsset).wav",
+        "cueAsset": cueAsset,
+        "cueResourceName": plan.cue.resourceName,
+        "cueResourceExtension": plan.cue.resourceExtension,
         "plannedCueAt": formatDate(plannedAt),
         "actualCueAttemptAt": formatDate(attemptAt),
         "volume": volume,
@@ -1237,19 +1259,6 @@ class LucidCuePhoneRuntime: NSObject {
         "success": false,
         "error": error.localizedDescription
       ])
-    }
-  }
-
-  private func cueResourceName(assetId: String) -> String {
-    switch assetId {
-    case "lucidcue_feasibility_low", "lucidcue_feasibility_low.wav":
-      return "lucidcue_feasibility_low"
-    case "lucidcue_feasibility_high", "lucidcue_feasibility_high.wav":
-      return "lucidcue_feasibility_high"
-    case "soft-harp-3s":
-      return "lucidcue_feasibility_medium"
-    default:
-      return "lucidcue_feasibility_medium"
     }
   }
 
