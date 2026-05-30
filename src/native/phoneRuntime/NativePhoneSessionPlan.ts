@@ -9,6 +9,11 @@ export const NATIVE_PHONE_POLICY_VERSION = "iphone-phone-runtime-2026-001";
 export const DEFAULT_PHONE_AUDIO_BED_ASSET_ID =
   "lucidcue-audible-bed-sine-220hz";
 
+export const NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_NAME =
+  "final_lucid_training";
+
+export const NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_EXTENSION = "mp3";
+
 export type NativePhoneSessionPlan = {
   sessionId: string;
   protocolVersion: string;
@@ -21,6 +26,16 @@ export type NativePhoneSessionPlan = {
 
   training: {
     guidedTrainingSkipped: boolean;
+    lockedPlayback: {
+      enabled: boolean;
+      audioResourceName: string;
+      audioResourceExtension: "mp3";
+      durationSeconds: number;
+      cueSchedule: Array<{
+        markerIndex: number;
+        cueStartSeconds: number;
+      }>;
+    };
   };
 
   audioBed: {
@@ -102,6 +117,12 @@ export type NativePhoneRuntimeEvent = {
   eventType:
     | "runtime_started"
     | "runtime_stopped"
+    | "training_started"
+    | "training_cue_play_attempted"
+    | "training_cue_played"
+    | "training_cue_failed"
+    | "training_completed"
+    | "training_failed"
     | "audio_session_configured"
     | "audio_bed_started"
     | "audio_bed_failed"
@@ -136,6 +157,7 @@ export type PhoneRuntimeStatus = {
   available: boolean;
   unavailableReason?: string;
   running: boolean;
+  phase?: "training" | "runtime" | "alarm";
   sessionId?: string;
   audioBedRunning: boolean;
   backgroundAudioRunning: boolean;
@@ -247,6 +269,20 @@ export function validateNativePhoneSessionPlan(
     plan.cue.durationSeconds > MAX_BUILT_IN_CUE_DURATION_SECONDS
   ) {
     errors.push("Phone runtime cue duration must be 3 seconds or shorter.");
+  }
+
+  if (plan.training.lockedPlayback.enabled) {
+    if (!plan.training.lockedPlayback.audioResourceName) {
+      errors.push("Locked presleep training requires a bundled audio asset.");
+    }
+
+    if (plan.training.lockedPlayback.audioResourceExtension !== "mp3") {
+      errors.push("Locked presleep training audio resource extension is invalid.");
+    }
+
+    if (plan.training.lockedPlayback.durationSeconds <= 0) {
+      errors.push("Locked presleep training duration must be positive.");
+    }
   }
 
   if (plan.timing.cueIntervalRangeSeconds[0] > plan.timing.cueIntervalRangeSeconds[1]) {

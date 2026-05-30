@@ -10,11 +10,13 @@ import {
   Smartphone,
 } from "lucide-react-native";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import { Platform, Pressable, Share, Text, View } from "react-native";
 
 import {
   Card,
   InfoRow,
+  PrimaryPillButton,
   Screen,
   SectionTitle,
 } from "@/src/components/ui";
@@ -27,6 +29,7 @@ import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import {
   phoneRuntime,
+  summarizePhoneRuntimeEvents,
   type NativePhoneRuntimeEvent,
 } from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
@@ -96,9 +99,31 @@ function runtimeEventLabel(event: NativePhoneRuntimeEvent): string {
   return `${new Date(event.timestamp).toLocaleTimeString()} / ${event.eventType}${reason}${cueAsset}${movement}`;
 }
 
+function safeFilePart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function isTimelineEvent(event: NativePhoneRuntimeEvent): boolean {
   return (
     event.eventType === "cue_candidate" ||
+    event.eventType === "training_started" ||
+    event.eventType === "training_cue_play_attempted" ||
+    event.eventType === "training_cue_played" ||
+    event.eventType === "training_cue_failed" ||
+    event.eventType === "training_completed" ||
+    event.eventType === "training_failed" ||
     event.eventType === "cue_suppressed" ||
     event.eventType === "cue_play_attempted" ||
     event.eventType === "cue_played" ||
@@ -254,6 +279,7 @@ function useRuntimeTimeline() {
   }, [runtimeSession]);
 
   return {
+    runtimeLogs,
     runtimeLogError,
     runtimeSession,
     timelineEvents,
@@ -526,7 +552,71 @@ export function TlrEngineDataScreen() {
 }
 
 export function IphoneRuntimeDataScreen() {
-  const { runtimeLogError, runtimeSession, timelineEvents } = useRuntimeTimeline();
+  const { runtimeLogs, runtimeLogError, runtimeSession, timelineEvents } =
+    useRuntimeTimeline();
+  const [exportError, setExportError] = React.useState<string | null>(null);
+  const [exportInfo, setExportInfo] = React.useState<string | null>(null);
+  const [isExportingLogs, setIsExportingLogs] = React.useState(false);
+
+  async function shareRuntimeLogs() {
+    if (!runtimeSession) {
+      return;
+    }
+
+    setIsExportingLogs(true);
+    setExportError(null);
+
+    try {
+      const [status, logs] = await Promise.all([
+        phoneRuntime.getPhoneRuntimeStatus(),
+        phoneRuntime.getPhoneRuntimeLogs(runtimeSession.id),
+      ]);
+      const payload = {
+        exportSchema: "lucidcue-phone-runtime-export-v1",
+        exportedAt: new Date().toISOString(),
+        session: runtimeSession,
+        status,
+        summary: summarizePhoneRuntimeEvents(logs),
+        eventCount: logs.length,
+        events: logs,
+      };
+      const json = JSON.stringify(payload, null, 2);
+      const fileName = `lucidcue-phone-runtime-${safeFilePart(runtimeSession.id)}-${safeFilePart(payload.exportedAt)}.json`;
+      const message = `LucidCue iPhone Phone Mode logs\nsession: ${runtimeSession.id}\nevents: ${logs.length}\nexportedAt: ${payload.exportedAt}`;
+
+      if (Platform.OS === "ios" && FileSystem.documentDirectory) {
+        const exportDirectory = `${FileSystem.documentDirectory}lucidcue-exports/`;
+        const fileUri = `${exportDirectory}${fileName}`;
+
+        await FileSystem.makeDirectoryAsync(exportDirectory, {
+          intermediates: true,
+        });
+        await FileSystem.writeAsStringAsync(fileUri, json, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        await Share.share({
+          title: fileName,
+          message,
+          url: fileUri,
+        });
+        setExportInfo(`Shared ${fileName} (${formatBytes(json.length)}).`);
+        return;
+      }
+
+      await Share.share({
+        title: fileName,
+        message: `${message}\n\n${json}`,
+      });
+      setExportInfo(`Shared pasteable JSON (${formatBytes(json.length)}).`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not export runtime logs.";
+
+      setExportError(message);
+    } finally {
+      setIsExportingLogs(false);
+    }
+  }
 
   return (
     <Screen>
@@ -560,9 +650,23 @@ export function IphoneRuntimeDataScreen() {
       </Card>
 
       <Card>
+        <InfoRow label="raw events" value={String(runtimeLogs.length)} />
+        <PrimaryPillButton
+          disabled={!runtimeSession || isExportingLogs}
+          label={isExportingLogs ? "Preparing Logs..." : "Share Raw Logs JSON"}
+          onPress={() => {
+            void shareRuntimeLogs();
+          }}
+        />
+        {exportInfo ? <DataNote>{exportInfo}</DataNote> : null}
+        {exportError ? <InfoRow label="export error" value={exportError} /> : null}
+      </Card>
+
+      <Card>
         <DataNote>
           This timeline reflects local native iPhone Phone Mode events for the
-          latest active or completed TLR phone session.
+          latest active or completed TLR phone session. Raw JSON export stays
+          local until you choose where to share it.
         </DataNote>
       </Card>
     </Screen>

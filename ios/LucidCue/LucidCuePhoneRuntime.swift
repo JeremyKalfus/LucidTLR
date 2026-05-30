@@ -5,7 +5,21 @@ import UIKit
 
 private struct PhoneRuntimePlan: Codable {
   struct Training: Codable {
+    struct LockedPlayback: Codable {
+      struct CueScheduleEntry: Codable {
+        let markerIndex: Int
+        let cueStartSeconds: Double
+      }
+
+      let enabled: Bool
+      let audioResourceName: String
+      let audioResourceExtension: String
+      let durationSeconds: Double
+      let cueSchedule: [CueScheduleEntry]
+    }
+
     let guidedTrainingSkipped: Bool
+    let lockedPlayback: LockedPlayback
   }
 
   struct AudioBed: Codable {
@@ -103,6 +117,7 @@ private struct PhoneRuntimePlan: Codable {
 private struct PhoneRuntimeState: Codable {
   let sessionId: String
   var runtimeStartedAt: String
+  var phase: String?
   var cueCount: Int
   var cuesInBlock: Int
   var blockStartedAt: String?
@@ -141,6 +156,10 @@ class LucidCuePhoneRuntime: NSObject {
   private var alarmTimer: DispatchSourceTimer?
   private var alarmStopTimer: DispatchSourceTimer?
   private var audioEngine: AVAudioEngine?
+  private var trainingAudioPlayer: AVAudioPlayer?
+  private var trainingCueAudioPlayer: AVAudioPlayer?
+  private var trainingCompletionTimer: DispatchSourceTimer?
+  private var trainingCueTimers: [DispatchSourceTimer] = []
   private var audioBedPlayer: AVAudioPlayerNode?
   private var backgroundAudioPlayer: AVAudioPlayerNode?
   private var cuePlayer: AVAudioPlayerNode?
@@ -196,6 +215,7 @@ class LucidCuePhoneRuntime: NSObject {
       self.state = PhoneRuntimeState(
         sessionId: plan.sessionId,
         runtimeStartedAt: self.formatDate(Date()),
+        phase: "runtime",
         cueCount: 0,
         cuesInBlock: 0,
         stableLowMovementSeconds: 0,
@@ -206,31 +226,7 @@ class LucidCuePhoneRuntime: NSObject {
       )
       self.activeLogs = self.loadLogs(sessionId: plan.sessionId)
 
-      self.appendEvent("runtime_started", payload: [
-        "protocolVersion": plan.protocolVersion,
-        "nativePolicyVersion": plan.nativePolicyVersion,
-        "startedAt": plan.startedAt,
-        "trainingStartedAt": plan.trainingStartedAt,
-        "trainingEndedAt": plan.trainingEndedAt,
-        "earliestCueAt": plan.timing.earliestCueAt,
-        "latestCueAt": plan.timing.latestCueAt,
-        "predictedRemWindowPolicy": self.usesHistoricalRemWindows(plan: plan)
-          ? "historical_rem_only_no_shoulder"
-          : "broad_cue_window",
-        "audioBedAsset": plan.audioBed.assetId,
-        "backgroundAudioOption": plan.backgroundAudio.option,
-        "backgroundAudioEnabled": plan.backgroundAudio.enabled,
-        "guidedTrainingSkipped": plan.training.guidedTrainingSkipped,
-        "alarmEnabled": plan.alarm.enabled,
-        "alarmFireAt": plan.alarm.fireAt ?? "",
-        "alarmAutoShutoff": plan.alarm.autoShutoff,
-        "alarmRingDurationSeconds": plan.alarm.ringDurationSeconds ?? 0,
-        "cueAsset": plan.cue.assetId,
-        "cueId": plan.cue.cueId,
-        "cueResourceName": plan.cue.resourceName,
-        "cueResourceExtension": plan.cue.resourceExtension,
-        "appState": self.currentAppState()
-      ])
+      self.appendRuntimeStartedEvent(plan: plan)
 
       do {
         try self.configureAudioSession()
@@ -250,6 +246,62 @@ class LucidCuePhoneRuntime: NSObject {
         ])
         self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
         reject("phone_runtime_start_failed", error.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc(startPhoneTlrSessionAfterPresleepTraining:resolver:rejecter:)
+  func startPhoneTlrSessionAfterPresleepTraining(
+    _ planDictionary: NSDictionary,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let plan: PhoneRuntimePlan
+
+    do {
+      plan = try decodePlan(planDictionary)
+      try validatePlan(plan)
+
+      guard plan.training.lockedPlayback.enabled else {
+        throw runtimeError("Locked presleep training requires native training playback.")
+      }
+    } catch {
+      reject("invalid_phone_runtime_training_plan", error.localizedDescription, error)
+      return
+    }
+
+    queue.async {
+      self.stopRuntime(reason: "replaced_by_new_session", errorMessage: nil, logEvent: true)
+      self.activePlan = plan
+      self.audioInterruptionActive = false
+      self.audioRecoveryGraceUntil = nil
+      self.nextAudioRecoveryAttemptAt = nil
+      self.state = PhoneRuntimeState(
+        sessionId: plan.sessionId,
+        runtimeStartedAt: self.formatDate(Date()),
+        phase: "training",
+        cueCount: 0,
+        cuesInBlock: 0,
+        stableLowMovementSeconds: 0,
+        latestDecisionReason: "training_started",
+        alarmRinging: false,
+        alarmFireAt: plan.alarm.fireAt,
+        alarmFiredAt: nil
+      )
+      self.activeLogs = self.loadLogs(sessionId: plan.sessionId)
+
+      do {
+        try self.configureAudioSession()
+        try self.startPresleepTrainingPlayback(plan: plan)
+        self.persistRuntimeSnapshot()
+        resolve(nil)
+      } catch {
+        self.appendEvent("training_failed", payload: [
+          "operation": "start_presleep_training",
+          "error": error.localizedDescription
+        ])
+        self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+        reject("phone_training_start_failed", error.localizedDescription, error)
       }
     }
   }
@@ -364,6 +416,20 @@ class LucidCuePhoneRuntime: NSObject {
       throw runtimeError("Phone runtime cue duration must be 3 seconds or shorter.")
     }
 
+    if plan.training.lockedPlayback.enabled {
+      guard !plan.training.lockedPlayback.audioResourceName.isEmpty else {
+        throw runtimeError("Locked presleep training requires a bundled audio asset.")
+      }
+
+      guard plan.training.lockedPlayback.audioResourceExtension == "mp3" else {
+        throw runtimeError("Locked presleep training audio resource extension is invalid.")
+      }
+
+      guard plan.training.lockedPlayback.durationSeconds > 0 else {
+        throw runtimeError("Locked presleep training duration must be positive.")
+      }
+    }
+
     guard plan.timing.cueIntervalRangeSeconds.count == 2 else {
       throw runtimeError("Phone runtime requires a cue interval range.")
     }
@@ -384,6 +450,35 @@ class LucidCuePhoneRuntime: NSObject {
         }
       }
     }
+  }
+
+  private func appendRuntimeStartedEvent(plan: PhoneRuntimePlan) {
+    appendEvent("runtime_started", payload: [
+      "protocolVersion": plan.protocolVersion,
+      "nativePolicyVersion": plan.nativePolicyVersion,
+      "startedAt": plan.startedAt,
+      "trainingStartedAt": plan.trainingStartedAt,
+      "trainingEndedAt": plan.trainingEndedAt,
+      "earliestCueAt": plan.timing.earliestCueAt,
+      "latestCueAt": plan.timing.latestCueAt,
+      "predictedRemWindowPolicy": usesHistoricalRemWindows(plan: plan)
+        ? "historical_rem_only_no_shoulder"
+        : "broad_cue_window",
+      "audioBedAsset": plan.audioBed.assetId,
+      "backgroundAudioOption": plan.backgroundAudio.option,
+      "backgroundAudioEnabled": plan.backgroundAudio.enabled,
+      "guidedTrainingSkipped": plan.training.guidedTrainingSkipped,
+      "lockedTrainingPlayback": plan.training.lockedPlayback.enabled,
+      "alarmEnabled": plan.alarm.enabled,
+      "alarmFireAt": plan.alarm.fireAt ?? "",
+      "alarmAutoShutoff": plan.alarm.autoShutoff,
+      "alarmRingDurationSeconds": plan.alarm.ringDurationSeconds ?? 0,
+      "cueAsset": plan.cue.assetId,
+      "cueId": plan.cue.cueId,
+      "cueResourceName": plan.cue.resourceName,
+      "cueResourceExtension": plan.cue.resourceExtension,
+      "appState": currentAppState()
+    ])
   }
 
   private func configureAudioSession() throws {
@@ -486,6 +581,190 @@ class LucidCuePhoneRuntime: NSObject {
     ])
   }
 
+  private func startPresleepTrainingPlayback(plan: PhoneRuntimePlan) throws {
+    guard let url = Bundle.main.url(
+      forResource: plan.training.lockedPlayback.audioResourceName,
+      withExtension: plan.training.lockedPlayback.audioResourceExtension
+    ) else {
+      throw runtimeError(
+        "Missing bundled presleep training asset \(plan.training.lockedPlayback.audioResourceName).\(plan.training.lockedPlayback.audioResourceExtension)."
+      )
+    }
+
+    let player = try AVAudioPlayer(contentsOf: url)
+    player.numberOfLoops = 0
+    player.volume = 1
+    player.prepareToPlay()
+    trainingAudioPlayer = player
+
+    guard player.play() else {
+      throw runtimeError("Could not start presleep training audio.")
+    }
+
+    appendEvent("training_started", payload: [
+      "trainingStartedAt": plan.trainingStartedAt,
+      "expectedTrainingEndedAt": plan.trainingEndedAt,
+      "audioResourceName": plan.training.lockedPlayback.audioResourceName,
+      "audioResourceExtension": plan.training.lockedPlayback.audioResourceExtension,
+      "durationSeconds": plan.training.lockedPlayback.durationSeconds,
+      "fileDurationSeconds": player.duration,
+      "cueScheduleCount": plan.training.lockedPlayback.cueSchedule.count,
+      "cueId": plan.cue.cueId,
+      "cueResourceName": plan.cue.resourceName,
+      "cueResourceExtension": plan.cue.resourceExtension,
+      "appState": currentAppState()
+    ])
+
+    schedulePresleepTrainingTimers(plan: plan)
+  }
+
+  private func schedulePresleepTrainingTimers(plan: PhoneRuntimePlan) {
+    cancelPresleepTrainingTimers()
+
+    let elapsedSeconds = trainingAudioPlayer?.currentTime ?? 0
+
+    for entry in plan.training.lockedPlayback.cueSchedule where entry.cueStartSeconds >= elapsedSeconds {
+      let delay = max(0, entry.cueStartSeconds - elapsedSeconds)
+      let timer = makeTimer(after: delay) { [weak self] in
+        self?.playPresleepTrainingCue(plan: plan, entry: entry)
+      }
+
+      trainingCueTimers.append(timer)
+    }
+
+    let remainingSeconds = max(0, plan.training.lockedPlayback.durationSeconds - elapsedSeconds)
+    trainingCompletionTimer = makeTimer(after: remainingSeconds) { [weak self] in
+      self?.completePresleepTrainingAndStartRuntime(plan: plan)
+    }
+  }
+
+  private func cancelPresleepTrainingTimers() {
+    trainingCompletionTimer?.cancel()
+    trainingCompletionTimer = nil
+
+    for timer in trainingCueTimers {
+      timer.cancel()
+    }
+
+    trainingCueTimers = []
+  }
+
+  private func playPresleepTrainingCue(
+    plan: PhoneRuntimePlan,
+    entry: PhoneRuntimePlan.Training.LockedPlayback.CueScheduleEntry
+  ) {
+    guard state?.phase == "training", !audioInterruptionActive else {
+      return
+    }
+
+    let cueAsset = "\(plan.cue.resourceName).\(plan.cue.resourceExtension)"
+    let plannedTrainingStart = parseDate(plan.trainingStartedAt) ?? Date()
+    let plannedAt = plannedTrainingStart.addingTimeInterval(entry.cueStartSeconds)
+    let attemptAt = Date()
+    let driftMs = Int(attemptAt.timeIntervalSince(plannedAt) * 1000)
+
+    appendEvent("training_cue_play_attempted", payload: [
+      "markerIndex": entry.markerIndex,
+      "cueId": plan.cue.cueId,
+      "cueAsset": cueAsset,
+      "cueResourceName": plan.cue.resourceName,
+      "cueResourceExtension": plan.cue.resourceExtension,
+      "plannedCueAt": formatDate(plannedAt),
+      "actualCueAttemptAt": formatDate(attemptAt),
+      "cueStartSeconds": entry.cueStartSeconds,
+      "driftMs": driftMs
+    ])
+
+    do {
+      guard let url = Bundle.main.url(
+        forResource: plan.cue.resourceName,
+        withExtension: plan.cue.resourceExtension
+      ) else {
+        throw runtimeError("Missing bundled cue asset \(cueAsset).")
+      }
+
+      let player = try AVAudioPlayer(contentsOf: url)
+      player.numberOfLoops = 0
+      player.volume = 1
+      player.prepareToPlay()
+      trainingCueAudioPlayer = player
+
+      guard player.play() else {
+        throw runtimeError("Could not play presleep training cue.")
+      }
+
+      appendEvent("training_cue_played", payload: [
+        "markerIndex": entry.markerIndex,
+        "cueId": plan.cue.cueId,
+        "cueAsset": cueAsset,
+        "cueResourceName": plan.cue.resourceName,
+        "cueResourceExtension": plan.cue.resourceExtension,
+        "plannedCueAt": formatDate(plannedAt),
+        "actualCueAttemptAt": formatDate(attemptAt),
+        "durationSeconds": player.duration,
+        "volume": 1,
+        "driftMs": driftMs,
+        "success": true
+      ])
+    } catch {
+      appendEvent("training_cue_failed", payload: [
+        "markerIndex": entry.markerIndex,
+        "cueId": plan.cue.cueId,
+        "cueAsset": cueAsset,
+        "plannedCueAt": formatDate(plannedAt),
+        "actualCueAttemptAt": formatDate(attemptAt),
+        "driftMs": driftMs,
+        "success": false,
+        "error": error.localizedDescription
+      ])
+    }
+  }
+
+  private func completePresleepTrainingAndStartRuntime(plan: PhoneRuntimePlan) {
+    guard state?.phase == "training" else {
+      return
+    }
+
+    cancelPresleepTrainingTimers()
+    trainingAudioPlayer?.stop()
+    trainingAudioPlayer = nil
+    trainingCueAudioPlayer?.stop()
+    trainingCueAudioPlayer = nil
+
+    let now = Date()
+    let expectedTrainingEndedAt = parseDate(plan.trainingEndedAt)
+    let driftMs = expectedTrainingEndedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? 0
+
+    state?.phase = "runtime"
+    state?.latestDecisionReason = "training_completed"
+
+    appendEvent("training_completed", payload: [
+      "expectedTrainingEndedAt": plan.trainingEndedAt,
+      "actualTrainingEndedAt": formatDate(now),
+      "driftMs": driftMs,
+      "appState": currentAppState()
+    ])
+    appendRuntimeStartedEvent(plan: plan)
+
+    do {
+      try configureAudioSession()
+      try startAudioBed(plan: plan)
+      try startBackgroundAudio(plan: plan)
+      try startMotionSummaries(plan: plan)
+      logBatterySummary(reason: "runtime_start")
+      scheduleDecisionLoop()
+      scheduleBatteryTimer()
+      scheduleAlarmIfNeeded(plan: plan)
+      persistRuntimeSnapshot()
+    } catch {
+      appendEvent("runtime_error", payload: [
+        "operation": "training_handoff_start_runtime",
+        "error": error.localizedDescription
+      ])
+      stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+    }
+  }
+
   private func recoverAudioBedIfNeeded(
     reason: String,
     stopOnFailure: Bool = true
@@ -531,6 +810,61 @@ class LucidCuePhoneRuntime: NSObject {
         ])
         stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
       }
+      return false
+    }
+  }
+
+  private func recoverPresleepTrainingAudioIfNeeded(
+    reason: String,
+    stopOnFailure: Bool = true
+  ) -> Bool {
+    guard let plan = activePlan, state?.phase == "training" else {
+      return false
+    }
+
+    do {
+      try configureAudioSession()
+
+      guard let player = trainingAudioPlayer else {
+        try startPresleepTrainingPlayback(plan: plan)
+        audioInterruptionActive = false
+        audioRecoveryGraceUntil = nil
+        nextAudioRecoveryAttemptAt = nil
+        return true
+      }
+
+      if !player.isPlaying {
+        guard player.play() else {
+          throw runtimeError("Could not resume presleep training audio.")
+        }
+      }
+
+      schedulePresleepTrainingTimers(plan: plan)
+      audioInterruptionActive = false
+      audioRecoveryGraceUntil = nil
+      nextAudioRecoveryAttemptAt = nil
+      appendEvent("decision_tick", payload: [
+        "reason": "training_audio_recovered",
+        "recoveryReason": reason,
+        "trainingCurrentTime": player.currentTime
+      ])
+      persistRuntimeSnapshot()
+      return true
+    } catch {
+      appendEvent("training_failed", payload: [
+        "reason": reason,
+        "error": error.localizedDescription,
+        "willRetry": !stopOnFailure
+      ])
+
+      if stopOnFailure {
+        appendEvent("runtime_error", payload: [
+          "operation": "recover_presleep_training",
+          "error": error.localizedDescription
+        ])
+        stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+      }
+
       return false
     }
   }
@@ -804,6 +1138,7 @@ class LucidCuePhoneRuntime: NSObject {
     cuePlayer?.stop()
 
     let now = Date()
+    state.phase = "alarm"
     state.alarmRinging = true
     state.alarmFireAt = plan.alarm.fireAt ?? formatDate(fireAt)
     state.alarmFiredAt = formatDate(now)
@@ -1367,6 +1702,7 @@ class LucidCuePhoneRuntime: NSObject {
     alarmTimer = nil
     alarmStopTimer?.cancel()
     alarmStopTimer = nil
+    cancelPresleepTrainingTimers()
 
     if motionManager.isAccelerometerActive {
       appendMotionSummary()
@@ -1376,6 +1712,10 @@ class LucidCuePhoneRuntime: NSObject {
     let wasBackgroundAudioRunning = backgroundAudioPlayer?.isPlaying == true
     let wasAlarmRinging = state?.alarmRinging == true
 
+    trainingAudioPlayer?.stop()
+    trainingCueAudioPlayer?.stop()
+    trainingAudioPlayer = nil
+    trainingCueAudioPlayer = nil
     audioBedPlayer?.stop()
     backgroundAudioPlayer?.stop()
     cuePlayer?.stop()
@@ -1409,6 +1749,7 @@ class LucidCuePhoneRuntime: NSObject {
       appendEvent("runtime_stopped", payload: [
         "reason": reason,
         "stoppedAt": formatDate(Date()),
+        "phase": state?.phase ?? "",
         "cueCount": state?.cueCount ?? 0,
         "cuesInBlock": state?.cuesInBlock ?? 0,
         "alarmRinging": wasAlarmRinging,
@@ -1658,6 +1999,11 @@ class LucidCuePhoneRuntime: NSObject {
         self.nextAudioRecoveryAttemptAt = Date().addingTimeInterval(
           self.activeInterruptionRecoveryRetrySeconds
         )
+        if self.state?.phase == "training" {
+          self.trainingAudioPlayer?.pause()
+          self.trainingCueAudioPlayer?.stop()
+          self.cancelPresleepTrainingTimers()
+        }
         self.appendEvent("interruption_started", payload: payload)
       }
       return
@@ -1670,6 +2016,13 @@ class LucidCuePhoneRuntime: NSObject {
       )
       self.nextAudioRecoveryAttemptAt = Date()
       self.appendEvent("interruption_ended", payload: payload)
+      if self.state?.phase == "training" {
+        _ = self.recoverPresleepTrainingAudioIfNeeded(
+          reason: "interruption_ended",
+          stopOnFailure: false
+        )
+        return
+      }
       _ = self.recoverAudioBedIfNeeded(reason: "interruption_ended", stopOnFailure: false)
     }
   }
@@ -1698,6 +2051,20 @@ class LucidCuePhoneRuntime: NSObject {
       let recoveryReason = "route_change_\(reason?.description ?? "unknown")"
       self.queue.asyncAfter(deadline: .now() + self.routeChangeRecoveryDelaySeconds) { [weak self] in
         guard let self, self.activePlan != nil, !self.audioInterruptionActive else {
+          return
+        }
+
+        if self.state?.phase == "training" {
+          guard self.trainingAudioPlayer?.isPlaying != true else {
+            self.audioRecoveryGraceUntil = nil
+            self.nextAudioRecoveryAttemptAt = nil
+            return
+          }
+
+          _ = self.recoverPresleepTrainingAudioIfNeeded(
+            reason: recoveryReason,
+            stopOnFailure: false
+          )
           return
         }
 
@@ -1747,6 +2114,7 @@ class LucidCuePhoneRuntime: NSObject {
     return [
       "available": true,
       "running": true,
+      "phase": state.phase ?? (state.alarmRinging ? "alarm" : "runtime"),
       "sessionId": plan.sessionId,
       "audioBedRunning": isAudioBedRunning(),
       "backgroundAudioRunning": isBackgroundAudioRunning(),
@@ -1842,7 +2210,9 @@ class LucidCuePhoneRuntime: NSObject {
     queue.async {
       do {
         try self.configureAudioSession()
-        if snapshot.state.alarmRinging ||
+        if snapshot.state.phase == "training" {
+          try self.startPresleepTrainingPlayback(plan: snapshot.plan)
+        } else if snapshot.state.alarmRinging ||
           self.startAlarmIfDue(plan: snapshot.plan, now: Date()) {
           if snapshot.state.alarmRinging {
             self.state?.alarmRinging = false

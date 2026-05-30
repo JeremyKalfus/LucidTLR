@@ -21,6 +21,7 @@
 		4AFEC0088B754B4A9CF00001 /* sci_fi_confirmation.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */; };
 		4AFEC0098B754B4A9CF00001 /* harp_flourish.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0048B754B4A9CF00001 /* harp_flourish.mp3 */; };
 		4AFEC00A8B754B4A9CF00001 /* dx_harp_c5.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0058B754B4A9CF00001 /* dx_harp_c5.mp3 */; };
+		4AFED0018B754B4A9CF00001 /* final_lucid_training.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFED0028B754B4A9CF00001 /* final_lucid_training.mp3 */; };
 		59895943679DB790F65BE750 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */; };
 		5E297646B1EBAE539E8C17DC /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77DCF48682FC1CF275A85758 /* ExpoModulesProvider.swift */; };
 		7E32BB753790FD539B784603 /* libPods-LucidCue.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C62D26F77A8CCE4C01DF72D /* libPods-LucidCue.a */; };
@@ -44,6 +45,7 @@
 		4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; name = sci_fi_confirmation.wav; path = LucidCue/CueAudio/sci_fi_confirmation.wav; sourceTree = "<group>"; };
 		4AFEC0048B754B4A9CF00001 /* harp_flourish.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = harp_flourish.mp3; path = LucidCue/CueAudio/harp_flourish.mp3; sourceTree = "<group>"; };
 		4AFEC0058B754B4A9CF00001 /* dx_harp_c5.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = dx_harp_c5.mp3; path = LucidCue/CueAudio/dx_harp_c5.mp3; sourceTree = "<group>"; };
+		4AFED0028B754B4A9CF00001 /* final_lucid_training.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = final_lucid_training.mp3; path = LucidCue/TrainingAudio/final_lucid_training.mp3; sourceTree = "<group>"; };
 		77DCF48682FC1CF275A85758 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-LucidCue/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		7DD843155625942B85B99783 /* Pods-LucidCue.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LucidCue.release.xcconfig"; path = "Target Support Files/Pods-LucidCue/Pods-LucidCue.release.xcconfig"; sourceTree = "<group>"; };
 		8C62D26F77A8CCE4C01DF72D /* libPods-LucidCue.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-LucidCue.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -78,6 +80,7 @@
 				4AFEB0028B754B4A9CF00001 /* LucidCuePhoneRuntimeBridge.m */,
 				4AFEA00B8B754B4A9CF00001 /* FeasibilityAudioSegments */,
 				4AFEC00B8B754B4A9CF00001 /* CueAudio */,
+				4AFED0038B754B4A9CF00001 /* TrainingAudio */,
 				F11748442D0722820044C1D9 /* LucidCue-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
@@ -117,6 +120,14 @@
 				4AFEC0058B754B4A9CF00001 /* dx_harp_c5.mp3 */,
 			);
 			name = CueAudio;
+			sourceTree = "<group>";
+		};
+		4AFED0038B754B4A9CF00001 /* TrainingAudio */ = {
+			isa = PBXGroup;
+			children = (
+				4AFED0028B754B4A9CF00001 /* final_lucid_training.mp3 */,
+			);
+			name = TrainingAudio;
 			sourceTree = "<group>";
 		};
 		6CD1FFF0E7044AE70602250A /* LucidCue */ = {
@@ -258,6 +269,7 @@
 				4AFEC0088B754B4A9CF00001 /* sci_fi_confirmation.wav in Resources */,
 				4AFEC0098B754B4A9CF00001 /* harp_flourish.mp3 in Resources */,
 				4AFEC00A8B754B4A9CF00001 /* dx_harp_c5.mp3 in Resources */,
+				4AFED0018B754B4A9CF00001 /* final_lucid_training.mp3 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

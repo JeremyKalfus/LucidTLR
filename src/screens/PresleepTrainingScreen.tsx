@@ -22,8 +22,11 @@ import { FINAL_LUCID_TRAINING_AUDIO_ASSET } from "@/src/audio/trainingAssets";
 import { PRESLEEP_SCRIPT_NOTICE, PRESLEEP_SCRIPT_PLACEHOLDER } from "@/src/protocol/tlrProtocol";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
 import {
+  buildNativePhoneSessionPlanForLockedTraining,
   buildNativePhoneSessionPlanFromCompletedSession,
+  latestPhoneTrainingCompletedTimestamp,
   phoneRuntime,
+  type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
@@ -38,6 +41,17 @@ function formatPlaybackTime(seconds: number): string {
   const remainderSeconds = safeSeconds % 60;
 
   return `${minutes}:${String(remainderSeconds).padStart(2, "0")}`;
+}
+
+function planTrainingEndFallback(session: { trainingStartedAt?: string }) {
+  if (!session.trainingStartedAt) {
+    return null;
+  }
+
+  return new Date(
+    Date.parse(session.trainingStartedAt) +
+      FINAL_LUCID_TRAINING_DURATION_SECONDS * 1000,
+  ).toISOString();
 }
 
 export function PresleepTrainingScreen() {
@@ -77,6 +91,8 @@ export function PresleepTrainingScreen() {
   const [trainingDebugLog, setTrainingDebugLog] = React.useState<string[]>([]);
   const [playedCueCount, setPlayedCueCount] = React.useState(0);
   const [isStartingRuntime, setIsStartingRuntime] = React.useState(false);
+  const [nativeTrainingStatus, setNativeTrainingStatus] =
+    React.useState<PhoneRuntimeStatus | null>(null);
   const nextTrainingCueIndexRef = React.useRef(0);
   const finishingTrainingRef = React.useRef(false);
   const canStart =
@@ -89,7 +105,10 @@ export function PresleepTrainingScreen() {
   const canStartRuntime =
     session?.status === "waiting_for_cue_window" && session.mode === "phone";
   const isTraining = session?.status === "training";
-  const isTrainingAudioReady = trainingStatus.isLoaded && cueStatus.isLoaded;
+  const usesNativeLockedTraining =
+    session?.mode === "phone" && phoneRuntime.isAvailable();
+  const isTrainingAudioReady =
+    usesNativeLockedTraining || (trainingStatus.isLoaded && cueStatus.isLoaded);
 
   const appendTrainingDebugEvent = React.useCallback(
     (eventType: string, payload: Record<string, unknown>) => {
@@ -229,6 +248,46 @@ export function PresleepTrainingScreen() {
       nextTrainingCueIndexRef.current = 0;
       finishingTrainingRef.current = false;
 
+      if (session.mode === "phone") {
+        if (!phoneRuntime.isAvailable()) {
+          throw new Error(
+            "Locked iPhone presleep training requires the custom iOS development build.",
+          );
+        }
+
+        const plan = buildNativePhoneSessionPlanForLockedTraining({
+          session,
+          trainingStartedAt: timestamp,
+          settings: engineSettings,
+          tlrOptions,
+          historicalSleepPrior:
+            sleepHistory.enabled &&
+            sleepHistory.prior &&
+            sleepHistory.prior.confidence !== "none"
+              ? sleepHistory.prior
+              : undefined,
+        });
+
+        await phoneRuntime.startPhoneTlrSessionAfterPresleepTraining(plan);
+
+        const nextSession = sendSessionEvent("start_training", timestamp);
+
+        if (!nextSession) {
+          await phoneRuntime.stopPhoneTlrSession({ reason: "error" });
+          return;
+        }
+
+        setNativeTrainingStatus(await phoneRuntime.getPhoneRuntimeStatus());
+        appendTrainingDebugEvent("native_locked_training_started", {
+          sessionId: nextSession.id,
+          selectedCueId: sessionCue.id,
+          trainingAsset: "final-lucid-training.mp3",
+          markerCount: trainingCueSchedule.length,
+          projectedTrainingEndedAt: plan.trainingEndedAt,
+        });
+        return;
+      }
+
       await setAudioModeAsync({
         playsInSilentMode: true,
         interruptionMode: "doNotMix",
@@ -265,6 +324,63 @@ export function PresleepTrainingScreen() {
       }
     }
   }
+
+  const reconcileNativeLockedTraining = React.useCallback(async () => {
+    if (!session || session.status !== "training" || session.mode !== "phone") {
+      return;
+    }
+
+    try {
+      const status = await phoneRuntime.getPhoneRuntimeStatus();
+
+      setNativeTrainingStatus(status);
+
+      if (!status.available || status.sessionId !== session.id) {
+        return;
+      }
+
+      const runtimeHasStarted =
+        status.phase === "runtime" ||
+        status.audioBedRunning ||
+        status.motionRunning ||
+        status.latestDecisionReason === "training_completed";
+
+      if (!runtimeHasStarted && status.running) {
+        return;
+      }
+
+      const logs = await phoneRuntime.getPhoneRuntimeLogs(session.id);
+      const completedAt =
+        latestPhoneTrainingCompletedTimestamp(logs) ?? planTrainingEndFallback(session);
+
+      if (!completedAt) {
+        return;
+      }
+
+      sendSessionEvent("finish_training", completedAt);
+      router.replace("/active-night-session");
+    } catch (error) {
+      setTrainingError(
+        error instanceof Error
+          ? error.message
+          : "Could not reconcile native presleep training.",
+      );
+    }
+  }, [sendSessionEvent, session]);
+
+  React.useEffect(() => {
+    if (!session || session.status !== "training" || session.mode !== "phone") {
+      return undefined;
+    }
+
+    void reconcileNativeLockedTraining();
+
+    const intervalId = setInterval(() => {
+      void reconcileNativeLockedTraining();
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [reconcileNativeLockedTraining, session]);
 
   async function startNightSession(options?: { skipGuidedTraining?: boolean }) {
     const timestamp = new Date().toISOString();
@@ -326,13 +442,30 @@ export function PresleepTrainingScreen() {
         <Card>
           <InfoRow label="training audio" value="FINAL Lucid Training.mp3" />
           <InfoRow label="cue sound" value={sessionCue.label} />
-          <InfoRow
-            label="position"
-            value={`${formatPlaybackTime(trainingStatus.currentTime)} / ${formatPlaybackTime(FINAL_LUCID_TRAINING_DURATION_SECONDS)}`}
-          />
+          {usesNativeLockedTraining ? (
+            <>
+              <InfoRow
+                label="locked playback"
+                value={nativeTrainingStatus?.phase ?? "starting"}
+              />
+              <InfoRow
+                label="handoff"
+                value={nativeTrainingStatus?.latestDecisionReason ?? "training"}
+              />
+            </>
+          ) : (
+            <InfoRow
+              label="position"
+              value={`${formatPlaybackTime(trainingStatus.currentTime)} / ${formatPlaybackTime(FINAL_LUCID_TRAINING_DURATION_SECONDS)}`}
+            />
+          )}
           <InfoRow
             label="cue overlays"
-            value={`${playedCueCount} / ${trainingCueSchedule.length}`}
+            value={
+              usesNativeLockedTraining
+                ? `native / ${trainingCueSchedule.length}`
+                : `${playedCueCount} / ${trainingCueSchedule.length}`
+            }
           />
         </Card>
 

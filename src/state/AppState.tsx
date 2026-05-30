@@ -38,6 +38,7 @@ import type {
 import {
   importPhoneRuntimeLogsToLocalRecords,
   latestPhoneRuntimeStopTimestamp,
+  latestPhoneTrainingCompletedTimestamp,
   phoneRuntime,
   summarizePhoneRuntimeEvents,
 } from "@/src/native/phoneRuntime";
@@ -867,6 +868,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const status = await phoneRuntime.getPhoneRuntimeStatus();
 
       if (!status.available || status.running) {
+        if (
+          status.available &&
+          status.running &&
+          activeSession.status === "training" &&
+          status.sessionId === activeSession.id &&
+          (status.phase === "runtime" ||
+            status.audioBedRunning ||
+            status.motionRunning ||
+            status.latestDecisionReason === "training_completed")
+        ) {
+          const logs = await phoneRuntime.getPhoneRuntimeLogs(activeSession.id);
+          const completedAt = latestPhoneTrainingCompletedTimestamp(logs);
+
+          if (completedAt) {
+            sendSessionEvent("finish_training", completedAt);
+          }
+        }
+
         return;
       }
 
@@ -875,6 +894,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       if (!summary.stopped && !summary.completed && !summary.errored) {
         return;
+      }
+
+      if (activeSession.status === "training") {
+        const completedAt = latestPhoneTrainingCompletedTimestamp(logs);
+
+        if (completedAt) {
+          sendSessionEvent("finish_training", completedAt);
+          return;
+        }
       }
 
       await importPhoneRuntimeLogsToLocalRecords(logs);

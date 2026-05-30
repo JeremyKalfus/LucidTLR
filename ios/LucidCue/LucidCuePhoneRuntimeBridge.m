@@ -6,6 +6,10 @@ RCT_EXTERN_METHOD(startPhoneTlrSession:(NSDictionary *)plan
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(startPhoneTlrSessionAfterPresleepTraining:(NSDictionary *)plan
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(stopPhoneTlrSession:(NSDictionary *)options
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

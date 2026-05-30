@@ -109,6 +109,23 @@ export function latestPhoneRuntimeStopTimestamp(
   return stringPayload(stopEvent.payload, "stoppedAt") ?? stopEvent.timestamp;
 }
 
+export function latestPhoneTrainingCompletedTimestamp(
+  events: NativePhoneRuntimeEvent[],
+): string | null {
+  const trainingCompletedEvent = [...events]
+    .reverse()
+    .find((event) => event.eventType === "training_completed");
+
+  if (!trainingCompletedEvent) {
+    return null;
+  }
+
+  return (
+    stringPayload(trainingCompletedEvent.payload, "actualTrainingEndedAt") ??
+    trainingCompletedEvent.timestamp
+  );
+}
+
 export function mapPhoneRuntimeCueEvents(
   events: NativePhoneRuntimeEvent[],
 ): PhoneRuntimeCueRecordDraft[] {

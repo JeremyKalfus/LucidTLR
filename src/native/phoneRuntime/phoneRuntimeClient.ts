@@ -12,6 +12,9 @@ export type RuntimeStopOptions = {
 
 export interface NativePhoneRuntimeModule {
   startPhoneTlrSession: (plan: NativePhoneSessionPlan) => Promise<void>;
+  startPhoneTlrSessionAfterPresleepTraining: (
+    plan: NativePhoneSessionPlan,
+  ) => Promise<void>;
   stopPhoneTlrSession: (options?: RuntimeStopOptions) => Promise<void>;
   getPhoneRuntimeStatus: () => Promise<PhoneRuntimeStatus>;
   getPhoneRuntimeLogs: (
@@ -64,6 +67,10 @@ export function createPhoneRuntimeClient(options: PhoneRuntimeClientOptions) {
 
     startPhoneTlrSession(plan: NativePhoneSessionPlan) {
       return requireNativeModule().startPhoneTlrSession(plan);
+    },
+
+    startPhoneTlrSessionAfterPresleepTraining(plan: NativePhoneSessionPlan) {
+      return requireNativeModule().startPhoneTlrSessionAfterPresleepTraining(plan);
     },
 
     stopPhoneTlrSession(stopOptions?: RuntimeStopOptions) {

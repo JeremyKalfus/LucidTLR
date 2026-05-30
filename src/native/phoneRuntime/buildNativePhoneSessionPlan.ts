@@ -7,6 +7,10 @@ import type { CueDecisionSettings, SleepTimingPrior } from "@/src/engine";
 import { buildSleepTimingPrior } from "@/src/engine";
 import { getBuiltInCue } from "@/src/audio/cueCatalog";
 import {
+  FINAL_LUCID_TRAINING_DURATION_SECONDS,
+  buildTrainingCueSchedule,
+} from "@/src/audio/trainingAudio";
+import {
   BACKGROUND_AUDIO_VOLUME,
   BINAURAL_BEAT_FREQUENCY_HZ,
   BINAURAL_CARRIER_FREQUENCY_HZ,
@@ -18,6 +22,8 @@ import { phoneCueing } from "@/src/protocol/tlrProtocol";
 
 import {
   DEFAULT_PHONE_AUDIO_BED_ASSET_ID,
+  NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_EXTENSION,
+  NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_NAME,
   NATIVE_PHONE_POLICY_VERSION,
   type NativePhoneSessionPlan,
   validateNativePhoneSessionPlan,
@@ -36,6 +42,14 @@ export type BuildNativePhoneSessionPlanFromCompletedSessionInput = Omit<
   "sleepTiming"
 > & {
   historicalSleepPrior?: HistoricalSleepPrior;
+};
+
+export type BuildNativePhoneSessionPlanForLockedTrainingInput = Omit<
+  BuildNativePhoneSessionPlanFromCompletedSessionInput,
+  "session"
+> & {
+  session: NightSession;
+  trainingStartedAt: string;
 };
 
 function toMutableInterval(
@@ -84,6 +98,13 @@ export function buildNativePhoneSessionPlan(
     trainingEndedAt: session.trainingEndedAt,
     training: {
       guidedTrainingSkipped: session.guidedTrainingSkipped === true,
+      lockedPlayback: {
+        enabled: false,
+        audioResourceName: NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_NAME,
+        audioResourceExtension: NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_EXTENSION,
+        durationSeconds: FINAL_LUCID_TRAINING_DURATION_SECONDS,
+        cueSchedule: [],
+      },
     },
     audioBed: {
       enabled: true,
@@ -178,4 +199,45 @@ export function buildNativePhoneSessionPlanFromCompletedSession(
       historicalSleepPrior: input.historicalSleepPrior,
     }),
   });
+}
+
+export function buildNativePhoneSessionPlanForLockedTraining(
+  input: BuildNativePhoneSessionPlanForLockedTrainingInput,
+): NativePhoneSessionPlan {
+  const trainingEndedAt = new Date(
+    Date.parse(input.trainingStartedAt) + FINAL_LUCID_TRAINING_DURATION_SECONDS * 1000,
+  ).toISOString();
+  const selectedCue = getBuiltInCue(
+    input.session.selectedCueId ??
+      normalizeTlrOptions(input.tlrOptions, input.settings.typicalWakeTime)
+        .selectedCueId,
+  );
+  const completedSession: NightSession = {
+    ...input.session,
+    status: "waiting_for_cue_window",
+    trainingStartedAt: input.trainingStartedAt,
+    trainingEndedAt,
+    guidedTrainingSkipped: false,
+  };
+  const plan = buildNativePhoneSessionPlanFromCompletedSession({
+    ...input,
+    session: completedSession,
+  });
+
+  return {
+    ...plan,
+    training: {
+      ...plan.training,
+      lockedPlayback: {
+        enabled: true,
+        audioResourceName: NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_NAME,
+        audioResourceExtension: NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_EXTENSION,
+        durationSeconds: FINAL_LUCID_TRAINING_DURATION_SECONDS,
+        cueSchedule: buildTrainingCueSchedule(selectedCue).map((entry) => ({
+          markerIndex: entry.markerIndex,
+          cueStartSeconds: entry.cueStartSeconds,
+        })),
+      },
+    },
+  };
 }

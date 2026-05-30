@@ -14,6 +14,7 @@ import {
 import {
   buildNativePhoneSessionPlan,
   buildNativePhoneSessionPlanFromCompletedSession,
+  buildNativePhoneSessionPlanForLockedTraining,
 } from "@/src/native/phoneRuntime/buildNativePhoneSessionPlan";
 import {
   nativePhoneSessionUsesPredictedRemWindows,
@@ -250,6 +251,35 @@ describe("buildNativePhoneSessionPlan", () => {
     });
 
     expect(plan.training.guidedTrainingSkipped).toBe(true);
+  });
+
+  it("builds locked presleep training playback into a projected native plan", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const trainingStartedAt = "2026-01-20T03:50:00.000Z";
+    const plan = buildNativePhoneSessionPlanForLockedTraining({
+      session: {
+        ...session(),
+        status: "setup",
+        trainingStartedAt: undefined,
+        trainingEndedAt: undefined,
+      },
+      trainingStartedAt,
+      settings,
+    });
+
+    expect(plan.trainingStartedAt).toBe(trainingStartedAt);
+    expect(plan.trainingEndedAt).toBe("2026-01-20T04:12:20.928Z");
+    expect(plan.timing.earliestCueAt).toBe("2026-01-20T10:12:20.928Z");
+    expect(plan.training.lockedPlayback).toMatchObject({
+      enabled: true,
+      audioResourceName: "final_lucid_training",
+      audioResourceExtension: "mp3",
+    });
+    expect(plan.training.lockedPlayback.durationSeconds).toBeGreaterThan(1300);
+    expect(plan.training.lockedPlayback.cueSchedule).toHaveLength(17);
+    expect(plan.training.lockedPlayback.cueSchedule[0]).toMatchObject({
+      markerIndex: 0,
+    });
   });
 
   it("rejects plans without a required audible audio bed", () => {
