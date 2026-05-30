@@ -1,6 +1,8 @@
 import { router } from "expo-router";
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import type { LucideIcon } from "lucide-react-native";
 import { AlarmClock, Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
+import React from "react";
 import { Pressable, Text, View } from "react-native";
 
 import {
@@ -10,7 +12,9 @@ import {
   Screen,
 } from "@/src/components/ui";
 import { TlrOptionsControls } from "@/src/components/tlr/TlrOptionsControls";
+import { getCueAppAsset } from "@/src/audio/cueAssets";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
+import type { TlrOptionsPatch } from "@/src/features/tlrOptions/tlrOptions";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, shadows, spacing, typography } from "@/src/theme/tokens";
 
@@ -114,6 +118,10 @@ function HomeActionButton({
 }
 
 export function HomeScreen() {
+  const [cuePreviewRequest, setCuePreviewRequest] = React.useState<{
+    cueId: string;
+    requestedAt: number;
+  } | null>(null);
   const {
     engineSettings,
     latestEngineSnapshot,
@@ -124,11 +132,76 @@ export function HomeScreen() {
     tlrOptions,
     updateTlrOptions,
   } = useAppState();
+  const cuePreviewAsset = React.useMemo(
+    () =>
+      cuePreviewRequest
+        ? getCueAppAsset(cuePreviewRequest.cueId)
+        : null,
+    [cuePreviewRequest],
+  );
+  const cuePreviewPlayer = useAudioPlayer(cuePreviewAsset, {
+    updateInterval: 250,
+    downloadFirst: true,
+    keepAudioSessionActive: false,
+  });
+  const cuePreviewStatus = useAudioPlayerStatus(cuePreviewPlayer);
   const engineValues = latestEngineSnapshot.currentValues;
   const tlrNights = sessionHistory.filter(
     (session) => session.sessionType === "tlr",
   ).length;
   const lastSession = sessionHistory[0] ?? null;
+  const handleTlrOptionsChange = React.useCallback(
+    (patch: TlrOptionsPatch) => {
+      void updateTlrOptions(patch);
+
+      if (patch.selectedCueId) {
+        setCuePreviewRequest({
+          cueId: patch.selectedCueId,
+          requestedAt: Date.now(),
+        });
+      }
+    },
+    [updateTlrOptions],
+  );
+
+  React.useEffect(() => {
+    if (!cuePreviewRequest || !cuePreviewStatus.isLoaded) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function playCuePreview() {
+      try {
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          interruptionMode: "doNotMix",
+          shouldPlayInBackground: false,
+          allowsRecording: false,
+          shouldRouteThroughEarpiece: false,
+        });
+        cuePreviewPlayer.pause();
+        cuePreviewPlayer.volume = 1;
+        await cuePreviewPlayer.seekTo(0);
+
+        if (!cancelled) {
+          cuePreviewPlayer.play();
+        }
+      } catch (error) {
+        console.warn("[LucidCue] Cue preview failed", error);
+      }
+    }
+
+    void playCuePreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cuePreviewPlayer,
+    cuePreviewRequest,
+    cuePreviewStatus.isLoaded,
+  ]);
 
   return (
     <Screen>
@@ -154,9 +227,7 @@ export function HomeScreen() {
             tlrOptions={tlrOptions}
             typicalWakeTime={engineSettings.typicalWakeTime}
             onModeChange={setSelectedMode}
-            onOptionsChange={(patch) => {
-              void updateTlrOptions(patch);
-            }}
+            onOptionsChange={handleTlrOptionsChange}
           />
           <InfoRow label="nights with TLR" value={String(tlrNights)} />
           <InfoRow label="sensitivity" value={engineValues.sensitivityProfile.replaceAll("_", " ")} />

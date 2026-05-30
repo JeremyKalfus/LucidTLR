@@ -9,7 +9,7 @@ import {
   Watch,
 } from "lucide-react-native";
 import React from "react";
-import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
 
 import {
   Card,
@@ -17,6 +17,8 @@ import {
   PrimaryPillButton,
   Screen,
   SectionTitle,
+  TextField,
+  TimeInput,
 } from "@/src/components/ui";
 import { TlrOptionsControls } from "@/src/components/tlr/TlrOptionsControls";
 import {
@@ -61,20 +63,41 @@ function SettingInput({
       >
         {label}
       </Text>
-      <TextInput
+      <TextField
+        height={40}
         value={value}
         onChangeText={onChangeText}
-        placeholderTextColor={colors.textDim}
+      />
+    </View>
+  );
+}
+
+function TimeSettingInput({
+  label,
+  value,
+  onChangeText,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+}) {
+  return (
+    <View style={{ gap: 6 }}>
+      <Text
+        selectable
         style={{
-          minHeight: 40,
-          borderWidth: borders.hairline,
-          borderColor: colors.cardBorder,
-          borderRadius: radii.card,
-          color: colors.textPrimary,
-          paddingHorizontal: 12,
-          fontSize: typography.body.fontSize,
-          lineHeight: typography.body.lineHeight,
+          color: colors.textMuted,
+          fontSize: typography.label.fontSize,
+          lineHeight: typography.label.lineHeight,
         }}
+      >
+        {label}
+      </Text>
+      <TimeInput
+        accessibilityLabel={label}
+        height={40}
+        value={value}
+        onChangeText={onChangeText}
       />
     </View>
   );
@@ -102,7 +125,13 @@ function NumericSettingInput({
       label={label}
       value={String(value)}
       onChangeText={(text) => {
-        const nextValue = Number(text);
+        const trimmed = text.trim();
+
+        if (!trimmed) {
+          return;
+        }
+
+        const nextValue = Number(trimmed);
 
         if (Number.isFinite(nextValue)) {
           void updateEngineSettings({ [settingKey]: nextValue });
@@ -646,14 +675,14 @@ export function EngineSettingsScreen() {
             onPress={() => applySensitivityProfile("hard_to_wake")}
           />
         </View>
-        <SettingInput
+        <TimeSettingInput
           label="typical bedtime"
           value={engineSettings.typicalBedtime}
           onChangeText={(typicalBedtime) =>
             void updateEngineSettings({ typicalBedtime })
           }
         />
-        <SettingInput
+        <TimeSettingInput
           label="typical wake time"
           value={engineSettings.typicalWakeTime}
           onChangeText={(typicalWakeTime) =>

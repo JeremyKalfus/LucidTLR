@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import React, { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import {
   Card,
@@ -8,6 +8,7 @@ import {
   PrimaryPillButton,
   Screen,
   SectionTitle,
+  TextField,
 } from "@/src/components/ui";
 import {
   MORNING_REPORT_CORE_FIELDS,
@@ -39,20 +40,15 @@ function FieldControl({
 }) {
   if (field.type === "rating") {
     return (
-      <TextInput
+      <TextField
+        height={44}
         keyboardType="numeric"
         placeholder="1-5"
-        placeholderTextColor={colors.textDim}
         value={typeof value === "number" ? String(value) : ""}
-        onChangeText={(text) => onChange(text.trim() ? Number(text) : null)}
-        style={{
-          minHeight: 44,
-          borderWidth: borders.hairline,
-          borderColor: colors.cardBorder,
-          borderRadius: radii.card,
-          color: colors.textPrimary,
-          paddingHorizontal: 12,
-          fontSize: typography.body.fontSize,
+        onChangeText={(text) => {
+          const sanitized = text.replace(/\D/g, "");
+
+          onChange(sanitized ? Number(sanitized) : null);
         }}
       />
     );

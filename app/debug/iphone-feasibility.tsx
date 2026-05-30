@@ -1,6 +1,6 @@
 import { Redirect } from "expo-router";
 import React from "react";
-import { Alert, Pressable, Share, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, Share, Text, View } from "react-native";
 
 import {
   Card,
@@ -8,6 +8,7 @@ import {
   PrimaryPillButton,
   Screen,
   SectionTitle,
+  TextField,
 } from "@/src/components/ui";
 import {
   iPhoneFeasibilityHarness,
@@ -360,20 +361,12 @@ function NumberField({
       >
         {label}
       </Text>
-      <TextInput
+      <TextField
+        height={40}
         keyboardType="numeric"
         onChangeText={onChangeText}
         value={value}
-        style={{
-          minHeight: 40,
-          borderRadius: radii.card,
-          borderWidth: borders.hairline,
-          borderColor: colors.cardBorder,
-          color: colors.textPrimary,
-          fontSize: typography.body.fontSize,
-          lineHeight: typography.body.lineHeight,
-          paddingHorizontal: 10,
-        }}
+        style={{ paddingHorizontal: 10 }}
       />
     </View>
   );

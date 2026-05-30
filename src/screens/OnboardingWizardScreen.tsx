@@ -1,13 +1,15 @@
 import { router } from "expo-router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, Text, TextInput, View } from "react-native";
+import { Animated, Pressable, Text, View } from "react-native";
 
 import {
   Card,
   PrimaryPillButton,
   Screen,
   SectionTitle,
+  TextField,
+  TimeInput,
 } from "@/src/components/ui";
 import type {
   OnboardingAnswerValue,
@@ -30,7 +32,17 @@ function formatValue(value: OnboardingAnswerValue): string {
     return value ? "true" : "false";
   }
 
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "";
+  }
+
   return value == null ? "" : String(value);
+}
+
+function parseNumberAnswer(text: string): number | null {
+  const sanitized = text.replace(/\D/g, "");
+
+  return sanitized ? Number(sanitized) : null;
 }
 
 function ChoiceButton({
@@ -251,31 +263,37 @@ function QuestionRenderer({
       >
         {question.prompt}
       </Text>
-      <TextInput
-        keyboardType={question.type === "number" ? "numeric" : "default"}
-        placeholder={question.type === "time" ? "22:30" : "Answer"}
-        placeholderTextColor={colors.textDim}
-        value={formatValue(value)}
-        onChangeText={(text) =>
-          setOnboardingAnswer({
-            stepId,
-            questionId: question.id,
-            value:
-              question.type === "number" && text.trim()
-                ? Number(text)
-                : text,
-          })
-        }
-        style={{
-          minHeight: 48,
-          borderWidth: borders.hairline,
-          borderColor: colors.cardBorder,
-          borderRadius: radii.card,
-          color: colors.textPrimary,
-          paddingHorizontal: 12,
-          fontSize: typography.body.fontSize,
-        }}
-      />
+      {question.type === "time" ? (
+        <TimeInput
+          accessibilityLabel={question.prompt}
+          fallbackTime={question.id === "typical_bedtime" ? "23:00" : "07:00"}
+          height={48}
+          placeholder={question.id === "typical_bedtime" ? "23:00" : "07:00"}
+          value={formatValue(value)}
+          onChangeText={(time) =>
+            setOnboardingAnswer({
+              stepId,
+              questionId: question.id,
+              value: time,
+            })
+          }
+        />
+      ) : (
+        <TextField
+          height={48}
+          keyboardType={question.type === "number" ? "numeric" : "default"}
+          placeholder="Answer"
+          value={formatValue(value)}
+          onChangeText={(text) =>
+            setOnboardingAnswer({
+              stepId,
+              questionId: question.id,
+              value:
+                question.type === "number" ? parseNumberAnswer(text) : text,
+            })
+          }
+        />
+      )}
     </View>
   );
 }

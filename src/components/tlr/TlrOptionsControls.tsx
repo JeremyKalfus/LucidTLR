@@ -1,8 +1,8 @@
 import React from "react";
-import { Pressable, Switch, Text, TextInput, View } from "react-native";
+import { Pressable, Switch, Text, View } from "react-native";
 import { ChevronDown } from "lucide-react-native";
 
-import { InfoRow } from "@/src/components/ui";
+import { InfoRow, TextField, TimeInput } from "@/src/components/ui";
 import { builtInCues, getBuiltInCue } from "@/src/audio/cueCatalog";
 import type { AppMode, TlrOptions } from "@/src/domain/types";
 import {
@@ -94,10 +94,10 @@ function ToggleRow({
     >
       <RowLabel>{label}</RowLabel>
       <Switch
+        accessibilityLabel={label}
         value={value}
         onValueChange={onValueChange}
         trackColor={{ false: colors.cardBorder, true: colors.textDim }}
-        thumbColor={value ? colors.textPrimary : colors.textMuted}
         ios_backgroundColor={colors.cardBorder}
       />
     </View>
@@ -118,21 +118,34 @@ function CompactInput({
   return (
     <View style={{ gap: 6 }}>
       <RowLabel>{label}</RowLabel>
-      <TextInput
+      <TextField
+        height={36}
         value={value}
         onChangeText={onChangeText}
         keyboardType={keyboardType}
-        placeholderTextColor={colors.textDim}
-        style={{
-          minHeight: 36,
-          borderWidth: borders.hairline,
-          borderColor: colors.cardBorder,
-          borderRadius: radii.card,
-          color: colors.textPrimary,
-          paddingHorizontal: 10,
-          fontSize: typography.body.fontSize,
-          lineHeight: typography.body.lineHeight,
-        }}
+        style={{ paddingHorizontal: 10 }}
+      />
+    </View>
+  );
+}
+
+function CompactTimeInput({
+  label,
+  value,
+  onChangeText,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+}) {
+  return (
+    <View style={{ gap: 6 }}>
+      <RowLabel>{label}</RowLabel>
+      <TimeInput
+        accessibilityLabel={label}
+        height={36}
+        value={value}
+        onChangeText={onChangeText}
       />
     </View>
   );
@@ -301,7 +314,7 @@ export function TlrOptionsControls({
 
       {tlrOptions.alarm.enabled ? (
         <View style={{ gap: 9 }}>
-          <CompactInput
+          <CompactTimeInput
             label="alarm time"
             value={tlrOptions.alarm.time}
             onChangeText={(time) => onOptionsChange({ alarm: { time } })}
@@ -319,7 +332,13 @@ export function TlrOptionsControls({
               value={String(tlrOptions.alarm.ringDurationMinutes)}
               keyboardType="numeric"
               onChangeText={(text) => {
-                const ringDurationMinutes = Number(text);
+                const trimmed = text.trim();
+
+                if (!trimmed) {
+                  return;
+                }
+
+                const ringDurationMinutes = Number(trimmed);
 
                 if (Number.isFinite(ringDurationMinutes)) {
                   onOptionsChange({ alarm: { ringDurationMinutes } });
