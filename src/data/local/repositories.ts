@@ -18,11 +18,16 @@ import type {
   SessionStatus,
   SessionType,
   UploadStatus,
+  WatchEpoch,
 } from "@/src/domain/types";
 import type {
   PhoneRuntimeCueRecordDraft,
   PhoneRuntimeMovementRecordDraft,
 } from "@/src/native/phoneRuntime/NativePhoneSessionPlan";
+import type {
+  WatchEpochRecordDraft,
+  WatchRuntimeEvent,
+} from "@/src/native/watch/WatchModeTypes";
 import { ONBOARDING_FORM_ID, onboardingSteps } from "@/src/features/onboarding/onboardingSteps";
 
 export const ONBOARDING_COMPLETED_AT_SETTING = "onboarding_completed_at";
@@ -96,6 +101,44 @@ interface MovementEventRow {
   pause_ended_at: string | null;
 }
 
+interface WatchEpochRow {
+  id: string;
+  session_id: string;
+  epoch_start: string;
+  epoch_end: string;
+  heart_rate_summary: number | null;
+  motion_summary: number | null;
+  sensor_quality: WatchEpoch["sensorQuality"] | null;
+  sleep_probability: number | null;
+  elapsed_session_seconds: number;
+  rem_probability: number | null;
+  rem_label: WatchEpoch["remLabel"] | null;
+  classifier_version: string | null;
+  epoch_features_json: string | null;
+  watch_battery_level: number | null;
+  watch_connectivity_state: WatchEpoch["watchConnectivityState"] | null;
+  sample_counts_json: string | null;
+  stage_probabilities_json: string | null;
+  stage_label: string | null;
+  epoch_received_at: string | null;
+  processed_at: string | null;
+  heart_rate_sample_count: number | null;
+  motion_sample_count: number | null;
+  hr_feature: number | null;
+  motion_feature: number | null;
+  motion_ema: number | null;
+  time_feature: number | null;
+  raw_epoch_available: number | null;
+}
+
+interface WatchRuntimeEventRow {
+  id: string;
+  session_id: string;
+  timestamp: string;
+  event_type: WatchRuntimeEvent["eventType"];
+  payload_json: string;
+}
+
 interface MorningReportRow {
   id: string;
   session_id: string;
@@ -149,6 +192,7 @@ const resetTables = [
   "sleep_prior_profiles",
   "dream_journals",
   "morning_reports",
+  "watch_runtime_events",
   "watch_epochs",
   "movement_events",
   "cue_events",
@@ -279,6 +323,48 @@ function toMovementEvent(row: MovementEventRow): MovementEvent {
     wasCueAssociated: row.was_cue_associated === 1,
     pauseStartedAt: row.pause_started_at ?? undefined,
     pauseEndedAt: row.pause_ended_at ?? undefined,
+  };
+}
+
+function toWatchEpoch(row: WatchEpochRow): WatchEpoch {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    epochStart: row.epoch_start,
+    epochEnd: row.epoch_end,
+    heartRateSummary: row.heart_rate_summary ?? undefined,
+    motionSummary: row.motion_summary ?? undefined,
+    sensorQuality: row.sensor_quality ?? undefined,
+    sleepProbability: row.sleep_probability ?? undefined,
+    elapsedSessionSeconds: row.elapsed_session_seconds,
+    remProbability: row.rem_probability ?? undefined,
+    remLabel: row.rem_label ?? undefined,
+    classifierVersion: row.classifier_version ?? undefined,
+    epochFeaturesJson: row.epoch_features_json ?? undefined,
+    watchBatteryLevel: row.watch_battery_level ?? undefined,
+    watchConnectivityState: row.watch_connectivity_state ?? undefined,
+    sampleCountsJson: row.sample_counts_json ?? undefined,
+    stageProbabilitiesJson: row.stage_probabilities_json ?? undefined,
+    stageLabel: row.stage_label ?? undefined,
+    epochReceivedAt: row.epoch_received_at ?? undefined,
+    processedAt: row.processed_at ?? undefined,
+    heartRateSampleCount: row.heart_rate_sample_count ?? undefined,
+    motionSampleCount: row.motion_sample_count ?? undefined,
+    hrFeature: row.hr_feature ?? undefined,
+    motionFeature: row.motion_feature ?? undefined,
+    motionEma: row.motion_ema ?? undefined,
+    timeFeature: row.time_feature ?? undefined,
+    rawEpochAvailable: row.raw_epoch_available === 1,
+  };
+}
+
+function toWatchRuntimeEvent(row: WatchRuntimeEventRow): WatchRuntimeEvent {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    timestamp: row.timestamp,
+    eventType: row.event_type,
+    payload: JSON.parse(row.payload_json) as Record<string, unknown>,
   };
 }
 
@@ -525,6 +611,231 @@ order by timestamp asc`,
   );
 
   return rows.map(toMovementEvent);
+}
+
+const watchEpochSelect = `select id,
+  session_id,
+  epoch_start,
+  epoch_end,
+  heart_rate_summary,
+  motion_summary,
+  sensor_quality,
+  sleep_probability,
+  elapsed_session_seconds,
+  rem_probability,
+  rem_label,
+  classifier_version,
+  epoch_features_json,
+  watch_battery_level,
+  watch_connectivity_state,
+  sample_counts_json,
+  stage_probabilities_json,
+  stage_label,
+  epoch_received_at,
+  processed_at,
+  heart_rate_sample_count,
+  motion_sample_count,
+  hr_feature,
+  motion_feature,
+  motion_ema,
+  time_feature,
+  raw_epoch_available
+from watch_epochs`;
+
+export async function saveWatchEpochs(input: {
+  db: LocalDb;
+  records: WatchEpochRecordDraft[];
+}): Promise<void> {
+  for (const record of input.records) {
+    await input.db.execute(
+      `insert into watch_epochs (
+  id,
+  session_id,
+  epoch_start,
+  epoch_end,
+  heart_rate_summary,
+  motion_summary,
+  sensor_quality,
+  sleep_probability,
+  elapsed_session_seconds,
+  rem_probability,
+  rem_label,
+  classifier_version,
+  epoch_features_json,
+  watch_battery_level,
+  watch_connectivity_state,
+  sample_counts_json,
+  stage_probabilities_json,
+  stage_label,
+  epoch_received_at,
+  processed_at,
+  heart_rate_sample_count,
+  motion_sample_count,
+  hr_feature,
+  motion_feature,
+  motion_ema,
+  time_feature,
+  raw_epoch_available,
+  upload_status
+) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local_only')
+on conflict(id) do update set
+  heart_rate_summary = excluded.heart_rate_summary,
+  motion_summary = excluded.motion_summary,
+  sensor_quality = excluded.sensor_quality,
+  sleep_probability = excluded.sleep_probability,
+  rem_probability = excluded.rem_probability,
+  rem_label = excluded.rem_label,
+  classifier_version = excluded.classifier_version,
+  epoch_features_json = excluded.epoch_features_json,
+  watch_battery_level = excluded.watch_battery_level,
+  watch_connectivity_state = excluded.watch_connectivity_state,
+  sample_counts_json = excluded.sample_counts_json,
+  stage_probabilities_json = excluded.stage_probabilities_json,
+  stage_label = excluded.stage_label,
+  epoch_received_at = excluded.epoch_received_at,
+  processed_at = excluded.processed_at,
+  heart_rate_sample_count = excluded.heart_rate_sample_count,
+  motion_sample_count = excluded.motion_sample_count,
+  hr_feature = excluded.hr_feature,
+  motion_feature = excluded.motion_feature,
+  motion_ema = excluded.motion_ema,
+  time_feature = excluded.time_feature,
+  raw_epoch_available = excluded.raw_epoch_available`,
+      [
+        record.id,
+        record.sessionId,
+        record.epochStart,
+        record.epochEnd,
+        record.heartRateSummary ?? null,
+        record.motionSummary ?? null,
+        record.sensorQuality ?? null,
+        record.sleepProbability ?? null,
+        record.elapsedSessionSeconds,
+        record.remProbability ?? null,
+        record.remLabel ?? null,
+        record.classifierVersion ?? null,
+        record.epochFeaturesJson ?? null,
+        record.watchBatteryLevel ?? null,
+        record.watchConnectivityState ?? null,
+        record.sampleCountsJson ?? null,
+        record.stageProbabilitiesJson ?? null,
+        record.stageLabel ?? null,
+        record.epochReceivedAt ?? null,
+        record.processedAt ?? null,
+        record.heartRateSampleCount ?? null,
+        record.motionSampleCount ?? null,
+        record.hrFeature ?? null,
+        record.motionFeature ?? null,
+        record.motionEma ?? null,
+        record.timeFeature ?? null,
+        record.rawEpochAvailable ? 1 : 0,
+      ],
+    );
+  }
+}
+
+export async function loadWatchEpochsForSession(input: {
+  db: LocalDb;
+  sessionId: string;
+}): Promise<WatchEpoch[]> {
+  const rows = await input.db.query<WatchEpochRow>(
+    `${watchEpochSelect}
+where session_id = ?
+order by epoch_start asc`,
+    [input.sessionId],
+  );
+
+  return rows.map(toWatchEpoch);
+}
+
+export async function loadLatestWatchEpoch(input: {
+  db: LocalDb;
+  sessionId: string;
+}): Promise<WatchEpoch | null> {
+  const row = await input.db.queryOne<WatchEpochRow>(
+    `${watchEpochSelect}
+where session_id = ?
+order by epoch_start desc
+limit 1`,
+    [input.sessionId],
+  );
+
+  return row ? toWatchEpoch(row) : null;
+}
+
+export async function summarizeWatchSession(input: {
+  db: LocalDb;
+  sessionId: string;
+}): Promise<{
+  epochsReceived: number;
+  usableEpochs: number;
+  likelyRemEpochs: number;
+  connectivityGaps: number;
+  classifierVersions: string[];
+}> {
+  const epochs = await loadWatchEpochsForSession(input);
+  const classifierVersions = new Set(
+    epochs
+      .map((epoch) => epoch.classifierVersion)
+      .filter((version): version is string => Boolean(version)),
+  );
+
+  return {
+    epochsReceived: epochs.length,
+    usableEpochs: epochs.filter((epoch) => epoch.sensorQuality !== "missing").length,
+    likelyRemEpochs: epochs.filter((epoch) => epoch.remLabel === "likely_rem").length,
+    connectivityGaps: epochs.filter(
+      (epoch) =>
+        epoch.watchConnectivityState === "delayed" ||
+        epoch.watchConnectivityState === "disconnected",
+    ).length,
+    classifierVersions: [...classifierVersions],
+  };
+}
+
+export async function saveWatchRuntimeEvents(input: {
+  db: LocalDb;
+  events: WatchRuntimeEvent[];
+}): Promise<void> {
+  for (const event of input.events) {
+    await input.db.execute(
+      `insert into watch_runtime_events (
+  id,
+  session_id,
+  timestamp,
+  event_type,
+  payload_json,
+  upload_status
+) values (?, ?, ?, ?, ?, 'local_only')
+on conflict(id) do nothing`,
+      [
+        event.id,
+        event.sessionId,
+        event.timestamp,
+        event.eventType,
+        JSON.stringify(event.payload),
+      ],
+    );
+  }
+}
+
+export async function loadWatchRuntimeEventsForSession(input: {
+  db: LocalDb;
+  sessionId: string;
+}): Promise<WatchRuntimeEvent[]> {
+  const rows = await input.db.query<WatchRuntimeEventRow>(
+    `select id,
+  session_id,
+  timestamp,
+  event_type,
+  payload_json
+from watch_runtime_events
+where session_id = ?
+order by timestamp asc`,
+    [input.sessionId],
+  );
+
+  return rows.map(toWatchRuntimeEvent);
 }
 
 export async function saveMorningReport(input: {

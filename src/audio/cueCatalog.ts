@@ -24,7 +24,7 @@ export const builtInCues = [
     sourceFileName: "universfield-clear-bell-chime-487898.mp3",
     nativeResourceName: "clear_bell_chime",
     nativeResourceExtension: "mp3",
-    durationSeconds: 0.88356,
+    durationSeconds: 2.8,
   },
   {
     id: "ui-success-chime",

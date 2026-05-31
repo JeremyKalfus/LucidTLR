@@ -7,7 +7,15 @@ import { MAX_BUILT_IN_CUE_DURATION_SECONDS } from "@/src/audio/cueCatalog";
 export const NATIVE_PHONE_POLICY_VERSION = "iphone-phone-runtime-2026-001";
 
 export const DEFAULT_PHONE_AUDIO_BED_ASSET_ID =
-  "lucidcue-audible-bed-sine-220hz";
+  "lucidcue-audible-bed-white-noise";
+
+export function phoneAudioBedAssetIdForBackgroundNoise(
+  option: BackgroundNoiseOption,
+): string {
+  return option === "binaural_beats"
+    ? "lucidcue-audible-bed-binaural-beats"
+    : DEFAULT_PHONE_AUDIO_BED_ASSET_ID;
+}
 
 export const NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_NAME =
   "final_lucid_training";

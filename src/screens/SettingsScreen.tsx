@@ -32,6 +32,10 @@ import {
   phoneRuntime,
   type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
+import {
+  watchRuntime,
+  type WatchRuntimeStatus,
+} from "@/src/native/watch";
 import { TLR_PROTOCOL_VERSION } from "@/src/protocol/tlrProtocol";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
@@ -599,6 +603,22 @@ export function AndroidPhoneModeSettingsScreen() {
 
 export function WatchModeSettingsScreen() {
   const { selectedMode, setSelectedMode } = useAppState();
+  const [runtimeStatus, setRuntimeStatus] =
+    React.useState<WatchRuntimeStatus | null>(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    void watchRuntime.getWatchRuntimeStatus().then((status) => {
+      if (mounted) {
+        setRuntimeStatus(status);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <Screen>
@@ -610,13 +630,46 @@ export function WatchModeSettingsScreen() {
           label="Use Watch Mode"
           onPress={() => setSelectedMode("watch")}
         />
-        <InfoRow label="watch app" value="not implemented" />
-        <InfoRow label="REM classifier" value="TBD" />
+        <InfoRow
+          label="runtime"
+          value={
+            runtimeStatus?.available
+              ? runtimeStatus.running
+                ? "running"
+                : "available"
+              : runtimeStatus?.unavailableReason ?? "unknown"
+          }
+        />
+        <InfoRow
+          label="watch app"
+          value={
+            runtimeStatus?.watchAppInstalled === undefined
+              ? "unknown"
+              : runtimeStatus.watchAppInstalled
+                ? "installed"
+                : "not detected"
+          }
+        />
+        <InfoRow
+          label="connection"
+          value={runtimeStatus?.connectivityState ?? "unknown"}
+        />
+        <InfoRow
+          label="REM classifier"
+          value={
+            runtimeStatus?.modelAvailable
+              ? runtimeStatus.classifierVersion
+              : "mallela-rf boundary; cueing disabled until exact features verified"
+          }
+        />
+        <InfoRow label="REM threshold" value="0.24" />
+        <InfoRow label="epoch length" value="30 seconds" />
         <InfoRow label="cue audio" value="iPhone" />
+        <InfoRow label="battery start" value="warn below 60%" />
         <SettingsNote>
           Watch Mode is the Apple Watch sensing path. The watch collects heart
           rate, motion, and elapsed session time; the iPhone remains the sound
-          source for cue playback.
+          source for cue playback. Watch epoch summaries stay local by default.
         </SettingsNote>
       </Card>
     </Screen>

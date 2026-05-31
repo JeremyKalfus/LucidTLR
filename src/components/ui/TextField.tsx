@@ -22,7 +22,6 @@ export function TextField({
           paddingHorizontal: 12,
           paddingVertical: 0,
           fontSize: typography.body.fontSize,
-          lineHeight: typography.body.lineHeight,
           textAlignVertical: "center",
           includeFontPadding: false,
         },

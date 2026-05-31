@@ -12,7 +12,6 @@ import {
   buildTrainingCueSchedule,
 } from "@/src/audio/trainingAudio";
 import {
-  BACKGROUND_AUDIO_VOLUME,
   BINAURAL_BEAT_FREQUENCY_HZ,
   BINAURAL_CARRIER_FREQUENCY_HZ,
   DEFAULT_ALARM_VOLUME,
@@ -22,10 +21,10 @@ import {
 import { phoneCueing } from "@/src/protocol/tlrProtocol";
 
 import {
-  DEFAULT_PHONE_AUDIO_BED_ASSET_ID,
   NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_EXTENSION,
   NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_NAME,
   NATIVE_PHONE_POLICY_VERSION,
+  phoneAudioBedAssetIdForBackgroundNoise,
   type NativePhoneSessionPlan,
   validateNativePhoneSessionPlan,
 } from "./NativePhoneSessionPlan";
@@ -110,13 +109,15 @@ export function buildNativePhoneSessionPlan(
     },
     audioBed: {
       enabled: true,
-      assetId: input.audioBedAssetId ?? DEFAULT_PHONE_AUDIO_BED_ASSET_ID,
+      assetId:
+        input.audioBedAssetId ??
+        phoneAudioBedAssetIdForBackgroundNoise(tlrOptions.backgroundNoise),
       volume: settings.phoneAudioBedVolume,
     },
     backgroundAudio: {
-      option: tlrOptions.backgroundNoise,
-      enabled: tlrOptions.backgroundNoise !== "none",
-      volume: BACKGROUND_AUDIO_VOLUME,
+      option: "none",
+      enabled: false,
+      volume: 0,
       binauralCarrierFrequencyHz: BINAURAL_CARRIER_FREQUENCY_HZ,
       binauralBeatFrequencyHz: BINAURAL_BEAT_FREQUENCY_HZ,
     },

@@ -157,6 +157,7 @@ describe("buildNativePhoneSessionPlan", () => {
 
     expect(plan.audioBed).toMatchObject({
       enabled: true,
+      assetId: "lucidcue-audible-bed-white-noise",
       volume: 0.04,
     });
     expect(plan.safety.requireAudioBed).toBe(true);
@@ -208,7 +209,7 @@ describe("buildNativePhoneSessionPlan", () => {
     });
   });
 
-  it("passes user-facing background audio and alarm fields through", () => {
+  it("uses the selected background audio as the required audio bed", () => {
     const settings = createDefaultEngineSettings("standard");
     const plan = buildNativePhoneSessionPlanFromCompletedSession({
       session: session(),
@@ -226,10 +227,12 @@ describe("buildNativePhoneSessionPlan", () => {
     });
 
     expect(plan.audioBed.enabled).toBe(true);
+    expect(plan.audioBed.assetId).toBe("lucidcue-audible-bed-white-noise");
     expect(plan.safety.requireAudioBed).toBe(true);
     expect(plan.backgroundAudio).toMatchObject({
-      option: "white_noise",
-      enabled: true,
+      option: "none",
+      enabled: false,
+      volume: 0,
     });
     expect(plan.alarm).toMatchObject({
       enabled: true,
@@ -327,6 +330,7 @@ describe("buildNativePhoneSessionPlan", () => {
 
     expect(plan.nativePolicyVersion).toContain("dev-kitchen-sink-45m");
     expect(plan.audioBed.enabled).toBe(true);
+    expect(plan.audioBed.assetId).toBe("lucidcue-audible-bed-white-noise");
     expect(plan.audioBed.volume).toBe(0.03);
     expect(plan.safety.stopAt).toBe(
       "2026-01-20T04:46:00.000Z",

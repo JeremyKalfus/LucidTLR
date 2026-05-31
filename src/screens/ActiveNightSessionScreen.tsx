@@ -18,6 +18,15 @@ import {
   summarizePhoneRuntimeEvents,
   type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
+import {
+  watchRuntime,
+  type WatchRuntimeStatus,
+} from "@/src/native/watch";
+import { getLocalDb } from "@/src/data/local/expoSqliteDb";
+import {
+  saveWatchEpochs,
+  saveWatchRuntimeEvents,
+} from "@/src/data/local/repositories";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -55,6 +64,8 @@ export function ActiveNightSessionScreen() {
   const { activeSession, sendSessionEvent } = useAppState();
   const [runtimeStatus, setRuntimeStatus] =
     React.useState<PhoneRuntimeStatus | null>(null);
+  const [watchRuntimeStatus, setWatchRuntimeStatus] =
+    React.useState<WatchRuntimeStatus | null>(null);
   const [runtimeError, setRuntimeError] = React.useState<string | null>(null);
   const [isStopping, setIsStopping] = React.useState(false);
   const canEnd =
@@ -68,6 +79,8 @@ export function ActiveNightSessionScreen() {
     !activeSession || activeSession.status === "morning_review_complete";
   const usesPhoneRuntime =
     activeSession?.sessionType === "tlr" && activeSession.mode === "phone";
+  const usesWatchRuntime =
+    activeSession?.sessionType === "tlr" && activeSession.mode === "watch";
 
   const refreshRuntimeStatus = React.useCallback(async () => {
     if (!usesPhoneRuntime) {
@@ -100,33 +113,62 @@ export function ActiveNightSessionScreen() {
     }
   }, [activeSession, canEnd, sendSessionEvent, usesPhoneRuntime]);
 
+  const refreshWatchRuntimeStatus = React.useCallback(async () => {
+    if (!usesWatchRuntime) {
+      return;
+    }
+
+    try {
+      const status = await watchRuntime.getWatchRuntimeStatus();
+
+      setWatchRuntimeStatus(status);
+    } catch (error) {
+      setRuntimeError(errorMessage(error));
+    }
+  }, [usesWatchRuntime]);
+
   React.useEffect(() => {
     void refreshRuntimeStatus();
+    void refreshWatchRuntimeStatus();
 
-    if (!usesPhoneRuntime || !canEnd) {
+    if ((!usesPhoneRuntime && !usesWatchRuntime) || !canEnd) {
       return undefined;
     }
 
     const intervalId = setInterval(() => {
       void refreshRuntimeStatus();
+      void refreshWatchRuntimeStatus();
     }, 5000);
 
     return () => clearInterval(intervalId);
-  }, [canEnd, refreshRuntimeStatus, usesPhoneRuntime]);
+  }, [
+    canEnd,
+    refreshRuntimeStatus,
+    refreshWatchRuntimeStatus,
+    usesPhoneRuntime,
+    usesWatchRuntime,
+  ]);
 
   React.useEffect(() => {
-    if (!usesPhoneRuntime || !canEnd) {
+    if ((!usesPhoneRuntime && !usesWatchRuntime) || !canEnd) {
       return undefined;
     }
 
     const subscription = NativeAppState.addEventListener("change", (state) => {
       if (state === "active") {
         void refreshRuntimeStatus();
+        void refreshWatchRuntimeStatus();
       }
     });
 
     return () => subscription.remove();
-  }, [canEnd, refreshRuntimeStatus, usesPhoneRuntime]);
+  }, [
+    canEnd,
+    refreshRuntimeStatus,
+    refreshWatchRuntimeStatus,
+    usesPhoneRuntime,
+    usesWatchRuntime,
+  ]);
 
   async function stopSession() {
     if (!activeSession) {
@@ -141,6 +183,18 @@ export function ActiveNightSessionScreen() {
         await phoneRuntime.stopPhoneTlrSession({ reason: "user_stopped" });
         const logs = await phoneRuntime.getPhoneRuntimeLogs(activeSession.id);
         await importPhoneRuntimeLogsToLocalRecords(logs);
+      }
+
+      if (usesWatchRuntime) {
+        await watchRuntime.stopWatchSession({ reason: "user_stopped" });
+        const [epochs, logs, db] = await Promise.all([
+          watchRuntime.getWatchEpochs(activeSession.id),
+          watchRuntime.getWatchRuntimeLogs(activeSession.id),
+          getLocalDb(),
+        ]);
+
+        await saveWatchEpochs({ db, records: epochs });
+        await saveWatchRuntimeEvents({ db, events: logs });
       }
 
       sendSessionEvent("end_session");
@@ -224,6 +278,83 @@ export function ActiveNightSessionScreen() {
                 runtimeError ??
                 runtimeStatus?.latestRuntimeError ??
                 runtimeStatus?.unavailableReason ??
+                "none"
+              }
+            />
+          </Card>
+        ) : null}
+        {usesWatchRuntime ? (
+          <Card>
+            <InfoRow
+              label="watch runtime"
+              value={displayValue(watchRuntimeStatus?.running)}
+            />
+            <InfoRow
+              label="watch connected"
+              value={displayValue(watchRuntimeStatus?.watchReachable)}
+            />
+            <InfoRow
+              label="watch app"
+              value={displayValue(watchRuntimeStatus?.watchAppInstalled)}
+            />
+            <InfoRow
+              label="audio bed"
+              value={displayValue(watchRuntimeStatus?.audioBedRunning)}
+            />
+            <InfoRow
+              label="latest epoch"
+              value={displayValue(watchRuntimeStatus?.latestEpochAt)}
+            />
+            <InfoRow
+              label="latest HR"
+              value={displayValue(watchRuntimeStatus?.latestHeartRate)}
+            />
+            <InfoRow
+              label="latest motion"
+              value={displayValue(watchRuntimeStatus?.latestMotionSummary)}
+            />
+            <InfoRow
+              label="REM probability"
+              value={displayValue(watchRuntimeStatus?.latestRemProbability)}
+            />
+            <InfoRow
+              label="classifier"
+              value={
+                watchRuntimeStatus?.modelAvailable
+                  ? watchRuntimeStatus.classifierVersion
+                  : "unavailable; cueing disabled"
+              }
+            />
+            <InfoRow
+              label="likely REM streak"
+              value={displayValue(watchRuntimeStatus?.consecutiveLikelyRemEpochs)}
+            />
+            <InfoRow
+              label="cue count"
+              value={displayValue(watchRuntimeStatus?.cueCount)}
+            />
+            <InfoRow
+              label="latest reason"
+              value={displayValue(watchRuntimeStatus?.latestCueDecisionReason)}
+            />
+            <InfoRow
+              label="watch battery"
+              value={displayValue(watchRuntimeStatus?.watchBatteryLevel)}
+            />
+            <InfoRow
+              label="sensor quality"
+              value={displayValue(watchRuntimeStatus?.latestSensorQuality)}
+            />
+            <InfoRow
+              label="connectivity"
+              value={displayValue(watchRuntimeStatus?.connectivityState)}
+            />
+            <InfoRow
+              label="runtime error"
+              value={
+                runtimeError ??
+                watchRuntimeStatus?.latestRuntimeError ??
+                watchRuntimeStatus?.unavailableReason ??
                 "none"
               }
             />

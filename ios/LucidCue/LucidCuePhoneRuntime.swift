@@ -529,12 +529,42 @@ class LucidCuePhoneRuntime: NSObject {
   private func startAudioBed(plan: PhoneRuntimePlan) throws {
     let engine = ensureAudioEngine()
     let format = engine.mainMixerNode.outputFormat(forBus: 0)
-    let buffer = makeSineBuffer(
-      format: format,
-      frequency: 220,
-      durationSeconds: 6,
-      amplitude: 0.18
-    )
+    let buffer: AVAudioPCMBuffer
+    var payload: [String: Any] = [
+      "assetId": plan.audioBed.assetId,
+      "volume": plan.audioBed.volume,
+      "audible": true
+    ]
+
+    switch plan.audioBed.assetId {
+    case "lucidcue-audible-bed-white-noise":
+      buffer = makeWhiteNoiseBuffer(
+        format: format,
+        durationSeconds: 4,
+        amplitude: 0.22
+      )
+      payload["option"] = "white_noise"
+    case "lucidcue-audible-bed-binaural-beats":
+      buffer = makeBinauralBuffer(
+        format: format,
+        carrierFrequency: plan.backgroundAudio.binauralCarrierFrequencyHz,
+        beatFrequency: plan.backgroundAudio.binauralBeatFrequencyHz,
+        durationSeconds: 8,
+        amplitude: 0.18
+      )
+      payload["option"] = "binaural_beats"
+      payload["binauralCarrierFrequencyHz"] = plan.backgroundAudio.binauralCarrierFrequencyHz
+      payload["binauralBeatFrequencyHz"] = plan.backgroundAudio.binauralBeatFrequencyHz
+    default:
+      buffer = makeSineBuffer(
+        format: format,
+        frequency: 220,
+        durationSeconds: 6,
+        amplitude: 0.18
+      )
+      payload["option"] = "sine"
+      payload["toneHz"] = 220
+    }
 
     audioBedPlayer?.stop()
     audioBedPlayer?.volume = Float(clamp(plan.audioBed.volume, min: 0, max: 1))
@@ -545,12 +575,7 @@ class LucidCuePhoneRuntime: NSObject {
     }
 
     audioBedPlayer?.play()
-    appendEvent("audio_bed_started", payload: [
-      "assetId": plan.audioBed.assetId,
-      "volume": plan.audioBed.volume,
-      "audible": true,
-      "toneHz": 220
-    ])
+    appendEvent("audio_bed_started", payload: payload)
   }
 
   private func startBackgroundAudio(plan: PhoneRuntimePlan) throws {

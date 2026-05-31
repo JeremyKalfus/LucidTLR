@@ -8,6 +8,7 @@ import type {
   PredictedRemWindow,
   SessionStatus,
   SoundSensitivityProfile,
+  WatchConnectivityState,
   WatchSensorQuality,
 } from "@/src/domain/types";
 import {
@@ -34,8 +35,6 @@ export type SleepTimingSource =
   | "self_report"
   | "historical_sleep"
   | "local_phone_runtime";
-export type WatchConnectivityState = "connected" | "disconnected" | "unknown";
-
 export interface CueDecisionSettings {
   soundSensitivity: SoundSensitivityProfile;
   typicalBedtime: string;

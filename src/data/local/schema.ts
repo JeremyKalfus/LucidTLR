@@ -21,6 +21,10 @@ export const LOCAL_MIGRATIONS = [
     id: "005_selected_cue",
     filename: "005_selected_cue.sql",
   },
+  {
+    id: "006_watch_mode_epochs",
+    filename: "006_watch_mode_epochs.sql",
+  },
 ] as const;
 
 export const LOCAL_TABLES = [
@@ -31,6 +35,7 @@ export const LOCAL_TABLES = [
   "cue_events",
   "movement_events",
   "watch_epochs",
+  "watch_runtime_events",
   "morning_reports",
   "dream_journals",
   "external_sleep_sessions",

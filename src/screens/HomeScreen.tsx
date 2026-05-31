@@ -25,6 +25,10 @@ import {
   phoneRuntime,
   type NativePhoneRuntimeEvent,
 } from "@/src/native/phoneRuntime";
+import {
+  watchRuntime,
+  type WatchRuntimeStatus,
+} from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, shadows, spacing, typography } from "@/src/theme/tokens";
 
@@ -163,6 +167,8 @@ export function HomeScreen() {
   const [lastSleepLogs, setLastSleepLogs] = React.useState<
     NativePhoneRuntimeEvent[]
   >([]);
+  const [watchRuntimeStatus, setWatchRuntimeStatus] =
+    React.useState<WatchRuntimeStatus | null>(null);
   const handleTlrOptionsChange = React.useCallback(
     (patch: TlrOptionsPatch) => {
       void updateTlrOptions(patch);
@@ -267,6 +273,36 @@ export function HomeScreen() {
     };
   }, [lastSession]);
 
+  React.useEffect(() => {
+    if (selectedMode !== "watch") {
+      setWatchRuntimeStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refreshWatchStatus() {
+      try {
+        const status = await watchRuntime.getWatchRuntimeStatus();
+        if (!cancelled) {
+          setWatchRuntimeStatus(status);
+        }
+      } catch {
+        if (!cancelled) {
+          setWatchRuntimeStatus(null);
+        }
+      }
+    }
+
+    void refreshWatchStatus();
+    const interval = setInterval(refreshWatchStatus, 30_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [selectedMode]);
+
   return (
     <Screen>
       <View style={{ gap: labelToCardGap }}>
@@ -297,6 +333,52 @@ export function HomeScreen() {
           <InfoRow label="sensitivity" value={engineValues.sensitivityProfile.replaceAll("_", " ")} />
           <InfoRow label="cues tonight" value={engineValues.cueCountTonight} />
           <InfoRow label="sleep prior" value={`${engineValues.sleepPriorSource} (${engineValues.sleepPriorConfidence})`} />
+          {selectedMode === "watch" ? (
+            <>
+              <InfoRow
+                label="watch connection"
+                value={
+                  watchRuntimeStatus
+                    ? watchRuntimeStatus.watchReachable
+                      ? "reachable"
+                      : watchRuntimeStatus.connectivityState
+                    : "not checked"
+                }
+              />
+              <InfoRow
+                label="latest epoch"
+                value={watchRuntimeStatus?.latestEpochAt ?? "none"}
+              />
+              <InfoRow
+                label="REM probability"
+                value={
+                  typeof watchRuntimeStatus?.latestRemProbability === "number"
+                    ? watchRuntimeStatus.latestRemProbability.toFixed(2)
+                    : "unavailable"
+                }
+              />
+              <InfoRow
+                label="sensor quality"
+                value={watchRuntimeStatus?.latestSensorQuality ?? "unknown"}
+              />
+              <InfoRow
+                label="watch battery"
+                value={
+                  typeof watchRuntimeStatus?.watchBatteryLevel === "number"
+                    ? `${Math.round(watchRuntimeStatus.watchBatteryLevel * 100)}%`
+                    : "unknown"
+                }
+              />
+              <InfoRow
+                label="classifier"
+                value={
+                  watchRuntimeStatus?.modelAvailable
+                    ? watchRuntimeStatus.classifierVersion
+                    : "disabled until verified"
+                }
+              />
+            </>
+          ) : null}
         </Card>
       </View>
 

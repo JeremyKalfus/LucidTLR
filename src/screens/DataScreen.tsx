@@ -7,6 +7,7 @@ import {
   History,
   Moon,
   Smartphone,
+  Watch,
 } from "lucide-react-native";
 import React from "react";
 import * as FileSystem from "expo-file-system/legacy";
@@ -32,13 +33,18 @@ import {
   type FullLocalDataExport,
 } from "@/src/data/local/fullDataBackup";
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
-import { loadMorningReportForSession } from "@/src/data/local/repositories";
+import {
+  loadMorningReportForSession,
+  loadWatchEpochsForSession,
+  summarizeWatchSession,
+} from "@/src/data/local/repositories";
 import type {
   ExternalSleepSource,
   MorningReport,
   NightSession,
   PredictedRemWindow,
   RemDensityBin,
+  WatchEpoch,
 } from "@/src/domain/types";
 import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
@@ -53,6 +59,7 @@ import { colors, typography } from "@/src/theme/tokens";
 type DataRoute =
   | "/data/tlr-engine"
   | "/data/iphone-runtime"
+  | "/data/watch-mode"
   | "/data/sleep-history"
   | "/data/sessions";
 
@@ -934,6 +941,12 @@ export function DataScreen() {
           title="iPhone runtime timeline"
         />
         <DataNavRow
+          detail="Local Watch Mode epochs, features, classifier status, and gaps."
+          icon={Watch}
+          route="/data/watch-mode"
+          title="Watch mode timeline"
+        />
+        <DataNavRow
           detail="Local sleep-history calibration and predicted REM windows."
           icon={Moon}
           route="/data/sleep-history"
@@ -1323,6 +1336,180 @@ export function IphoneRuntimeDataScreen() {
           stays local until you choose where to share it.
         </DataNote>
       </Card>
+    </Screen>
+  );
+}
+
+export function WatchModeDataScreen() {
+  const { sessionHistory } = useAppState();
+  const [epochs, setEpochs] = React.useState<WatchEpoch[]>([]);
+  const [summary, setSummary] = React.useState<{
+    epochsReceived: number;
+    usableEpochs: number;
+    likelyRemEpochs: number;
+    connectivityGaps: number;
+    classifierVersions: string[];
+  } | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const latestWatchSession = sessionHistory.find(
+    (session) => session.mode === "watch",
+  );
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    async function loadWatchTimeline() {
+      if (!latestWatchSession) {
+        setEpochs([]);
+        setSummary(null);
+        return;
+      }
+
+      try {
+        const db = await getLocalDb();
+        const [nextEpochs, nextSummary] = await Promise.all([
+          loadWatchEpochsForSession({
+            db,
+            sessionId: latestWatchSession.id,
+          }),
+          summarizeWatchSession({
+            db,
+            sessionId: latestWatchSession.id,
+          }),
+        ]);
+
+        if (mounted) {
+          setEpochs(nextEpochs);
+          setSummary(nextSummary);
+          setError(null);
+        }
+      } catch (loadError) {
+        if (mounted) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Could not load watch epochs.",
+          );
+        }
+      }
+    }
+
+    void loadWatchTimeline();
+
+    return () => {
+      mounted = false;
+    };
+  }, [latestWatchSession]);
+
+  return (
+    <Screen>
+      <DataPageHeader title="Watch mode" />
+
+      <Card>
+        <InfoRow
+          label="session"
+          value={latestWatchSession?.id ?? "no local watch session"}
+        />
+        <InfoRow
+          label="epochs"
+          value={summary ? String(summary.epochsReceived) : "0"}
+        />
+        <InfoRow
+          label="usable epochs"
+          value={summary ? String(summary.usableEpochs) : "0"}
+        />
+        <InfoRow
+          label="likely REM epochs"
+          value={summary ? String(summary.likelyRemEpochs) : "0"}
+        />
+        <InfoRow
+          label="connectivity gaps"
+          value={summary ? String(summary.connectivityGaps) : "0"}
+        />
+        <InfoRow
+          label="classifier"
+          value={
+            summary && summary.classifierVersions.length > 0
+              ? summary.classifierVersions.join(", ")
+              : "classifier unavailable"
+          }
+        />
+        {error ? <InfoRow label="error" value={error} /> : null}
+      </Card>
+
+      <Card>
+        <DataNote>
+          Watch Mode stores epoch summaries/features locally. REM cueing remains
+          disabled unless the native runtime has a real classifier and exact
+          feature path available.
+        </DataNote>
+      </Card>
+
+      {epochs.length === 0 ? (
+        <Card>
+          <Text
+            selectable
+            style={{
+              color: colors.textDim,
+              fontSize: typography.body.fontSize,
+              lineHeight: typography.body.lineHeight,
+              textAlign: "center",
+            }}
+          >
+            No local watch epochs yet.
+          </Text>
+        </Card>
+      ) : (
+        <View style={{ gap: 12 }}>
+          {epochs.slice(-12).map((epoch) => (
+            <Card key={epoch.id}>
+              <InfoRow
+                label="epoch"
+                value={`${new Date(epoch.epochStart).toLocaleTimeString()} - ${new Date(
+                  epoch.epochEnd,
+                ).toLocaleTimeString()}`}
+              />
+              <InfoRow
+                label="HR"
+                value={
+                  epoch.heartRateSummary === undefined
+                    ? "not available"
+                    : epoch.heartRateSummary.toFixed(1)
+                }
+              />
+              <InfoRow
+                label="motion"
+                value={
+                  epoch.motionSummary === undefined
+                    ? "not available"
+                    : epoch.motionSummary.toFixed(3)
+                }
+              />
+              <InfoRow
+                label="REM probability"
+                value={formatEnginePercent(epoch.remProbability)}
+              />
+              <InfoRow label="REM label" value={epoch.remLabel ?? "unknown"} />
+              <InfoRow
+                label="sensor quality"
+                value={epoch.sensorQuality ?? "unknown"}
+              />
+              <InfoRow
+                label="battery"
+                value={
+                  epoch.watchBatteryLevel === undefined
+                    ? "unknown"
+                    : `${Math.round(epoch.watchBatteryLevel * 100)}%`
+                }
+              />
+              <InfoRow
+                label="connectivity"
+                value={epoch.watchConnectivityState ?? "unknown"}
+              />
+            </Card>
+          ))}
+        </View>
+      )}
     </Screen>
   );
 }

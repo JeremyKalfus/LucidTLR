@@ -23,6 +23,12 @@ export interface TlrOptions {
 
 export type WatchSensorQuality = "good" | "degraded" | "missing" | "bad";
 
+export type WatchConnectivityState =
+  | "connected"
+  | "delayed"
+  | "disconnected"
+  | "unknown";
+
 export type CueDecisionAction =
   | "idle"
   | "play_cue"
@@ -216,6 +222,21 @@ export interface WatchEpoch {
   remProbability?: number;
   remLabel?: "likely_rem" | "not_likely_rem" | "unknown";
   classifierVersion?: string;
+  epochFeaturesJson?: string;
+  watchBatteryLevel?: number;
+  watchConnectivityState?: WatchConnectivityState;
+  sampleCountsJson?: string;
+  stageProbabilitiesJson?: string;
+  stageLabel?: string;
+  epochReceivedAt?: string;
+  processedAt?: string;
+  heartRateSampleCount?: number;
+  motionSampleCount?: number;
+  hrFeature?: number;
+  motionFeature?: number;
+  motionEma?: number;
+  timeFeature?: number;
+  rawEpochAvailable?: boolean;
 }
 
 export interface MorningReport {

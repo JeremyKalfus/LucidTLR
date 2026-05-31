@@ -47,9 +47,10 @@ function scoreWatchOpportunity(
   timing: SleepTimingPrior,
 ): { score: number; breakdown: WatchScoreBreakdown } {
   const signal = context.watchSignal;
+  const remThreshold = context.settings.remThreshold;
   const normalizedRemScore = clamp(
-    (signal?.remProbability ?? 0) /
-      Math.max(0.01, context.settings.remThreshold),
+    ((signal?.remProbability ?? 0) - remThreshold) /
+      Math.max(0.01, 1 - remThreshold),
     0,
     1,
   );

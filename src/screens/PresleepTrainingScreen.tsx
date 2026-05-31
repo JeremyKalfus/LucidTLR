@@ -21,7 +21,10 @@ import { getCueAppAsset } from "@/src/audio/cueAssets";
 import { FINAL_LUCID_TRAINING_AUDIO_ASSET } from "@/src/audio/trainingAssets";
 import { PRESLEEP_SCRIPT_NOTICE, PRESLEEP_SCRIPT_PLACEHOLDER } from "@/src/protocol/tlrProtocol";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
-import { applyPhoneNightCalibrationToSettings } from "@/src/engine";
+import {
+  applyPhoneNightCalibrationToSettings,
+  buildSleepTimingPrior,
+} from "@/src/engine";
 import {
   buildNativePhoneSessionPlanForLockedTraining,
   buildNativePhoneSessionPlanFromCompletedSession,
@@ -29,6 +32,11 @@ import {
   phoneRuntime,
   type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
+import {
+  buildNativeWatchSessionPlan,
+  watchRuntime,
+  type WatchRuntimeStatus,
+} from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -105,6 +113,8 @@ export function PresleepTrainingScreen() {
   const [isStartingRuntime, setIsStartingRuntime] = React.useState(false);
   const [nativeTrainingStatus, setNativeTrainingStatus] =
     React.useState<PhoneRuntimeStatus | null>(null);
+  const [watchRuntimeStatus, setWatchRuntimeStatus] =
+    React.useState<WatchRuntimeStatus | null>(null);
   const nextTrainingCueIndexRef = React.useRef(0);
   const finishingTrainingRef = React.useRef(false);
   const canStart =
@@ -115,7 +125,8 @@ export function PresleepTrainingScreen() {
     tlrOptions.skipGuidedTraining &&
     canTransitionSession("tlr", session.status, "skip_guided_training");
   const canStartRuntime =
-    session?.status === "waiting_for_cue_window" && session.mode === "phone";
+    session?.status === "waiting_for_cue_window" &&
+    (session.mode === "phone" || session.mode === "watch");
   const isTraining = session?.status === "training";
   const usesNativeLockedTraining =
     session?.mode === "phone" && phoneRuntime.isAvailable();
@@ -411,15 +422,43 @@ export function PresleepTrainingScreen() {
       return;
     }
 
-    if (runtimeSession.mode !== "phone") {
-      router.push("/active-night-session");
-      return;
-    }
-
     setRuntimeError(null);
     setIsStartingRuntime(true);
 
     try {
+      if (runtimeSession.mode === "watch") {
+        if (!runtimeSession.trainingEndedAt) {
+          throw new Error("Watch Mode requires completed presleep training.");
+        }
+
+        const sleepTiming = buildSleepTimingPrior({
+          trainingEndedAt: runtimeSession.trainingEndedAt,
+          settings: effectiveEngineSettings,
+          historicalSleepPrior:
+            sleepHistory.enabled &&
+            sleepHistory.prior &&
+            sleepHistory.prior.confidence !== "none"
+              ? sleepHistory.prior
+              : undefined,
+          phoneNightPrior:
+            phoneNightCalibration.nightsIncluded > 0
+              ? phoneNightCalibration
+              : undefined,
+        });
+        const plan = buildNativeWatchSessionPlan({
+          session: runtimeSession,
+          settings: effectiveEngineSettings,
+          tlrOptions,
+          sleepTiming,
+          classifierModelAvailable: false,
+        });
+
+        await watchRuntime.startWatchSession(plan);
+        setWatchRuntimeStatus(await watchRuntime.getWatchRuntimeStatus());
+        router.push("/active-night-session");
+        return;
+      }
+
       const plan = buildNativePhoneSessionPlanFromCompletedSession({
         session: runtimeSession,
         settings: effectiveEngineSettings,
@@ -444,7 +483,7 @@ export function PresleepTrainingScreen() {
       setRuntimeError(message);
 
       if (process.env.EXPO_OS !== "web") {
-        Alert.alert("Phone runtime failed", message);
+        Alert.alert("Runtime failed", message);
       }
     } finally {
       setIsStartingRuntime(false);
@@ -548,7 +587,14 @@ export function PresleepTrainingScreen() {
           label="cue markers"
           value={`${trainingCueSchedule.length} midpoint overlays`}
         />
-        <InfoRow label="runtime" value="native iPhone Phone Mode after training" />
+        <InfoRow
+          label="runtime"
+          value={
+            session?.mode === "watch"
+              ? "native iPhone Watch Mode after training"
+              : "native iPhone Phone Mode after training"
+          }
+        />
       </Card>
 
       {canSkipGuidedTraining ? (
@@ -637,13 +683,33 @@ export function PresleepTrainingScreen() {
               disabled={isStartingRuntime}
               label={
                 isStartingRuntime
-                  ? "Starting Phone Runtime..."
-                  : "Start Native Phone Runtime"
+                  ? session.mode === "watch"
+                    ? "Starting Watch Runtime..."
+                    : "Starting Phone Runtime..."
+                  : session.mode === "watch"
+                    ? "Start Native Watch Runtime"
+                    : "Start Native Phone Runtime"
               }
               onPress={() => {
                 void startNightSession();
               }}
             />
+          ) : null}
+          {watchRuntimeStatus ? (
+            <Card compact>
+              <InfoRow
+                label="watch runtime"
+                value={watchRuntimeStatus.running ? "running" : "idle"}
+              />
+              <InfoRow
+                label="classifier"
+                value={
+                  watchRuntimeStatus.modelAvailable
+                    ? watchRuntimeStatus.classifierVersion
+                    : "unavailable; cueing disabled"
+                }
+              />
+            </Card>
           ) : null}
           <PrimaryPillButton
             label="Open Night Session"
