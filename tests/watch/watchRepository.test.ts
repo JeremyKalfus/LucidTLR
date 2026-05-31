@@ -41,6 +41,9 @@ class FakeWatchDb implements LocalDb {
       motionEma,
       timeFeature,
       rawEpochAvailable,
+      stableLowMovementSeconds,
+      roughMovementIntensity,
+      cueDecisionReason,
     ] = params;
 
     this.rows.set(String(id), {
@@ -71,6 +74,9 @@ class FakeWatchDb implements LocalDb {
       motion_ema: motionEma,
       time_feature: timeFeature,
       raw_epoch_available: rawEpochAvailable,
+      stable_low_movement_seconds: stableLowMovementSeconds,
+      rough_movement_intensity: roughMovementIntensity,
+      cue_decision_reason: cueDecisionReason,
     });
   }
 
@@ -104,7 +110,10 @@ function epoch(overrides: Partial<WatchEpochRecordDraft> = {}): WatchEpochRecord
     sleepProbability: 0.8,
     remProbability: 0.3,
     remLabel: "likely_rem",
-    classifierVersion: "mallela-rf-v1",
+    classifierVersion: "lucidcue-watch-rem-v1",
+    stableLowMovementSeconds: 60,
+    roughMovementIntensity: "light",
+    cueDecisionReason: "watch_likely_rem",
     watchConnectivityState: "connected",
     rawEpochAvailable: false,
     ...overrides,
@@ -135,7 +144,12 @@ describe("watch epoch repository helpers", () => {
     ).resolves.toHaveLength(2);
     await expect(
       loadLatestWatchEpoch({ db, sessionId: "session-1" }),
-    ).resolves.toMatchObject({ id: "epoch-2" });
+    ).resolves.toMatchObject({
+      id: "epoch-2",
+      stableLowMovementSeconds: 60,
+      roughMovementIntensity: "light",
+      cueDecisionReason: "watch_likely_rem",
+    });
     await expect(
       summarizeWatchSession({ db, sessionId: "session-1" }),
     ).resolves.toEqual({
@@ -143,7 +157,7 @@ describe("watch epoch repository helpers", () => {
       usableEpochs: 2,
       likelyRemEpochs: 1,
       connectivityGaps: 1,
-      classifierVersions: ["mallela-rf-v1"],
+      classifierVersions: ["lucidcue-watch-rem-v1"],
     });
   });
 });

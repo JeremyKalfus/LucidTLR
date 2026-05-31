@@ -21,6 +21,8 @@ describe("watchEpochMapping", () => {
         activityCountMagnitudeSum: 12,
         motionFeature: 0.001,
         motionEma: 1_000_000,
+        stableLowMovementSeconds: 60,
+        roughMovementIntensity: "light",
       },
       modelFeatures: {
         hrFeature: 226.981,
@@ -51,6 +53,8 @@ describe("watchEpochMapping", () => {
       motionFeature: 0.001,
       motionEma: 1_000_000,
       timeFeature: 0.025,
+      stableLowMovementSeconds: 60,
+      roughMovementIntensity: "light",
       rawEpochAvailable: false,
     });
     expect(JSON.parse(record.sampleCountsJson ?? "{}")).toEqual({

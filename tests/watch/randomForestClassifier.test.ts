@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import modelJson from "@/assets/models/mallela_rf_v1.json";
 import {
+  LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
   RandomForestJsonModel,
   WatchRemClassifier,
   type RandomForestJson,
@@ -36,6 +38,20 @@ describe("RandomForestJsonModel", () => {
       "5": 0.9,
     });
   });
+
+  it("loads the bundled watch REM model artifact and returns finite probabilities", () => {
+    const model = new RandomForestJsonModel(modelJson as RandomForestJson);
+    const probabilities = model.predictProbabilities({
+      hrFeature: 250,
+      motionFeature: 0.001,
+      timeFeatureHours: 3,
+    });
+
+    expect(model.classLabels).toEqual(["0", "2", "3", "5"]);
+    expect(Object.values(probabilities).every(Number.isFinite)).toBe(true);
+    expect(model.remClassLabel).toBe("5");
+    expect(model.wakeClassLabel).toBe("2");
+  });
 });
 
 describe("WatchRemClassifier", () => {
@@ -56,6 +72,9 @@ describe("WatchRemClassifier", () => {
     });
 
     expect(prediction.modelAvailable).toBe(true);
+    expect(prediction.classifierVersion).toBe(
+      LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
+    );
     expect(prediction.probabilities?.rem).toBe(0.9);
     expect(prediction.probabilities?.wake).toBe(0.1);
     expect(prediction.remProbability).toBe(0.9);

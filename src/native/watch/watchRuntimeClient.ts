@@ -4,6 +4,7 @@ import type {
   WatchRuntimeEvent,
   WatchRuntimeStatus,
 } from "./WatchModeTypes";
+import { LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION } from "@/src/engine/watchRem";
 
 export type WatchRuntimeStopOptions = {
   reason?: "user_stopped" | "completed" | "error";
@@ -33,7 +34,7 @@ function unavailableStatus(reason: string): WatchRuntimeStatus {
     audioBedRunning: false,
     cueCount: 0,
     consecutiveLikelyRemEpochs: 0,
-    classifierVersion: "mallela-feature-pipeline-no-model",
+    classifierVersion: LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
     modelAvailable: false,
     connectivityState: "unknown",
   };

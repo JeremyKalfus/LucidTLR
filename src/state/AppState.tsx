@@ -6,6 +6,7 @@ import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import {
   buildQuestionnaireResponsePayload,
   clearAllLocalData,
+  deleteLocalSession,
   getAppSetting,
   getLocalParticipant,
   loadPhoneNightCalibrationNights,
@@ -125,6 +126,7 @@ interface AppStateValue {
   completeOnboarding: () => Promise<void>;
   resetAppData: () => Promise<void>;
   startSession: (sessionType: SessionType) => NightSession;
+  deleteSession: (sessionId: string) => Promise<void>;
   sendSessionEvent: (
     event: SessionEvent,
     timestamp?: string,
@@ -968,6 +970,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [participantId, selectedMode, tlrOptions.selectedCueId],
   );
 
+  const deleteSession = React.useCallback(
+    async (sessionId: string) => {
+      const db = await getLocalDb();
+      const now = new Date().toISOString();
+
+      await deleteLocalSession({ db, sessionId, updatedAt: now });
+      setActiveSession((session) =>
+        session?.id === sessionId ? null : session,
+      );
+      setSessionHistory((sessions) =>
+        sessions.filter((session) => session.id !== sessionId),
+      );
+      await refreshPhoneNightCalibration();
+    },
+    [refreshPhoneNightCalibration],
+  );
+
   const sendSessionEvent = React.useCallback(
     (event: SessionEvent, timestamp = new Date().toISOString()) => {
       if (
@@ -1066,6 +1085,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // Screen-level runtime panels surface actionable native errors.
     }
   }, [activeSession, refreshPhoneNightCalibration, sendSessionEvent]);
+
+  React.useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    void reconcileNativePhoneRuntimeCompletion();
+  }, [isHydrated, reconcileNativePhoneRuntimeCompletion]);
 
   React.useEffect(() => {
     const subscription = NativeAppState.addEventListener("change", (state) => {
@@ -1178,6 +1205,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       completeOnboarding,
       resetAppData,
       startSession,
+      deleteSession,
       sendSessionEvent,
       addJournalEntry,
     }),
@@ -1186,6 +1214,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       addJournalEntry,
       completeOnboarding,
       consentChoices,
+      deleteSession,
       engineDecisionLog,
       engineSettings,
       hydrationError,

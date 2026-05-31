@@ -4,7 +4,7 @@ import type { CueDecisionSettings, SleepTimingPrior } from "@/src/engine";
 import { watchCueing } from "@/src/protocol/tlrProtocol";
 import { normalizeTlrOptions } from "@/src/features/tlrOptions/tlrOptions";
 import {
-  MALLELA_NO_MODEL_CLASSIFIER_VERSION,
+  LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
   MALLELA_REM_THRESHOLD,
 } from "@/src/engine/watchRem";
 import {
@@ -49,7 +49,7 @@ export function buildNativeWatchSessionPlan(
     throw new Error("Native Watch Mode requires completed presleep training.");
   }
 
-  const modelAvailable = input.classifierModelAvailable === true;
+  const modelAvailable = input.classifierModelAvailable ?? true;
 
   return {
     sessionId: session.id,
@@ -83,7 +83,7 @@ export function buildNativeWatchSessionPlan(
     },
     classifier: {
       classifierVersion:
-        input.classifierVersion ?? MALLELA_NO_MODEL_CLASSIFIER_VERSION,
+        input.classifierVersion ?? LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
       modelAvailable,
       remThreshold: settings.remThreshold || MALLELA_REM_THRESHOLD,
       minimumSleepProbability: settings.minimumWatchSleepProbability,

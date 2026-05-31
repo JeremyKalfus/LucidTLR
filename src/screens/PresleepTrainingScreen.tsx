@@ -1,8 +1,9 @@
 import { router } from "expo-router";
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
-import { Headphones, Play } from "lucide-react-native";
+import type { LucideIcon } from "lucide-react-native";
+import { FastForward, Headphones, Pause, Play } from "lucide-react-native";
 import React from "react";
-import { Alert, Text, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
 
 import {
   Card,
@@ -19,7 +20,6 @@ import {
 } from "@/src/audio/trainingAudio";
 import { getCueAppAsset } from "@/src/audio/cueAssets";
 import { FINAL_LUCID_TRAINING_AUDIO_ASSET } from "@/src/audio/trainingAssets";
-import { PRESLEEP_SCRIPT_NOTICE, PRESLEEP_SCRIPT_PLACEHOLDER } from "@/src/protocol/tlrProtocol";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
 import {
   applyPhoneNightCalibrationToSettings,
@@ -30,7 +30,6 @@ import {
   buildNativePhoneSessionPlanFromCompletedSession,
   latestPhoneTrainingCompletedTimestamp,
   phoneRuntime,
-  type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
 import {
   buildNativeWatchSessionPlan,
@@ -38,7 +37,7 @@ import {
   type WatchRuntimeStatus,
 } from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
-import { colors, typography } from "@/src/theme/tokens";
+import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Phone runtime failed.";
@@ -61,6 +60,52 @@ function planTrainingEndFallback(session: { trainingStartedAt?: string }) {
     Date.parse(session.trainingStartedAt) +
       FINAL_LUCID_TRAINING_DURATION_SECONDS * 1000,
   ).toISOString();
+}
+
+function TrainingControlButton({
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => ({
+        minWidth: 128,
+        minHeight: 52,
+        borderRadius: radii.button,
+        borderWidth: borders.hairline,
+        borderColor: colors.cardBorder,
+        backgroundColor: colors.card,
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "row",
+        gap: 8,
+        paddingHorizontal: 16,
+        opacity: pressed ? 0.72 : 1,
+      })}
+    >
+      <Icon color={colors.textMuted} size={20} strokeWidth={1.8} />
+      <Text
+        selectable
+        style={{
+          color: colors.textPrimary,
+          fontSize: typography.body.fontSize,
+          lineHeight: typography.body.lineHeight,
+          letterSpacing: typography.body.letterSpacing,
+          fontWeight: "400",
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
 }
 
 export function PresleepTrainingScreen() {
@@ -107,12 +152,9 @@ export function PresleepTrainingScreen() {
   const trainingStatus = useAudioPlayerStatus(trainingPlayer);
   const cueStatus = useAudioPlayerStatus(cuePlayer);
   const [runtimeError, setRuntimeError] = React.useState<string | null>(null);
-  const [trainingError, setTrainingError] = React.useState<string | null>(null);
-  const [trainingDebugLog, setTrainingDebugLog] = React.useState<string[]>([]);
   const [playedCueCount, setPlayedCueCount] = React.useState(0);
   const [isStartingRuntime, setIsStartingRuntime] = React.useState(false);
-  const [nativeTrainingStatus, setNativeTrainingStatus] =
-    React.useState<PhoneRuntimeStatus | null>(null);
+  const [isTrainingPaused, setIsTrainingPaused] = React.useState(false);
   const [watchRuntimeStatus, setWatchRuntimeStatus] =
     React.useState<WatchRuntimeStatus | null>(null);
   const nextTrainingCueIndexRef = React.useRef(0);
@@ -135,10 +177,7 @@ export function PresleepTrainingScreen() {
 
   const appendTrainingDebugEvent = React.useCallback(
     (eventType: string, payload: Record<string, unknown>) => {
-      const line = `${new Date().toLocaleTimeString()} / ${eventType} / ${JSON.stringify(payload)}`;
-
       console.info(`[LucidCue training] ${eventType}`, payload);
-      setTrainingDebugLog((log) => [line, ...log].slice(0, 12));
     },
     [],
   );
@@ -203,7 +242,6 @@ export function PresleepTrainingScreen() {
           const message =
             error instanceof Error ? error.message : "Cue playback failed.";
 
-          setTrainingError(message);
           appendTrainingDebugEvent("selected_cue_failed", {
             markerIndex: entry.markerIndex,
             selectedCueId: sessionCue.id,
@@ -216,6 +254,10 @@ export function PresleepTrainingScreen() {
 
   React.useEffect(() => {
     if (!isTraining) {
+      return;
+    }
+
+    if (isTrainingPaused && !usesNativeLockedTraining) {
       return;
     }
 
@@ -241,11 +283,13 @@ export function PresleepTrainingScreen() {
   }, [
     completeTrainingFromAudio,
     isTraining,
+    isTrainingPaused,
     playScheduledCue,
     trainingCueSchedule,
     trainingStatus.currentTime,
     trainingStatus.didJustFinish,
     trainingStatus.playing,
+    usesNativeLockedTraining,
   ]);
 
   React.useEffect(() => {
@@ -255,6 +299,7 @@ export function PresleepTrainingScreen() {
 
     nextTrainingCueIndexRef.current = 0;
     finishingTrainingRef.current = false;
+    setIsTrainingPaused(false);
   }, [session?.id, session?.status]);
 
   async function startTrainingPlayback() {
@@ -265,9 +310,8 @@ export function PresleepTrainingScreen() {
     const timestamp = new Date().toISOString();
 
     try {
-      setTrainingError(null);
-      setTrainingDebugLog([]);
       setPlayedCueCount(0);
+      setIsTrainingPaused(false);
       nextTrainingCueIndexRef.current = 0;
       finishingTrainingRef.current = false;
 
@@ -304,7 +348,6 @@ export function PresleepTrainingScreen() {
           return;
         }
 
-        setNativeTrainingStatus(await phoneRuntime.getPhoneRuntimeStatus());
         appendTrainingDebugEvent("native_locked_training_started", {
           sessionId: nextSession.id,
           selectedCueId: sessionCue.id,
@@ -344,8 +387,6 @@ export function PresleepTrainingScreen() {
       const message =
         error instanceof Error ? error.message : "Training audio failed.";
 
-      setTrainingError(message);
-
       if (process.env.EXPO_OS !== "web") {
         Alert.alert("Training audio failed", message);
       }
@@ -359,8 +400,6 @@ export function PresleepTrainingScreen() {
 
     try {
       const status = await phoneRuntime.getPhoneRuntimeStatus();
-
-      setNativeTrainingStatus(status);
 
       if (!status.available || status.sessionId !== session.id) {
         return;
@@ -387,10 +426,11 @@ export function PresleepTrainingScreen() {
       sendSessionEvent("finish_training", completedAt);
       router.replace("/active-night-session");
     } catch (error) {
-      setTrainingError(
+      console.warn(
+        "[LucidCue training] Could not reconcile native presleep training.",
         error instanceof Error
           ? error.message
-          : "Could not reconcile native presleep training.",
+          : error,
       );
     }
   }, [sendSessionEvent, session]);
@@ -408,6 +448,47 @@ export function PresleepTrainingScreen() {
 
     return () => clearInterval(intervalId);
   }, [reconcileNativeLockedTraining, session]);
+
+  async function toggleTrainingPause() {
+    if (!session || session.status !== "training") {
+      return;
+    }
+
+    try {
+      if (usesNativeLockedTraining) {
+        if (isTrainingPaused) {
+          await phoneRuntime.resumePhonePresleepTraining();
+        } else {
+          await phoneRuntime.pausePhonePresleepTraining();
+        }
+      } else if (isTrainingPaused) {
+        trainingPlayer.play();
+      } else {
+        trainingPlayer.pause();
+        cuePlayer.pause();
+      }
+
+      setIsTrainingPaused((paused) => !paused);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not pause training.";
+
+      if (process.env.EXPO_OS !== "web") {
+        Alert.alert("Training control failed", message);
+      }
+    }
+  }
+
+  async function skipTraining() {
+    if (!session || session.status !== "training") {
+      return;
+    }
+
+    trainingPlayer.pause();
+    cuePlayer.pause();
+    setIsTrainingPaused(false);
+    await startNightSession();
+  }
 
   async function startNightSession(options?: { skipGuidedTraining?: boolean }) {
     const timestamp = new Date().toISOString();
@@ -450,7 +531,6 @@ export function PresleepTrainingScreen() {
           settings: effectiveEngineSettings,
           tlrOptions,
           sleepTiming,
-          classifierModelAvailable: false,
         });
 
         await watchRuntime.startWatchSession(plan);
@@ -492,73 +572,48 @@ export function PresleepTrainingScreen() {
 
   if (isTraining) {
     return (
-      <Screen bottomNav={false}>
-        <SectionTitle>Presleep training</SectionTitle>
-        <RunningSessionClock
-          startedAt={session.trainingStartedAt ?? session.startedAt}
-        />
-
-        <Card>
-          <InfoRow label="training audio" value="FINAL Lucid Training.mp3" />
-          <InfoRow label="cue sound" value={sessionCue.label} />
-          {usesNativeLockedTraining ? (
-            <>
-              <InfoRow
-                label="locked playback"
-                value={nativeTrainingStatus?.phase ?? "starting"}
-              />
-              <InfoRow
-                label="handoff"
-                value={nativeTrainingStatus?.latestDecisionReason ?? "training"}
-              />
-            </>
-          ) : (
-            <InfoRow
-              label="position"
-              value={`${formatPlaybackTime(trainingStatus.currentTime)} / ${formatPlaybackTime(FINAL_LUCID_TRAINING_DURATION_SECONDS)}`}
-            />
-          )}
-          <InfoRow
-            label="cue overlays"
-            value={
-              usesNativeLockedTraining
-                ? `native / ${trainingCueSchedule.length}`
-                : `${playedCueCount} / ${trainingCueSchedule.length}`
-            }
-          />
-        </Card>
-
-        {trainingError ? (
+      <Screen bottomNav={false} centered>
+        <View style={{ alignItems: "center", gap: 18 }}>
           <Text
             selectable
             style={{
-              color: colors.textSecondary,
-              fontSize: typography.body.fontSize,
-              lineHeight: typography.body.lineHeight,
+              color: colors.textPrimary,
+              fontSize: typography.title.fontSize,
+              lineHeight: typography.title.lineHeight,
+              letterSpacing: typography.title.letterSpacing,
               textAlign: "center",
+              fontWeight: "400",
             }}
           >
-            {trainingError}
+            Presleep training
           </Text>
-        ) : null}
-
-        {trainingDebugLog.length > 0 ? (
-          <Card>
-            {trainingDebugLog.map((line) => (
-              <Text
-                selectable
-                key={line}
-                style={{
-                  color: colors.textMuted,
-                  fontSize: typography.label.fontSize,
-                  lineHeight: typography.label.lineHeight,
-                }}
-              >
-                {line}
-              </Text>
-            ))}
-          </Card>
-        ) : null}
+          <RunningSessionClock
+            startedAt={session.trainingStartedAt ?? session.startedAt}
+          />
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              justifyContent: "center",
+              gap: 10,
+            }}
+          >
+            <TrainingControlButton
+              icon={isTrainingPaused ? Play : Pause}
+              label={isTrainingPaused ? "Resume" : "Pause"}
+              onPress={() => {
+                void toggleTrainingPause();
+              }}
+            />
+            <TrainingControlButton
+              icon={FastForward}
+              label="Skip"
+              onPress={() => {
+                void skipTraining();
+              }}
+            />
+          </View>
+        </View>
       </Screen>
     );
   }
@@ -578,23 +633,20 @@ export function PresleepTrainingScreen() {
               lineHeight: typography.body.lineHeight,
             }}
           >
-            Cue/training player placeholder
+            Cue/training player
           </Text>
         </View>
         <InfoRow label="training audio" value="FINAL Lucid Training.mp3" />
         <InfoRow label="cue sound" value={sessionCue.label} />
         <InfoRow
-          label="cue markers"
-          value={`${trainingCueSchedule.length} midpoint overlays`}
+          label="number of training cues"
+          value={String(trainingCueSchedule.length)}
         />
         <InfoRow
           label="runtime"
-          value={
-            session?.mode === "watch"
-              ? "native iPhone Watch Mode after training"
-              : "native iPhone Phone Mode after training"
-          }
+          value={formatPlaybackTime(FINAL_LUCID_TRAINING_DURATION_SECONDS)}
         />
+        <InfoRow label="mode" value={session?.mode ?? "none"} />
       </Card>
 
       {canSkipGuidedTraining ? (
@@ -605,34 +657,8 @@ export function PresleepTrainingScreen() {
         </Card>
       ) : null}
 
-      {!tlrOptions.skipGuidedTraining ? (
-        <Card>
-          <Text
-            selectable
-            style={{
-              color: colors.textMuted,
-              fontSize: typography.label.fontSize,
-              lineHeight: typography.label.lineHeight,
-            }}
-          >
-            {PRESLEEP_SCRIPT_NOTICE}
-          </Text>
-          <Text
-            selectable
-            style={{
-              color: colors.textSecondary,
-              fontSize: typography.body.fontSize,
-              lineHeight: typography.body.lineHeight,
-            }}
-          >
-            {PRESLEEP_SCRIPT_PLACEHOLDER.trim()}
-          </Text>
-        </Card>
-      ) : null}
-
       <Card compact>
         <InfoRow label="session status" value={session?.status ?? "none"} />
-        <InfoRow label="mode" value={session?.mode ?? "none"} />
       </Card>
 
       {!session ? (

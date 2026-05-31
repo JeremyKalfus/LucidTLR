@@ -77,4 +77,74 @@ describe("WatchCuePolicy", () => {
     expect(decision.reason).toBe("classifier_unavailable");
     expect(decision.shouldPlayCue).toBe(false);
   });
+
+  it("pauses when stable low movement has not accumulated", () => {
+    const decision = evaluateWatchCuePolicy(
+      baseInput({ stableLowMovementSeconds: 30 }),
+    );
+
+    expect(decision.action).toBe("pause");
+    expect(decision.reason).toBe("movement");
+    expect(decision.shouldPlayCue).toBe(false);
+  });
+
+  it("suppresses when sensor quality is bad", () => {
+    const decision = evaluateWatchCuePolicy(
+      baseInput({ sensorQuality: "bad" }),
+    );
+
+    expect(decision.reason).toBe("sensor_quality_bad");
+    expect(decision.shouldPlayCue).toBe(false);
+  });
+
+  it("suppresses when iPhone audio is unavailable", () => {
+    const decision = evaluateWatchCuePolicy(
+      baseInput({ audioRuntimeActive: false }),
+    );
+
+    expect(decision.reason).toBe("audio_runtime_unavailable");
+    expect(decision.shouldPlayCue).toBe(false);
+  });
+
+  it("suppresses during recent-cue and cue-associated movement pauses", () => {
+    const recentCue = evaluateWatchCuePolicy(
+      baseInput({
+        now: "2026-01-01T05:00:10.000Z",
+        cueHistory: {
+          cueCountTonight: 1,
+          lastCueAt: "2026-01-01T05:00:00.000Z",
+        },
+      }),
+    );
+    const cueAssociatedMovement = evaluateWatchCuePolicy(
+      baseInput({
+        cueHistory: {
+          cueCountTonight: 1,
+          cueAssociatedMovementPauseUntil: "2026-01-01T05:02:00.000Z",
+        },
+      }),
+    );
+
+    expect(recentCue.reason).toBe("recent_cue");
+    expect(cueAssociatedMovement.reason).toBe("cue_associated_movement");
+  });
+
+  it("suppresses when cue budget or sleep probability gates fail", () => {
+    const budget = evaluateWatchCuePolicy(
+      baseInput({
+        cueHistory: { cueCountTonight: 60 },
+      }),
+    );
+    const sleepProbability = evaluateWatchCuePolicy(
+      baseInput({
+        prediction: {
+          ...baseInput().prediction,
+          sleepProbability: 0.6,
+        },
+      }),
+    );
+
+    expect(budget.reason).toBe("cue_budget_exhausted");
+    expect(sleepProbability.reason).toBe("outside_sleep_opportunity");
+  });
 });

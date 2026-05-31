@@ -5,6 +5,7 @@ import {
   buildSleepTimingPrior,
   createDefaultEngineSettings,
 } from "@/src/engine";
+import { LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION } from "@/src/engine/watchRem";
 import { buildNativeWatchSessionPlan } from "@/src/native/watch/buildWatchSessionPlan";
 
 function watchSession(): NightSession {
@@ -33,7 +34,6 @@ describe("buildNativeWatchSessionPlan", () => {
       session: watchSession(),
       settings,
       sleepTiming,
-      classifierModelAvailable: false,
     });
 
     expect(plan.mode).toBe("watch");
@@ -50,7 +50,8 @@ describe("buildNativeWatchSessionPlan", () => {
       enableWaterLock: true,
     });
     expect(plan.classifier).toMatchObject({
-      modelAvailable: false,
+      classifierVersion: LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
+      modelAvailable: true,
       remThreshold: 0.24,
       suppressAfterConsecutiveLikelyRemEpochs: 5,
     });

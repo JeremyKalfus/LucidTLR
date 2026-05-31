@@ -26,6 +26,15 @@ class AppDelegate: ExpoAppDelegate {
       withModuleName: "main",
       in: window,
       launchOptions: launchOptions)
+
+#if DEBUG
+    if ProcessInfo.processInfo.arguments.contains("--lucidcue-watch-runtime-self-test") {
+      NSLog("LucidCue Watch runtime self-test launch argument detected.")
+      DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        LucidCueWatchRuntime.runDebugSelfTest()
+      }
+    }
+#endif
 #endif
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

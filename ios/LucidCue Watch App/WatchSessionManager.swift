@@ -28,6 +28,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
   private var motionSamples: [(t: Double, x: Double, y: Double, z: Double)] = []
   private var hrEma: Double?
   private var motionEma: Double?
+  private var stableLowMovementSeconds = 0.0
   private let hrAlpha = 0.95
   private let motionAlpha = 0.90
 
@@ -51,6 +52,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
     motionSamples = []
     hrEma = nil
     motionEma = nil
+    stableLowMovementSeconds = 0
     isRunning = true
     statusText = "session running"
     requestHealthAuthorization()
@@ -183,9 +185,16 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
 
     let elapsed = now.timeIntervalSince(sessionStartedAt)
+    let epochDurationSeconds = max(0, now.timeIntervalSince(epochStart))
     let hrFeature = hrEma.map { pow($0, 3) / 1000 }
     let motionFeature = motionEma.map { $0 / 1e9 }
     let quality = sensorQualityFor(hrCount: hrSamples.count, motionCount: motion.count)
+    let roughIntensity = roughMovementIntensity(magnitudes: magnitudes)
+    if (roughIntensity == "still" || roughIntensity == "light") && quality != "missing" {
+      stableLowMovementSeconds += epochDurationSeconds
+    } else {
+      stableLowMovementSeconds = 0
+    }
     sensorQuality = quality
     batteryText = formatBattery()
 
@@ -214,8 +223,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
     var motionPayload: [String: Any] = [
       "sampleCount": motion.count,
       "activityCountMagnitudeSum": motionSum,
-      "stableLowMovementSeconds": 0,
-      "roughMovementIntensity": roughMovementIntensity(magnitudes: magnitudes),
+      "stableLowMovementSeconds": stableLowMovementSeconds,
+      "roughMovementIntensity": roughIntensity,
     ]
     if !magnitudes.isEmpty {
       motionPayload["meanMagnitude"] = motionSum / Double(magnitudes.count)

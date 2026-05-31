@@ -300,4 +300,17 @@ create index if not exists idx_watch_runtime_events_session_timestamp
 on watch_runtime_events(session_id, timestamp);
 `,
   },
+  {
+    id: "007_watch_mode_runtime_completion",
+    sql: `
+alter table watch_epochs
+add column stable_low_movement_seconds real;
+
+alter table watch_epochs
+add column rough_movement_intensity text;
+
+alter table watch_epochs
+add column cue_decision_reason text;
+`,
+  },
 ] as const;

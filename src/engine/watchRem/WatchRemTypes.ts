@@ -4,6 +4,7 @@ export const MALLELA_REM_THRESHOLD = 0.24;
 export const MALLELA_MOTION_EMA_ALPHA = 0.9;
 export const MALLELA_HR_EMA_ALPHA = 0.95;
 export const MALLELA_RF_CLASSIFIER_VERSION = "mallela-rf-v1";
+export const LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION = "lucidcue-watch-rem-v1";
 export const MALLELA_NO_MODEL_CLASSIFIER_VERSION =
   "mallela-feature-pipeline-no-model";
 export const MALLELA_APPROX_FEATURE_VERSION = "mallela-approx-feature-dev";

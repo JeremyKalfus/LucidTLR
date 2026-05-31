@@ -237,6 +237,9 @@ export interface WatchEpoch {
   motionEma?: number;
   timeFeature?: number;
   rawEpochAvailable?: boolean;
+  stableLowMovementSeconds?: number;
+  roughMovementIntensity?: "still" | "light" | "moderate" | "large";
+  cueDecisionReason?: string;
 }
 
 export interface MorningReport {

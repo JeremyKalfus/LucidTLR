@@ -3,7 +3,7 @@ import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-au
 import type { LucideIcon } from "lucide-react-native";
 import { AlarmClock, Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
 
 import {
   Card,
@@ -26,6 +26,7 @@ import {
   type NativePhoneRuntimeEvent,
 } from "@/src/native/phoneRuntime";
 import {
+  watchTlrStartBlockReason,
   watchRuntime,
   type WatchRuntimeStatus,
 } from "@/src/native/watch";
@@ -169,6 +170,29 @@ export function HomeScreen() {
   >([]);
   const [watchRuntimeStatus, setWatchRuntimeStatus] =
     React.useState<WatchRuntimeStatus | null>(null);
+  const handleBeginTlr = React.useCallback(async () => {
+    if (selectedMode === "watch") {
+      let status = watchRuntimeStatus;
+
+      try {
+        status = await watchRuntime.getWatchRuntimeStatus();
+        setWatchRuntimeStatus(status);
+      } catch {
+        status = null;
+        setWatchRuntimeStatus(null);
+      }
+
+      const blockReason = watchTlrStartBlockReason(status);
+
+      if (blockReason) {
+        Alert.alert("Watch not connected", blockReason);
+        return;
+      }
+    }
+
+    startSession("tlr");
+    router.push("/presleep-training");
+  }, [selectedMode, startSession, watchRuntimeStatus]);
   const handleTlrOptionsChange = React.useCallback(
     (patch: TlrOptionsPatch) => {
       void updateTlrOptions(patch);
@@ -388,8 +412,7 @@ export function HomeScreen() {
           label="Begin TLR"
           primary
           onPress={() => {
-            startSession("tlr");
-            router.push("/presleep-training");
+            void handleBeginTlr();
           }}
         />
         <View style={{ flexDirection: "row", gap: actionRowGap }}>

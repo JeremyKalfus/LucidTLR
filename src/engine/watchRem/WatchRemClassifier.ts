@@ -1,4 +1,5 @@
 import {
+  LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
   MALLELA_NO_MODEL_CLASSIFIER_VERSION,
   MALLELA_REM_THRESHOLD,
   type WatchRemFeatureVector,
@@ -10,6 +11,7 @@ import { RandomForestJsonModel } from "./RandomForestJsonModel";
 export type WatchRemClassifierOptions = {
   model?: RandomForestJsonModel;
   remThreshold?: number;
+  classifierVersion?: string;
 };
 
 function stageProbabilitiesFromModel(
@@ -49,9 +51,12 @@ function stageProbabilitiesFromModel(
 
 export class WatchRemClassifier {
   private readonly remThreshold: number;
+  private readonly classifierVersion: string;
 
   constructor(private readonly options: WatchRemClassifierOptions = {}) {
     this.remThreshold = options.remThreshold ?? MALLELA_REM_THRESHOLD;
+    this.classifierVersion =
+      options.classifierVersion ?? LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION;
   }
 
   predict(input: {
@@ -70,7 +75,7 @@ export class WatchRemClassifier {
         features: input.features,
         remLabel: "unknown",
         threshold: this.remThreshold,
-        reason: "Mallela classifier artifact missing; REM cueing disabled.",
+        reason: "Watch REM classifier artifact missing; REM cueing disabled.",
       };
     }
 
@@ -79,7 +84,7 @@ export class WatchRemClassifier {
       input.features.motionFeature === undefined
     ) {
       return {
-        classifierVersion: model.version,
+        classifierVersion: this.classifierVersion,
         modelAvailable: true,
         epochStart: input.epochStart,
         epochEnd: input.epochEnd,
@@ -103,7 +108,7 @@ export class WatchRemClassifier {
           : "not_likely_rem";
 
     return {
-      classifierVersion: model.version,
+      classifierVersion: this.classifierVersion,
       modelAvailable: true,
       epochStart: input.epochStart,
       epochEnd: input.epochEnd,

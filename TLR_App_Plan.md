@@ -166,7 +166,9 @@ Relevant implementation points:
   - triaxial motion,
   - elapsed time.
 - Data is processed in **30-second epochs**.
-- REM classifier is **to be decided**.
+- REM cueing uses `lucidcue-watch-rem-v1`: a bundled random-forest REM
+  probability signal plus LucidCue safety gates. Do not claim exact Mallela
+  feature parity or scientific validation from this implementation alone.
 - iPhone plays cues during likely REM.
 - If likely REM persists for five consecutive epochs, suppress additional cues until the REM period ends.
 - Watch motion should also gate cueing:
@@ -247,14 +249,16 @@ Faithful to Konkoly et al. 2024:
 
 ## Watch Mode Cueing
 
-Faithful to Mallela/Mallett 2024:
+Aligned with Mallela/Mallett 2024, with LucidCue product safety gates:
 
 - Apple Watch collects:
   - heart rate,
   - triaxial motion,
   - elapsed session time.
 - Processing occurs in **30-second epochs**.
-- REM classifier: **to be decided**.
+- REM cueing uses `lucidcue-watch-rem-v1`: a bundled random-forest REM
+  probability signal plus LucidCue safety gates. This is not a claim of exact
+  Mallela feature parity.
 - If likely REM is detected, iPhone plays cue.
 - If likely REM persists for five consecutive epochs, suppress additional cues until the REM period ends to reduce awakenings.
 - Watch movement data is also used for arousal gating:
@@ -597,7 +601,8 @@ Use the Karpathy-style `AGENTS.md` ruleset from `multica-ai/andrej-karpathy-skil
 - Do not add no-cue nights.
 - Do not add untrained-cue nights.
 - Do not add backend/auth unless explicitly requested.
-- Do not implement a REM classifier yet.
+- Do not replace or overclaim the Watch REM classifier without explicit Jeremy
+  approval.
 - Do not make therapeutic claims.
 - Do not add Android watch support.
 - Do not make Apple Watch speaker cueing a core path.
@@ -615,7 +620,7 @@ Do not:
 
 - change cue timing,
 - change movement-pause logic,
-- invent a REM classifier,
+- overclaim the Watch REM classifier as scientifically validated,
 - add placebo/no-cue/untrained-cue nights,
 - add therapeutic claims,
 - upload dream journal text by default,

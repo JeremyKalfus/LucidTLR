@@ -28,6 +28,7 @@
 		4AFEB0048B754B4A9CF00001 /* LucidCuePhoneRuntimeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEB0028B754B4A9CF00001 /* LucidCuePhoneRuntimeBridge.m */; };
 		4AFEB0058B754B4A9CF00001 /* LucidCueWatchRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEB0068B754B4A9CF00001 /* LucidCueWatchRuntime.swift */; };
 		4AFEB0078B754B4A9CF00001 /* LucidCueWatchRuntimeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEB0088B754B4A9CF00001 /* LucidCueWatchRuntimeBridge.m */; };
+		4AFEB0098B754B4A9CF00001 /* mallela_rf_v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEB00A8B754B4A9CF00001 /* mallela_rf_v1.json */; };
 		4AFEF0028B754B4A9CF00001 /* LucidCueWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0018B754B4A9CF00001 /* LucidCueWatchApp.swift */; };
 		4AFEF0048B754B4A9CF00001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0038B754B4A9CF00001 /* ContentView.swift */; };
 		4AFEF0068B754B4A9CF00001 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0058B754B4A9CF00001 /* WatchSessionManager.swift */; };
@@ -59,6 +60,7 @@
 		4AFEB0028B754B4A9CF00001 /* LucidCuePhoneRuntimeBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LucidCuePhoneRuntimeBridge.m; path = LucidCue/LucidCuePhoneRuntimeBridge.m; sourceTree = "<group>"; };
 		4AFEB0068B754B4A9CF00001 /* LucidCueWatchRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LucidCueWatchRuntime.swift; path = LucidCue/LucidCueWatchRuntime.swift; sourceTree = "<group>"; };
 		4AFEB0088B754B4A9CF00001 /* LucidCueWatchRuntimeBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LucidCueWatchRuntimeBridge.m; path = LucidCue/LucidCueWatchRuntimeBridge.m; sourceTree = "<group>"; };
+		4AFEB00A8B754B4A9CF00001 /* mallela_rf_v1.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; name = mallela_rf_v1.json; path = ../assets/models/mallela_rf_v1.json; sourceTree = "<group>"; };
 		4AFEF0018B754B4A9CF00001 /* LucidCueWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LucidCueWatchApp.swift; sourceTree = "<group>"; };
 		4AFEF0038B754B4A9CF00001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4AFEF0058B754B4A9CF00001 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
@@ -126,6 +128,7 @@
 				4AFEB0028B754B4A9CF00001 /* LucidCuePhoneRuntimeBridge.m */,
 				4AFEB0068B754B4A9CF00001 /* LucidCueWatchRuntime.swift */,
 				4AFEB0088B754B4A9CF00001 /* LucidCueWatchRuntimeBridge.m */,
+				4AFEB00A8B754B4A9CF00001 /* mallela_rf_v1.json */,
 				4AFEA00B8B754B4A9CF00001 /* FeasibilityAudioSegments */,
 				4AFEC00B8B754B4A9CF00001 /* CueAudio */,
 				4AFED0038B754B4A9CF00001 /* TrainingAudio */,
@@ -355,6 +358,7 @@
 				4AFEC0098B754B4A9CF00001 /* harp_flourish.mp3 in Resources */,
 				4AFEC00A8B754B4A9CF00001 /* dx_harp_c5.mp3 in Resources */,
 				4AFED0018B754B4A9CF00001 /* final_lucid_training.mp3 in Resources */,
+				4AFEB0098B754B4A9CF00001 /* mallela_rf_v1.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

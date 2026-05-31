@@ -144,6 +144,7 @@ private struct RuntimeSnapshot: Codable {
 @objc(LucidCuePhoneRuntime)
 class LucidCuePhoneRuntime: NSObject {
   private let queue = DispatchQueue(label: "com.lucidcue.phone-runtime")
+  private let queueKey = DispatchSpecificKey<String>()
   private let isoFormatter = ISO8601DateFormatter()
   private let motionManager = CMMotionManager()
   private let motionQueue = OperationQueue()
@@ -180,6 +181,7 @@ class LucidCuePhoneRuntime: NSObject {
   override init() {
     isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     super.init()
+    queue.setSpecific(key: queueKey, value: "phone-runtime")
     UIDevice.current.isBatteryMonitoringEnabled = true
     observeSystemEvents()
     restoreRuntimeIfNeeded()
@@ -188,6 +190,20 @@ class LucidCuePhoneRuntime: NSObject {
   @objc
   static func requiresMainQueueSetup() -> Bool {
     false
+  }
+
+  @objc
+  func invalidate() {
+    stopRuntimeForBridgeTeardown()
+  }
+
+  private func stopRuntimeForBridgeTeardown() {
+    stopRuntimeSynchronously(
+      reason: "bridge_invalidated",
+      errorMessage: nil,
+      logEvent: true
+    )
+    NotificationCenter.default.removeObserver(self)
   }
 
   @objc(startPhoneTlrSession:resolver:rejecter:)
@@ -317,6 +333,80 @@ class LucidCuePhoneRuntime: NSObject {
     queue.async {
       self.stopRuntime(reason: reason, errorMessage: nil, logEvent: true)
       resolve(nil)
+    }
+  }
+
+  @objc(pausePhonePresleepTraining:rejecter:)
+  func pausePhonePresleepTraining(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      guard self.state?.phase == "training", let player = self.trainingAudioPlayer else {
+        reject(
+          "phone_training_pause_failed",
+          "No active presleep training audio to pause.",
+          self.runtimeError("No active presleep training audio to pause.")
+        )
+        return
+      }
+
+      player.pause()
+      self.trainingCueAudioPlayer?.stop()
+      self.cancelPresleepTrainingTimers()
+      self.state?.latestDecisionReason = "training_paused"
+      self.appendEvent("decision_tick", payload: [
+        "reason": "training_paused",
+        "trainingCurrentTime": player.currentTime
+      ])
+      self.persistRuntimeSnapshot()
+      resolve(nil)
+    }
+  }
+
+  @objc(resumePhonePresleepTraining:rejecter:)
+  func resumePhonePresleepTraining(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      guard let plan = self.activePlan, self.state?.phase == "training" else {
+        reject(
+          "phone_training_resume_failed",
+          "No paused presleep training audio to resume.",
+          self.runtimeError("No paused presleep training audio to resume.")
+        )
+        return
+      }
+
+      do {
+        try self.configureAudioSession()
+
+        guard let player = self.trainingAudioPlayer else {
+          throw self.runtimeError("No paused presleep training audio to resume.")
+        }
+
+        if !player.isPlaying {
+          guard player.play() else {
+            throw self.runtimeError("Could not resume presleep training audio.")
+          }
+        }
+
+        self.schedulePresleepTrainingTimers(plan: plan)
+        self.state?.latestDecisionReason = "training_resumed"
+        self.appendEvent("decision_tick", payload: [
+          "reason": "training_resumed",
+          "trainingCurrentTime": player.currentTime
+        ])
+        self.persistRuntimeSnapshot()
+        resolve(nil)
+      } catch {
+        self.appendEvent("training_failed", payload: [
+          "reason": "training_resume_failed",
+          "error": error.localizedDescription
+        ])
+        reject("phone_training_resume_failed", error.localizedDescription, error)
+      }
     }
   }
 
@@ -1813,6 +1903,21 @@ class LucidCuePhoneRuntime: NSObject {
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 
+  private func stopRuntimeSynchronously(
+    reason: String,
+    errorMessage: String?,
+    logEvent: Bool
+  ) {
+    if DispatchQueue.getSpecific(key: queueKey) != nil {
+      stopRuntime(reason: reason, errorMessage: errorMessage, logEvent: logEvent)
+      return
+    }
+
+    queue.sync {
+      self.stopRuntime(reason: reason, errorMessage: errorMessage, logEvent: logEvent)
+    }
+  }
+
   private func ensureAudioEngine() -> AVAudioEngine {
     if let audioEngine {
       return audioEngine
@@ -2023,6 +2128,36 @@ class LucidCuePhoneRuntime: NSObject {
       selector: #selector(handleThermalStateChange),
       name: ProcessInfo.thermalStateDidChangeNotification,
       object: nil
+    )
+    center.addObserver(
+      self,
+      selector: #selector(handleAppWillTerminate),
+      name: UIApplication.willTerminateNotification,
+      object: nil
+    )
+    center.addObserver(
+      self,
+      selector: #selector(handleBridgeWillInvalidate),
+      name: Notification.Name("RCTBridgeWillReloadNotification"),
+      object: nil
+    )
+    center.addObserver(
+      self,
+      selector: #selector(handleBridgeWillInvalidate),
+      name: Notification.Name("RCTBridgeWillInvalidateModulesNotification"),
+      object: nil
+    )
+  }
+
+  @objc private func handleBridgeWillInvalidate() {
+    stopRuntimeForBridgeTeardown()
+  }
+
+  @objc private func handleAppWillTerminate() {
+    stopRuntimeSynchronously(
+      reason: "app_terminated",
+      errorMessage: nil,
+      logEvent: true
     )
   }
 

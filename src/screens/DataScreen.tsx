@@ -7,6 +7,7 @@ import {
   History,
   Moon,
   Smartphone,
+  Trash2,
   Watch,
 } from "lucide-react-native";
 import React from "react";
@@ -36,7 +37,10 @@ import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import {
   loadMorningReportForSession,
   loadWatchEpochsForSession,
+  loadWatchRuntimeEventsForSession,
   summarizeWatchSession,
+  saveWatchEpochs,
+  saveWatchRuntimeEvents,
 } from "@/src/data/local/repositories";
 import type {
   ExternalSleepSource,
@@ -48,6 +52,12 @@ import type {
 } from "@/src/domain/types";
 import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
+import {
+  summarizeWatchRuntime,
+  watchRuntime,
+  type WatchRuntimeEvent,
+  type WatchRuntimeLogSummary,
+} from "@/src/native/watch";
 import {
   phoneRuntime,
   summarizePhoneRuntimeEvents,
@@ -131,6 +141,15 @@ function runtimeEventLabel(event: NativePhoneRuntimeEvent): string {
       : "";
 
   return `${new Date(event.timestamp).toLocaleTimeString()} / ${event.eventType}${reason}${cueAsset}${movement}`;
+}
+
+function watchRuntimeEventLabel(event: WatchRuntimeEvent): string {
+  const reason =
+    typeof event.payload.reason === "string" ? ` / ${event.payload.reason}` : "";
+  const epochId =
+    typeof event.payload.epochId === "string" ? ` / ${event.payload.epochId}` : "";
+
+  return `${new Date(event.timestamp).toLocaleTimeString()} / ${event.eventType}${reason}${epochId}`;
 }
 
 function localSessionRecords(
@@ -617,6 +636,7 @@ function useSleepNightRecords() {
   );
   const [records, setRecords] = React.useState<SleepNightRecord[]>([]);
   const [error, setError] = React.useState<string | null>(null);
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -716,9 +736,13 @@ function useSleepNightRecords() {
     return () => {
       cancelled = true;
     };
-  }, [localSessions]);
+  }, [localSessions, reloadKey]);
 
-  return { error, records };
+  return {
+    error,
+    records,
+    reloadRecords: () => setReloadKey((key) => key + 1),
+  };
 }
 
 async function collectPhoneRuntimeLogsForExport(
@@ -779,6 +803,29 @@ function confirmFullDataImport(): Promise<boolean> {
         },
       ],
     );
+  });
+}
+
+function confirmSleepNightDelete(record: SleepNightRecord): Promise<boolean> {
+  const message = `Delete ${formatNightTitle(record)} and its local sleep data?`;
+
+  if (Platform.OS === "web") {
+    return Promise.resolve(globalThis.confirm(message));
+  }
+
+  return new Promise((resolve) => {
+    Alert.alert("Delete sleep night?", message, [
+      {
+        text: "Cancel",
+        style: "cancel",
+        onPress: () => resolve(false),
+      },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => resolve(true),
+      },
+    ]);
   });
 }
 
@@ -1172,14 +1219,17 @@ export function TlrEngineDataScreen() {
           label="connectivity"
           value={watch?.connectivityState ?? "not available yet"}
         />
-        <InfoRow label="classifier" value="TBD; no real REM classifier connected" />
+        <InfoRow
+          label="classifier"
+          value={watch ? "lucidcue-watch-rem-v1" : "see Watch mode timeline"}
+        />
       </Card>
 
       <SectionTitle>Decision log</SectionTitle>
       <Card>
         <InfoRow label="cue history" value="see iPhone runtime timeline" />
         <InfoRow label="movement events" value="see iPhone runtime timeline" />
-        <InfoRow label="watch epochs" value="no native watch stream connected" />
+        <InfoRow label="watch epochs" value="see Watch mode timeline" />
         {!showDecisionLog ? (
           <InfoRow label="latest entries" value="no active overnight engine log" />
         ) : engineDecisionLog.length === 0 ? (
@@ -1341,8 +1391,9 @@ export function IphoneRuntimeDataScreen() {
 }
 
 export function WatchModeDataScreen() {
-  const { sessionHistory } = useAppState();
+  const { activeSession, sessionHistory } = useAppState();
   const [epochs, setEpochs] = React.useState<WatchEpoch[]>([]);
+  const [runtimeEvents, setRuntimeEvents] = React.useState<WatchRuntimeEvent[]>([]);
   const [summary, setSummary] = React.useState<{
     epochsReceived: number;
     usableEpochs: number;
@@ -1350,10 +1401,21 @@ export function WatchModeDataScreen() {
     connectivityGaps: number;
     classifierVersions: string[];
   } | null>(null);
+  const [runtimeSummary, setRuntimeSummary] =
+    React.useState<WatchRuntimeLogSummary | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const latestWatchSession = sessionHistory.find(
-    (session) => session.mode === "watch",
+  const latestWatchSession = [activeSession, ...sessionHistory].find(
+    (session): session is NightSession => session?.mode === "watch",
   );
+  const latestCueDecision = [...runtimeEvents]
+    .reverse()
+    .find(
+      (event) =>
+        event.eventType === "watch_cue_decision" ||
+        event.eventType === "watch_cue_played" ||
+        event.eventType === "watch_cue_suppressed" ||
+        event.eventType === "watch_cue_failed",
+    );
 
   React.useEffect(() => {
     let mounted = true;
@@ -1361,13 +1423,15 @@ export function WatchModeDataScreen() {
     async function loadWatchTimeline() {
       if (!latestWatchSession) {
         setEpochs([]);
+        setRuntimeEvents([]);
         setSummary(null);
+        setRuntimeSummary(null);
         return;
       }
 
       try {
         const db = await getLocalDb();
-        const [nextEpochs, nextSummary] = await Promise.all([
+        let [nextEpochs, nextSummary, nextEvents] = await Promise.all([
           loadWatchEpochsForSession({
             db,
             sessionId: latestWatchSession.id,
@@ -1376,11 +1440,40 @@ export function WatchModeDataScreen() {
             db,
             sessionId: latestWatchSession.id,
           }),
+          loadWatchRuntimeEventsForSession({
+            db,
+            sessionId: latestWatchSession.id,
+          }),
         ]);
+
+        try {
+          const [nativeEpochs, nativeEvents] = await Promise.all([
+            watchRuntime.getWatchEpochs(latestWatchSession.id),
+            watchRuntime.getWatchRuntimeLogs(latestWatchSession.id),
+          ]);
+
+          if (nativeEpochs.length > 0) {
+            await saveWatchEpochs({ db, records: nativeEpochs });
+            nextEpochs = nativeEpochs;
+            nextSummary = await summarizeWatchSession({
+              db,
+              sessionId: latestWatchSession.id,
+            });
+          }
+
+          if (nativeEvents.length > 0) {
+            await saveWatchRuntimeEvents({ db, events: nativeEvents });
+            nextEvents = nativeEvents;
+          }
+        } catch {
+          // Local SQLite data remains the source of truth when native runtime is unavailable.
+        }
 
         if (mounted) {
           setEpochs(nextEpochs);
+          setRuntimeEvents(nextEvents);
           setSummary(nextSummary);
+          setRuntimeSummary(summarizeWatchRuntime(nextEvents, nextEpochs));
           setError(null);
         }
       } catch (loadError) {
@@ -1427,6 +1520,22 @@ export function WatchModeDataScreen() {
           value={summary ? String(summary.connectivityGaps) : "0"}
         />
         <InfoRow
+          label="cues played"
+          value={runtimeSummary ? String(runtimeSummary.cuesPlayed) : "0"}
+        />
+        <InfoRow
+          label="cue suppressions"
+          value={runtimeSummary ? String(runtimeSummary.cueSuppressions) : "0"}
+        />
+        <InfoRow
+          label="cue failures"
+          value={runtimeSummary ? String(runtimeSummary.cueFailures) : "0"}
+        />
+        <InfoRow
+          label="movement pauses"
+          value={runtimeSummary ? String(runtimeSummary.movementPauses) : "0"}
+        />
+        <InfoRow
           label="classifier"
           value={
             summary && summary.classifierVersions.length > 0
@@ -1434,16 +1543,42 @@ export function WatchModeDataScreen() {
               : "classifier unavailable"
           }
         />
+        <InfoRow
+          label="latest decision"
+          value={
+            latestCueDecision
+              ? stringPayload(latestCueDecision.payload, "reason") ??
+                latestCueDecision.eventType
+              : "none yet"
+          }
+        />
         {error ? <InfoRow label="error" value={error} /> : null}
       </Card>
 
       <Card>
         <DataNote>
-          Watch Mode stores epoch summaries/features locally. REM cueing remains
-          disabled unless the native runtime has a real classifier and exact
-          feature path available.
+          Watch Mode is code-complete for simulator and development-build
+          testing. Physical overnight reliability is still not claimed.
         </DataNote>
       </Card>
+
+      {runtimeEvents.length === 0 ? null : (
+        <Card>
+          {runtimeEvents.slice(-8).map((event) => (
+            <Text
+              selectable
+              key={event.id}
+              style={{
+                color: colors.textSecondary,
+                fontSize: typography.label.fontSize,
+                lineHeight: typography.label.lineHeight,
+              }}
+            >
+              {watchRuntimeEventLabel(event)}
+            </Text>
+          ))}
+        </Card>
+      )}
 
       {epochs.length === 0 ? (
         <Card>
@@ -1489,7 +1624,27 @@ export function WatchModeDataScreen() {
                 label="REM probability"
                 value={formatEnginePercent(epoch.remProbability)}
               />
+              <InfoRow
+                label="sleep probability"
+                value={formatEnginePercent(epoch.sleepProbability)}
+              />
               <InfoRow label="REM label" value={epoch.remLabel ?? "unknown"} />
+              <InfoRow
+                label="movement stability"
+                value={
+                  epoch.stableLowMovementSeconds === undefined
+                    ? "unknown"
+                    : `${Math.round(epoch.stableLowMovementSeconds)}s`
+                }
+              />
+              <InfoRow
+                label="rough movement"
+                value={epoch.roughMovementIntensity ?? "unknown"}
+              />
+              <InfoRow
+                label="cue decision"
+                value={epoch.cueDecisionReason ?? "none yet"}
+              />
               <InfoRow
                 label="sensor quality"
                 value={epoch.sensorQuality ?? "unknown"}
@@ -1506,6 +1661,10 @@ export function WatchModeDataScreen() {
                 label="connectivity"
                 value={epoch.watchConnectivityState ?? "unknown"}
               />
+              <InfoRow
+                label="classifier"
+                value={epoch.classifierVersion ?? "unknown"}
+              />
             </Card>
           ))}
         </View>
@@ -1515,9 +1674,15 @@ export function WatchModeDataScreen() {
 }
 
 export function SleepHistoryDataScreen() {
-  const { latestEngineSnapshot, sleepHistory } = useAppState();
-  const { error, records } = useSleepNightRecords();
+  const {
+    activeSession,
+    deleteSession,
+    latestEngineSnapshot,
+    sleepHistory,
+  } = useAppState();
+  const { error, records, reloadRecords } = useSleepNightRecords();
   const [selectedIndex, setSelectedIndex] = React.useState(0);
+  const [isDeleting, setIsDeleting] = React.useState(false);
   const historicalWindows = latestEngineSnapshot.sleepTiming.predictedRemWindows.filter(
     (window) => window.source === "historical_sleep",
   );
@@ -1538,13 +1703,98 @@ export function SleepHistoryDataScreen() {
   const runtimeErrors = eventTypeCount(logs, "runtime_error");
   const graph = graphPointsForLogs(logs);
 
+  React.useEffect(() => {
+    setSelectedIndex((index) => Math.min(index, Math.max(0, records.length - 1)));
+  }, [records.length]);
+
+  async function deleteSelectedNight() {
+    if (!selectedRecord || isDeleting) {
+      return;
+    }
+
+    const confirmed = await confirmSleepNightDelete(selectedRecord);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeleting(true);
+
+    try {
+      const session = selectedRecord.session;
+
+      if (activeSession?.id === selectedRecord.id) {
+        if (session?.mode === "phone" && phoneRuntime.isAvailable()) {
+          try {
+            await phoneRuntime.stopPhoneTlrSession({ reason: "user_stopped" });
+          } catch {
+            // Local deletion should still work if native runtime cleanup already happened.
+          }
+        }
+
+        if (session?.mode === "watch" && watchRuntime.isAvailable()) {
+          try {
+            await watchRuntime.stopWatchSession({ reason: "user_stopped" });
+          } catch {
+            // Local deletion should still work if native runtime cleanup already happened.
+          }
+        }
+      }
+
+      const db = await getLocalDb();
+      const archivedLogs = await loadArchivedPhoneRuntimeLogs(db);
+
+      if (archivedLogs[selectedRecord.id]) {
+        const nextArchivedLogs = { ...archivedLogs };
+        delete nextArchivedLogs[selectedRecord.id];
+        await saveArchivedPhoneRuntimeLogs({
+          db,
+          logs: nextArchivedLogs,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      if (session) {
+        await deleteSession(session.id);
+      }
+
+      try {
+        await phoneRuntime.clearPhoneRuntimeLogs(selectedRecord.id);
+      } catch {
+        // A non-phone or older native-only record may not have a native log file.
+      }
+
+      try {
+        await watchRuntime.clearWatchRuntimeLogs(selectedRecord.id);
+      } catch {
+        // A non-watch record may not have watch runtime logs.
+      }
+
+      setSelectedIndex((index) => Math.min(index, Math.max(0, records.length - 2)));
+      reloadRecords();
+    } catch (deleteError) {
+      const message =
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Could not delete this sleep night.";
+
+      if (Platform.OS === "web") {
+        globalThis.alert(message);
+      } else {
+        Alert.alert("Delete failed", message);
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   return (
     <Screen>
       <DataPageHeader title="Sleep history" />
 
       {selectedRecord ? (
         <>
-          <Card>
+          <View style={{ gap: 14 }}>
             <View
               style={{
                 flexDirection: "row",
@@ -1642,7 +1892,36 @@ export function SleepHistoryDataScreen() {
               value={selectedRecord.session?.status.replaceAll("_", " ") ?? "native log only"}
             />
             {error ? <InfoRow label="history load" value={error} /> : null}
-          </Card>
+            <Pressable
+              accessibilityLabel="Delete sleep night"
+              accessibilityRole="button"
+              disabled={isDeleting}
+              onPress={() => {
+                void deleteSelectedNight();
+              }}
+              style={({ pressed }) => ({
+                minHeight: 44,
+                alignSelf: "flex-end",
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                opacity: isDeleting ? 0.45 : pressed ? 0.72 : 1,
+              })}
+            >
+              <Trash2 color={colors.textMuted} size={18} strokeWidth={1.8} />
+              <Text
+                selectable
+                style={{
+                  color: colors.textMuted,
+                  fontSize: typography.body.fontSize,
+                  lineHeight: typography.body.lineHeight,
+                }}
+              >
+                {isDeleting ? "Deleting" : "Delete"}
+              </Text>
+            </Pressable>
+          </View>
 
           <SectionTitle>Night graph</SectionTitle>
           <Card>
@@ -1855,8 +2134,8 @@ export function SleepHistoryDataScreen() {
 
       <Card>
         <DataNote>
-          Sleep-history calibration is local-only by default. No cloud sync, REM
-          classifier, or native watch data path is active yet.
+          Sleep-history calibration is local-only by default and only informs
+          local timing and cue scoring.
         </DataNote>
       </Card>
     </Screen>

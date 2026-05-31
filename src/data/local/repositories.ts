@@ -129,6 +129,9 @@ interface WatchEpochRow {
   motion_ema: number | null;
   time_feature: number | null;
   raw_epoch_available: number | null;
+  stable_low_movement_seconds: number | null;
+  rough_movement_intensity: WatchEpoch["roughMovementIntensity"] | null;
+  cue_decision_reason: string | null;
 }
 
 interface WatchRuntimeEventRow {
@@ -355,6 +358,9 @@ function toWatchEpoch(row: WatchEpochRow): WatchEpoch {
     motionEma: row.motion_ema ?? undefined,
     timeFeature: row.time_feature ?? undefined,
     rawEpochAvailable: row.raw_epoch_available === 1,
+    stableLowMovementSeconds: row.stable_low_movement_seconds ?? undefined,
+    roughMovementIntensity: row.rough_movement_intensity ?? undefined,
+    cueDecisionReason: row.cue_decision_reason ?? undefined,
   };
 }
 
@@ -509,6 +515,49 @@ order by started_at desc`,
   return rows.map(toNightSession);
 }
 
+export async function deleteLocalSession(input: {
+  db: LocalDb;
+  sessionId: string;
+  updatedAt: string;
+}): Promise<void> {
+  const sessionScopedTables = [
+    "cue_events",
+    "movement_events",
+    "watch_epochs",
+    "watch_runtime_events",
+    "morning_reports",
+    "dream_journals",
+    "questionnaire_responses",
+  ] as const;
+
+  for (const table of sessionScopedTables) {
+    await input.db.execute(`delete from ${table} where session_id = ?`, [
+      input.sessionId,
+    ]);
+  }
+
+  await input.db.execute("delete from upload_queue where entity_id = ?", [
+    input.sessionId,
+  ]);
+  await input.db.execute("delete from sessions where id = ?", [input.sessionId]);
+
+  const existingCalibrationNights = await loadPhoneNightCalibrationNights(
+    input.db,
+  );
+  const nextCalibrationNights = existingCalibrationNights.filter(
+    (night) => night.sessionId !== input.sessionId,
+  );
+
+  if (nextCalibrationNights.length !== existingCalibrationNights.length) {
+    await setAppSetting(
+      input.db,
+      PHONE_NIGHT_CALIBRATION_NIGHTS_SETTING,
+      nextCalibrationNights,
+      input.updatedAt,
+    );
+  }
+}
+
 export async function savePhoneRuntimeCueRecords(input: {
   db: LocalDb;
   records: PhoneRuntimeCueRecordDraft[];
@@ -639,7 +688,10 @@ const watchEpochSelect = `select id,
   motion_feature,
   motion_ema,
   time_feature,
-  raw_epoch_available
+  raw_epoch_available,
+  stable_low_movement_seconds,
+  rough_movement_intensity,
+  cue_decision_reason
 from watch_epochs`;
 
 export async function saveWatchEpochs(input: {
@@ -676,8 +728,11 @@ export async function saveWatchEpochs(input: {
   motion_ema,
   time_feature,
   raw_epoch_available,
+  stable_low_movement_seconds,
+  rough_movement_intensity,
+  cue_decision_reason,
   upload_status
-) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local_only')
+) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local_only')
 on conflict(id) do update set
   heart_rate_summary = excluded.heart_rate_summary,
   motion_summary = excluded.motion_summary,
@@ -700,7 +755,10 @@ on conflict(id) do update set
   motion_feature = excluded.motion_feature,
   motion_ema = excluded.motion_ema,
   time_feature = excluded.time_feature,
-  raw_epoch_available = excluded.raw_epoch_available`,
+  raw_epoch_available = excluded.raw_epoch_available,
+  stable_low_movement_seconds = excluded.stable_low_movement_seconds,
+  rough_movement_intensity = excluded.rough_movement_intensity,
+  cue_decision_reason = excluded.cue_decision_reason`,
       [
         record.id,
         record.sessionId,
@@ -729,6 +787,9 @@ on conflict(id) do update set
         record.motionEma ?? null,
         record.timeFeature ?? null,
         record.rawEpochAvailable ? 1 : 0,
+        record.stableLowMovementSeconds ?? null,
+        record.roughMovementIntensity ?? null,
+        record.cueDecisionReason ?? null,
       ],
     );
   }

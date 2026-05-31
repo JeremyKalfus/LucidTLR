@@ -143,10 +143,16 @@ export type WatchRuntimeEvent = {
     | "watch_epoch_received"
     | "watch_epoch_delayed"
     | "watch_epoch_duplicate"
+    | "watch_epoch_ignored"
     | "watch_epoch_processed"
     | "watch_cue_decision"
     | "watch_cue_played"
+    | "watch_cue_failed"
     | "watch_cue_suppressed"
+    | "watch_audio_bed_started"
+    | "watch_audio_bed_failed"
+    | "watch_audio_bed_stopped"
+    | "watch_movement_pause_started"
     | "watch_runtime_error";
   payload: Record<string, unknown>;
 };
@@ -167,6 +173,9 @@ export type WatchEpochRecordDraft = WatchEpoch & {
   motionEma?: number;
   timeFeature?: number;
   rawEpochAvailable?: boolean;
+  stableLowMovementSeconds?: number;
+  roughMovementIntensity?: WatchMovementIntensity;
+  cueDecisionReason?: string;
 };
 
 export type WatchCueRecordDraft = {

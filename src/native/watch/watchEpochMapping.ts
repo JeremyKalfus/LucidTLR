@@ -142,5 +142,7 @@ export function mapWatchEpochMessageToRecord(
     motionEma: message.motion.motionEma,
     timeFeature: message.modelFeatures.timeFeatureHours,
     rawEpochAvailable: false,
+    stableLowMovementSeconds: message.motion.stableLowMovementSeconds,
+    roughMovementIntensity: message.motion.roughMovementIntensity,
   };
 }

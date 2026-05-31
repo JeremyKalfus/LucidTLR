@@ -13,6 +13,8 @@ import {
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import {
   saveMorningReport,
+  saveWatchEpochs,
+  saveWatchRuntimeEvents,
   updatePhoneNightCalibrationFeedback,
 } from "@/src/data/local/repositories";
 import type { MorningReport } from "@/src/domain/types";
@@ -30,6 +32,12 @@ import {
   summarizePhoneRuntimeEvents,
   type PhoneRuntimeLogSummary,
 } from "@/src/native/phoneRuntime";
+import {
+  latestWatchRuntimeStopTimestamp,
+  summarizeWatchRuntime,
+  watchRuntime,
+  type WatchRuntimeLogSummary,
+} from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
@@ -157,8 +165,15 @@ export function MorningReviewScreen() {
   const [runtimeSummaryError, setRuntimeSummaryError] = useState<string | null>(
     null,
   );
+  const [watchRuntimeSummary, setWatchRuntimeSummary] =
+    useState<WatchRuntimeLogSummary | null>(null);
+  const [watchRuntimeSummaryError, setWatchRuntimeSummaryError] = useState<
+    string | null
+  >(null);
   const usesPhoneRuntime =
     activeSession?.sessionType === "tlr" && activeSession.mode === "phone";
+  const usesWatchRuntime =
+    activeSession?.sessionType === "tlr" && activeSession.mode === "watch";
 
   React.useEffect(() => {
     let cancelled = false;
@@ -216,6 +231,61 @@ export function MorningReviewScreen() {
     usesPhoneRuntime,
   ]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadWatchRuntimeSummary() {
+      if (!activeSession || !usesWatchRuntime) {
+        return;
+      }
+
+      try {
+        const [epochs, logs] = await Promise.all([
+          watchRuntime.getWatchEpochs(activeSession.id),
+          watchRuntime.getWatchRuntimeLogs(activeSession.id),
+        ]);
+        const summary = summarizeWatchRuntime(logs, epochs);
+        const db = await getLocalDb();
+
+        await saveWatchEpochs({ db, records: epochs });
+        await saveWatchRuntimeEvents({ db, events: logs });
+
+        if (
+          (summary.stopped || summary.completed || summary.errored) &&
+          canTransitionSession(
+            activeSession.sessionType,
+            activeSession.status,
+            "end_session",
+          )
+        ) {
+          sendSessionEvent(
+            "end_session",
+            latestWatchRuntimeStopTimestamp(logs) ?? new Date().toISOString(),
+          );
+        }
+
+        if (!cancelled) {
+          setWatchRuntimeSummary(summary);
+          setWatchRuntimeSummaryError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setWatchRuntimeSummaryError(
+            error instanceof Error
+              ? error.message
+              : "Could not load native watch runtime logs.",
+          );
+        }
+      }
+    }
+
+    void loadWatchRuntimeSummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSession, sendSessionEvent, usesWatchRuntime]);
+
   return (
     <Screen>
       <SectionTitle>Morning review</SectionTitle>
@@ -270,6 +340,85 @@ export function MorningReviewScreen() {
               }}
             >
               {runtimeSummaryError}
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {usesWatchRuntime ? (
+        <Card>
+          <InfoRow
+            label="watch epochs"
+            value={
+              watchRuntimeSummary
+                ? String(watchRuntimeSummary.epochsReceived)
+                : "loading"
+            }
+          />
+          <InfoRow
+            label="likely rem epochs"
+            value={
+              watchRuntimeSummary
+                ? String(watchRuntimeSummary.likelyRemEpochs)
+                : "loading"
+            }
+          />
+          <InfoRow
+            label="cues played"
+            value={
+              watchRuntimeSummary
+                ? String(watchRuntimeSummary.cuesPlayed)
+                : "loading"
+            }
+          />
+          <InfoRow
+            label="cue suppressions"
+            value={
+              watchRuntimeSummary
+                ? String(watchRuntimeSummary.cueSuppressions)
+                : "loading"
+            }
+          />
+          <InfoRow
+            label="movement pauses"
+            value={
+              watchRuntimeSummary
+                ? String(watchRuntimeSummary.movementPauses)
+                : "loading"
+            }
+          />
+          <InfoRow
+            label="classifier"
+            value={
+              watchRuntimeSummary
+                ? watchRuntimeSummary.classifierVersions.join(", ") || "unknown"
+                : "loading"
+            }
+          />
+          <InfoRow
+            label="runtime status"
+            value={
+              watchRuntimeSummary
+                ? watchRuntimeSummary.errored
+                  ? "error"
+                  : watchRuntimeSummary.completed
+                    ? "completed"
+                    : watchRuntimeSummary.stopped
+                      ? "stopped"
+                      : "not stopped"
+                : "loading"
+            }
+          />
+          {watchRuntimeSummaryError ? (
+            <Text
+              selectable
+              style={{
+                color: colors.textSecondary,
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+              }}
+            >
+              {watchRuntimeSummaryError}
             </Text>
           ) : null}
         </Card>
