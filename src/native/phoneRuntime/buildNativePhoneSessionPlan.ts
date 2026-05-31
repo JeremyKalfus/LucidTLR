@@ -144,6 +144,7 @@ export function buildNativePhoneSessionPlan(
     },
     movement: {
       enabled: true,
+      requireAccelerometer: tlrOptions.requireAccelerometer,
       summaryIntervalSeconds: phoneCueing.motionSummaryIntervalSeconds,
       stableLowMovementRequiredSeconds:
         settings.stableLowMovementRequiredSeconds,

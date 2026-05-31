@@ -72,7 +72,9 @@ export function ActiveNightSessionScreen() {
     activeSession?.sessionType === "tlr" && activeSession.mode === "phone";
   const usesWatchRuntime =
     activeSession?.sessionType === "tlr" && activeSession.mode === "watch";
-  const canControlTlrRuntime = usesPhoneRuntime || usesWatchRuntime;
+  const canControlTlrRuntime =
+    (usesPhoneRuntime && runtimeStatus?.available === true) ||
+    (usesWatchRuntime && watchRuntimeStatus?.available === true);
   const tlrPaused =
     (usesPhoneRuntime && runtimeStatus?.tlrPaused === true) ||
     (usesWatchRuntime && watchRuntimeStatus?.tlrPaused === true);

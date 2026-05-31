@@ -77,6 +77,7 @@ export function createDefaultTlrOptions(
     selectedCueId: DEFAULT_CUE_ID,
     backgroundNoise: "none",
     skipGuidedTraining: false,
+    requireAccelerometer: true,
     alarm: {
       enabled: false,
       time: normalizeAlarmTime(typicalWakeTime),
@@ -104,6 +105,7 @@ export function normalizeTlrOptions(
       ? value.backgroundNoise
       : defaults.backgroundNoise,
     skipGuidedTraining: value?.skipGuidedTraining === true,
+    requireAccelerometer: value?.requireAccelerometer !== false,
     alarm: {
       enabled: alarm.enabled === true,
       time: normalizeAlarmTime(alarm.time, defaults.alarm.time),

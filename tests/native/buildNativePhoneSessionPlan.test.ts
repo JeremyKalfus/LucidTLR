@@ -176,6 +176,7 @@ describe("buildNativePhoneSessionPlan", () => {
       capVolume: 0.5,
     });
     expect(plan.movement).toMatchObject({
+      requireAccelerometer: true,
       stableLowMovementRequiredSeconds: 75,
       largeMovementThreshold: 0.7,
       cueAssociatedMovementWindowSeconds: 35,
@@ -254,6 +255,23 @@ describe("buildNativePhoneSessionPlan", () => {
     });
 
     expect(plan.training.guidedTrainingSkipped).toBe(true);
+  });
+
+  it("threads the relaxed accelerometer requirement into the native plan", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const plan = buildNativePhoneSessionPlanFromCompletedSession({
+      session: session(),
+      settings,
+      tlrOptions: {
+        ...createDefaultTlrOptions("07:00"),
+        requireAccelerometer: false,
+      },
+    });
+
+    expect(plan.movement).toMatchObject({
+      enabled: true,
+      requireAccelerometer: false,
+    });
   });
 
   it("builds locked presleep training playback into a projected native plan", () => {

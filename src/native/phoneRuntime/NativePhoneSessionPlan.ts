@@ -85,6 +85,7 @@ export type NativePhoneSessionPlan = {
 
   movement: {
     enabled: true;
+    requireAccelerometer: boolean;
     summaryIntervalSeconds: number;
     stableLowMovementRequiredSeconds: number;
     largeMovementThreshold: number;
@@ -301,6 +302,10 @@ export function validateNativePhoneSessionPlan(
 
   if (Date.parse(plan.timing.earliestCueAt) > Date.parse(plan.timing.latestCueAt)) {
     errors.push("Earliest cue time cannot be after latest cue time.");
+  }
+
+  if (plan.movement.enabled !== true) {
+    errors.push("Phone runtime requires movement summaries.");
   }
 
   if (plan.alarm.enabled) {

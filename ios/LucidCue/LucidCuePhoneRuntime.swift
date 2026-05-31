@@ -63,6 +63,7 @@ private struct PhoneRuntimePlan: Codable {
 
   struct Movement: Codable {
     let enabled: Bool
+    let requireAccelerometer: Bool?
     let summaryIntervalSeconds: Double
     let stableLowMovementRequiredSeconds: Double
     let largeMovementThreshold: Double
@@ -669,6 +670,7 @@ class LucidCuePhoneRuntime: NSObject {
       "audioBedAsset": plan.audioBed.assetId,
       "backgroundAudioOption": plan.backgroundAudio.option,
       "backgroundAudioEnabled": plan.backgroundAudio.enabled,
+      "requireAccelerometer": movementRequiresAccelerometer(plan: plan),
       "guidedTrainingSkipped": plan.training.guidedTrainingSkipped,
       "lockedTrainingPlayback": plan.training.lockedPlayback.enabled,
       "alarmEnabled": plan.alarm.enabled,
@@ -1096,13 +1098,38 @@ class LucidCuePhoneRuntime: NSObject {
     }
   }
 
+  private func movementRequiresAccelerometer(plan: PhoneRuntimePlan) -> Bool {
+    plan.movement.requireAccelerometer ?? true
+  }
+
   private func startMotionSummaries(plan: PhoneRuntimePlan) throws {
     guard plan.movement.enabled else {
       throw runtimeError("Phone runtime requires movement summaries.")
     }
 
+    let requireAccelerometer = movementRequiresAccelerometer(plan: plan)
+
     guard motionManager.isAccelerometerAvailable else {
-      throw runtimeError("Accelerometer is unavailable.")
+      if requireAccelerometer {
+        throw runtimeError("Accelerometer is unavailable.")
+      }
+
+      if var currentState = state {
+        currentState.stableLowMovementSeconds =
+          plan.movement.stableLowMovementRequiredSeconds
+        currentState.latestMovementIntensity = "unavailable"
+        currentState.latestMotionSummaryAt = formatDate(Date())
+        state = currentState
+      }
+
+      appendEvent("motion_started", payload: [
+        "source": "phone_accelerometer",
+        "required": false,
+        "running": false,
+        "unavailableReason": "accelerometer_unavailable"
+      ])
+      persistRuntimeSnapshot()
+      return
     }
 
     motionSampleCount = 0
@@ -1150,6 +1177,8 @@ class LucidCuePhoneRuntime: NSObject {
 
     appendEvent("motion_started", payload: [
       "source": "phone_accelerometer",
+      "required": requireAccelerometer,
+      "running": true,
       "updateInterval": motionManager.accelerometerUpdateInterval,
       "summaryIntervalSeconds": plan.movement.summaryIntervalSeconds
     ])

@@ -18,6 +18,7 @@ export interface TlrOptions {
   selectedCueId: string;
   backgroundNoise: BackgroundNoiseOption;
   skipGuidedTraining: boolean;
+  requireAccelerometer: boolean;
   alarm: AlarmOptions;
 }
 

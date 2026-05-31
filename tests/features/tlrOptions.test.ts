@@ -16,6 +16,7 @@ describe("TLR options", () => {
       selectedCueId: DEFAULT_CUE_ID,
       backgroundNoise: "none",
       skipGuidedTraining: false,
+      requireAccelerometer: true,
       alarm: {
         enabled: false,
         time: "06:45",
@@ -45,6 +46,7 @@ describe("TLR options", () => {
       selectedCueId: DEFAULT_CUE_ID,
       backgroundNoise: "none",
       skipGuidedTraining: true,
+      requireAccelerometer: true,
       alarm: {
         enabled: true,
         time: "06:30",
@@ -78,6 +80,17 @@ describe("TLR options", () => {
     expect(options.selectedCueId).toBe("dx-harp-c5");
     expect(options.alarm.time).toBe("07:00");
     expect(options.backgroundNoise).toBe("none");
+  });
+
+  it("allows persisted users to relax the accelerometer requirement", () => {
+    const options = normalizeTlrOptions(
+      {
+        requireAccelerometer: false,
+      },
+      "07:00",
+    );
+
+    expect(options.requireAccelerometer).toBe(false);
   });
 
   it("resolves alarm fire times across midnight in local clock time", () => {

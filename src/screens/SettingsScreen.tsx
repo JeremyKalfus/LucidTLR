@@ -10,7 +10,7 @@ import {
   Watch,
 } from "lucide-react-native";
 import React from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Alert, Pressable, Switch, Text, View } from "react-native";
 
 import {
   Card,
@@ -285,6 +285,47 @@ function SettingsNote({ children }: { children: string }) {
   );
 }
 
+function SettingsToggleRow({
+  label,
+  value,
+  onValueChange,
+}: {
+  label: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+}) {
+  return (
+    <View
+      style={{
+        minHeight: 40,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+      }}
+    >
+      <Text
+        selectable
+        style={{
+          color: colors.textMuted,
+          flexShrink: 1,
+          fontSize: typography.body.fontSize,
+          lineHeight: typography.body.lineHeight,
+        }}
+      >
+        {label}
+      </Text>
+      <Switch
+        accessibilityLabel={label}
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: colors.cardBorder, true: colors.textDim }}
+        ios_backgroundColor={colors.cardBorder}
+      />
+    </View>
+  );
+}
+
 function SimpleModeButton({
   active,
   label,
@@ -541,6 +582,13 @@ export function IosPhoneModeSettingsScreen() {
         <SettingsNote>
           Locked iPhone Phone Mode requires a quiet audio bed.
         </SettingsNote>
+        <SettingsToggleRow
+          label="Require accelerometer"
+          value={tlrOptions.requireAccelerometer}
+          onValueChange={(requireAccelerometer) => {
+            void updateTlrOptions({ requireAccelerometer });
+          }}
+        />
         <NumericSettingInput
           label="audio bed volume"
           settingKey="phoneAudioBedVolume"
