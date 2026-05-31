@@ -6,11 +6,13 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/images/icon.png",
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": false,
+      "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.jeremykalfus.lucidcue",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "LucidCue uses microphone access only for local debug feasibility audio analysis when explicitly enabled on the hidden development screen.",
@@ -20,8 +22,10 @@
       }
     },
     "android": {
+      "icon": "./assets/images/icon.png",
       "adaptiveIcon": {
-        "backgroundColor": "#0C0C0C"
+        "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
+        "backgroundImage": "./assets/images/adaptive-icon-background.png"
       }
     },
     "web": {

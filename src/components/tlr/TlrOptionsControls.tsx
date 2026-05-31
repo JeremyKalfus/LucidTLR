@@ -2,7 +2,15 @@ import React from "react";
 import { Pressable, Switch, Text, View } from "react-native";
 import { ChevronDown } from "lucide-react-native";
 
-import { InfoRow, TextField, TimeInput } from "@/src/components/ui";
+import {
+  DraftTextField,
+  InfoRow,
+  TimeInput,
+} from "@/src/components/ui";
+import {
+  isFiniteNumberDraft,
+  parseFiniteNumberDraft,
+} from "@/src/components/ui/draftInput";
 import { builtInCues, getBuiltInCue } from "@/src/audio/cueCatalog";
 import type { AppMode, TlrOptions } from "@/src/domain/types";
 import {
@@ -104,25 +112,26 @@ function ToggleRow({
   );
 }
 
-function CompactInput({
+function CompactDraftInput({
+  isValidDraft,
   label,
+  onValidDraftChange,
   value,
-  keyboardType = "default",
-  onChangeText,
 }: {
+  isValidDraft: (value: string) => boolean;
   label: string;
+  onValidDraftChange: (value: string) => void;
   value: string;
-  keyboardType?: "default" | "numeric";
-  onChangeText: (value: string) => void;
 }) {
   return (
     <View style={{ gap: 6 }}>
       <RowLabel>{label}</RowLabel>
-      <TextField
+      <DraftTextField
         height={36}
+        isValidDraft={isValidDraft}
+        keyboardType="numeric"
         value={value}
-        onChangeText={onChangeText}
-        keyboardType={keyboardType}
+        onValidDraftChange={onValidDraftChange}
         style={{ paddingHorizontal: 10 }}
       />
     </View>
@@ -327,20 +336,14 @@ export function TlrOptionsControls({
             }
           />
           {tlrOptions.alarm.autoShutoff ? (
-            <CompactInput
+            <CompactDraftInput
+              isValidDraft={isFiniteNumberDraft}
               label="ring duration minutes"
               value={String(tlrOptions.alarm.ringDurationMinutes)}
-              keyboardType="numeric"
-              onChangeText={(text) => {
-                const trimmed = text.trim();
+              onValidDraftChange={(text) => {
+                const ringDurationMinutes = parseFiniteNumberDraft(text);
 
-                if (!trimmed) {
-                  return;
-                }
-
-                const ringDurationMinutes = Number(trimmed);
-
-                if (Number.isFinite(ringDurationMinutes)) {
+                if (ringDurationMinutes !== null) {
                   onOptionsChange({ alarm: { ringDurationMinutes } });
                 }
               }}

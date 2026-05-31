@@ -1,5 +1,6 @@
 import { router } from "expo-router";
 import type { LucideIcon } from "lucide-react-native";
+import type { TextInputProps } from "react-native";
 import {
   ChevronLeft,
   ChevronRight,
@@ -13,13 +14,19 @@ import { Alert, Pressable, Text, View } from "react-native";
 
 import {
   Card,
+  DraftTextField,
   InfoRow,
   PrimaryPillButton,
   Screen,
   SectionTitle,
-  TextField,
   TimeInput,
 } from "@/src/components/ui";
+import {
+  isFiniteNumberDraft,
+  isNumberRangeDraft,
+  parseFiniteNumberDraft,
+  parseNumberRangeDraft,
+} from "@/src/components/ui/draftInput";
 import { TlrOptionsControls } from "@/src/components/tlr/TlrOptionsControls";
 import {
   formatEnginePercent,
@@ -46,14 +53,18 @@ type SettingsRoute =
   | "/settings/watch-mode"
   | "/settings/engine";
 
-function SettingInput({
+function DraftSettingInput({
+  isValidDraft,
+  keyboardType,
   label,
+  onValidDraftChange,
   value,
-  onChangeText,
 }: {
+  isValidDraft: (value: string) => boolean;
+  keyboardType?: TextInputProps["keyboardType"];
   label: string;
+  onValidDraftChange: (value: string) => void;
   value: string;
-  onChangeText: (value: string) => void;
 }) {
   return (
     <View style={{ gap: 6 }}>
@@ -67,10 +78,12 @@ function SettingInput({
       >
         {label}
       </Text>
-      <TextField
+      <DraftTextField
         height={40}
+        isValidDraft={isValidDraft}
+        keyboardType={keyboardType}
         value={value}
-        onChangeText={onChangeText}
+        onValidDraftChange={onValidDraftChange}
       />
     </View>
   );
@@ -125,19 +138,15 @@ function NumericSettingInput({
   }
 
   return (
-    <SettingInput
+    <DraftSettingInput
+      isValidDraft={isFiniteNumberDraft}
+      keyboardType="numbers-and-punctuation"
       label={label}
       value={String(value)}
-      onChangeText={(text) => {
-        const trimmed = text.trim();
+      onValidDraftChange={(text) => {
+        const nextValue = parseFiniteNumberDraft(text);
 
-        if (!trimmed) {
-          return;
-        }
-
-        const nextValue = Number(trimmed);
-
-        if (Number.isFinite(nextValue)) {
+        if (nextValue !== null) {
           void updateEngineSettings({ [settingKey]: nextValue });
         }
       }}
@@ -764,16 +773,16 @@ export function EngineSettingsScreen() {
           settings={engineSettings}
           updateEngineSettings={updateEngineSettings}
         />
-        <SettingInput
+        <DraftSettingInput
+          isValidDraft={isNumberRangeDraft}
+          keyboardType="numbers-and-punctuation"
           label="cue interval seconds"
           value={`${engineSettings.cueIntervalRangeSeconds[0]}-${engineSettings.cueIntervalRangeSeconds[1]}`}
-          onChangeText={(text) => {
-            const [minText, maxText] = text.split("-");
-            const min = Number(minText);
-            const max = Number(maxText);
+          onValidDraftChange={(text) => {
+            const range = parseNumberRangeDraft(text);
 
-            if (Number.isFinite(min) && Number.isFinite(max)) {
-              void updateEngineSettings({ cueIntervalRangeSeconds: [min, max] });
+            if (range) {
+              void updateEngineSettings({ cueIntervalRangeSeconds: range });
             }
           }}
         />
