@@ -139,7 +139,6 @@ export function HomeScreen() {
   } | null>(null);
   const {
     engineSettings,
-    latestEngineSnapshot,
     selectedMode,
     sessionHistory,
     setSelectedMode,
@@ -160,10 +159,6 @@ export function HomeScreen() {
     keepAudioSessionActive: false,
   });
   const cuePreviewStatus = useAudioPlayerStatus(cuePreviewPlayer);
-  const engineValues = latestEngineSnapshot.currentValues;
-  const tlrNights = sessionHistory.filter(
-    (session) => session.sessionType === "tlr",
-  ).length;
   const lastSession = sessionHistory[0] ?? null;
   const [lastSleepLogs, setLastSleepLogs] = React.useState<
     NativePhoneRuntimeEvent[]
@@ -353,10 +348,6 @@ export function HomeScreen() {
             onModeChange={setSelectedMode}
             onOptionsChange={handleTlrOptionsChange}
           />
-          <InfoRow label="nights with TLR" value={String(tlrNights)} />
-          <InfoRow label="sensitivity" value={engineValues.sensitivityProfile.replaceAll("_", " ")} />
-          <InfoRow label="cues tonight" value={engineValues.cueCountTonight} />
-          <InfoRow label="sleep prior" value={`${engineValues.sleepPriorSource} (${engineValues.sleepPriorConfidence})`} />
           {selectedMode === "watch" ? (
             <>
               <InfoRow
