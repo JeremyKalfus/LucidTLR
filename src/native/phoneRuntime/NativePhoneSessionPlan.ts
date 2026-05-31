@@ -180,6 +180,8 @@ export type PhoneRuntimeStatus = {
   latestMovementIntensity?: string;
   latestMotionSummaryAt?: string;
   latestRuntimeError?: string;
+  tlrPaused?: boolean;
+  tlrDeferredUntil?: string;
 };
 
 export type PhoneRuntimeCueRecordDraft = {

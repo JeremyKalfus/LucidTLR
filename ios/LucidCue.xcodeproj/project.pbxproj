@@ -6,16 +6,6 @@
 	objectVersion = 54;
 	objects = {
 
-/* Begin PBXContainerItemProxy section */
-		4AFEF0618B754B4A9CF00001 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 4AFEF0308B754B4A9CF00001;
-			remoteInfo = "LucidCue Watch App";
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
@@ -29,23 +19,48 @@
 		4AFEB0058B754B4A9CF00001 /* LucidCueWatchRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEB0068B754B4A9CF00001 /* LucidCueWatchRuntime.swift */; };
 		4AFEB0078B754B4A9CF00001 /* LucidCueWatchRuntimeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEB0088B754B4A9CF00001 /* LucidCueWatchRuntimeBridge.m */; };
 		4AFEB0098B754B4A9CF00001 /* mallela_rf_v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEB00A8B754B4A9CF00001 /* mallela_rf_v1.json */; };
-		4AFEF0028B754B4A9CF00001 /* LucidCueWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0018B754B4A9CF00001 /* LucidCueWatchApp.swift */; };
-		4AFEF0048B754B4A9CF00001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0038B754B4A9CF00001 /* ContentView.swift */; };
-		4AFEF0068B754B4A9CF00001 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0058B754B4A9CF00001 /* WatchSessionManager.swift */; };
-		4AFEF0088B754B4A9CF00001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEF0078B754B4A9CF00001 /* Assets.xcassets */; };
-		4AFEF00A8B754B4A9CF00001 /* LucidCue Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4AFEF0098B754B4A9CF00001 /* LucidCue Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4AFEC0068B754B4A9CF00001 /* clear_bell_chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0018B754B4A9CF00001 /* clear_bell_chime.mp3 */; };
 		4AFEC0078B754B4A9CF00001 /* ui_success_chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0028B754B4A9CF00001 /* ui_success_chime.mp3 */; };
 		4AFEC0088B754B4A9CF00001 /* sci_fi_confirmation.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */; };
 		4AFEC0098B754B4A9CF00001 /* harp_flourish.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0048B754B4A9CF00001 /* harp_flourish.mp3 */; };
 		4AFEC00A8B754B4A9CF00001 /* dx_harp_c5.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0058B754B4A9CF00001 /* dx_harp_c5.mp3 */; };
 		4AFED0018B754B4A9CF00001 /* final_lucid_training.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFED0028B754B4A9CF00001 /* final_lucid_training.mp3 */; };
+		4AFEF0028B754B4A9CF00001 /* LucidCueWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0018B754B4A9CF00001 /* LucidCueWatchApp.swift */; };
+		4AFEF0048B754B4A9CF00001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0038B754B4A9CF00001 /* ContentView.swift */; };
+		4AFEF0068B754B4A9CF00001 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0058B754B4A9CF00001 /* WatchSessionManager.swift */; };
+		4AFEF0088B754B4A9CF00001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEF0078B754B4A9CF00001 /* Assets.xcassets */; };
+		4AFEF00A8B754B4A9CF00001 /* LucidCue Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4AFEF0098B754B4A9CF00001 /* LucidCue Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		594C5BE62EC14CE082E832DF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */; };
 		59895943679DB790F65BE750 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */; };
 		5E297646B1EBAE539E8C17DC /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77DCF48682FC1CF275A85758 /* ExpoModulesProvider.swift */; };
 		7E32BB753790FD539B784603 /* libPods-LucidCue.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C62D26F77A8CCE4C01DF72D /* libPods-LucidCue.a */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4AFEF0618B754B4A9CF00001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4AFEF0308B754B4A9CF00001;
+			remoteInfo = "LucidCue Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4AFEF0208B754B4A9CF00001 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				4AFEF00A8B754B4A9CF00001 /* LucidCue Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		13B07F961A680F5B00A75B9A /* LucidCue.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LucidCue.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -61,18 +76,18 @@
 		4AFEB0068B754B4A9CF00001 /* LucidCueWatchRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LucidCueWatchRuntime.swift; path = LucidCue/LucidCueWatchRuntime.swift; sourceTree = "<group>"; };
 		4AFEB0088B754B4A9CF00001 /* LucidCueWatchRuntimeBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LucidCueWatchRuntimeBridge.m; path = LucidCue/LucidCueWatchRuntimeBridge.m; sourceTree = "<group>"; };
 		4AFEB00A8B754B4A9CF00001 /* mallela_rf_v1.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; name = mallela_rf_v1.json; path = ../assets/models/mallela_rf_v1.json; sourceTree = "<group>"; };
-		4AFEF0018B754B4A9CF00001 /* LucidCueWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LucidCueWatchApp.swift; sourceTree = "<group>"; };
-		4AFEF0038B754B4A9CF00001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		4AFEF0058B754B4A9CF00001 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
-		4AFEF0078B754B4A9CF00001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		4AFEF0098B754B4A9CF00001 /* LucidCue Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LucidCue Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		4AFEF00B8B754B4A9CF00001 /* LucidCueWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LucidCueWatch.entitlements; sourceTree = "<group>"; };
 		4AFEC0018B754B4A9CF00001 /* clear_bell_chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = clear_bell_chime.mp3; path = LucidCue/CueAudio/clear_bell_chime.mp3; sourceTree = "<group>"; };
 		4AFEC0028B754B4A9CF00001 /* ui_success_chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = ui_success_chime.mp3; path = LucidCue/CueAudio/ui_success_chime.mp3; sourceTree = "<group>"; };
 		4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; name = sci_fi_confirmation.wav; path = LucidCue/CueAudio/sci_fi_confirmation.wav; sourceTree = "<group>"; };
 		4AFEC0048B754B4A9CF00001 /* harp_flourish.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = harp_flourish.mp3; path = LucidCue/CueAudio/harp_flourish.mp3; sourceTree = "<group>"; };
 		4AFEC0058B754B4A9CF00001 /* dx_harp_c5.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = dx_harp_c5.mp3; path = LucidCue/CueAudio/dx_harp_c5.mp3; sourceTree = "<group>"; };
 		4AFED0028B754B4A9CF00001 /* final_lucid_training.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = final_lucid_training.mp3; path = LucidCue/TrainingAudio/final_lucid_training.mp3; sourceTree = "<group>"; };
+		4AFEF0018B754B4A9CF00001 /* LucidCueWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LucidCueWatchApp.swift; sourceTree = "<group>"; };
+		4AFEF0038B754B4A9CF00001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4AFEF0058B754B4A9CF00001 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
+		4AFEF0078B754B4A9CF00001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4AFEF0098B754B4A9CF00001 /* LucidCue Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LucidCue Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4AFEF00B8B754B4A9CF00001 /* LucidCueWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LucidCueWatch.entitlements; sourceTree = "<group>"; };
 		77DCF48682FC1CF275A85758 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-LucidCue/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		7DD843155625942B85B99783 /* Pods-LucidCue.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LucidCue.release.xcconfig"; path = "Target Support Files/Pods-LucidCue/Pods-LucidCue.release.xcconfig"; sourceTree = "<group>"; };
 		8C62D26F77A8CCE4C01DF72D /* libPods-LucidCue.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-LucidCue.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -84,20 +99,6 @@
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = LucidCue/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* LucidCue-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "LucidCue-Bridging-Header.h"; path = "LucidCue/LucidCue-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		4AFEF0208B754B4A9CF00001 /* Embed Watch Content */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
-			dstSubfolderSpec = 16;
-			files = (
-				4AFEF00A8B754B4A9CF00001 /* LucidCue Watch App.app in Embed Watch Content */,
-			);
-			name = "Embed Watch Content";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		13B07F8C1A680F5B00A75B9A /* Frameworks */ = {
@@ -367,6 +368,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4AFEF0088B754B4A9CF00001 /* Assets.xcassets in Resources */,
+				594C5BE62EC14CE082E832DF /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -640,6 +642,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.jeremykalfus.lucidcue.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
@@ -671,6 +674,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.jeremykalfus.lucidcue.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;

@@ -127,6 +127,8 @@ export type WatchRuntimeStatus = {
   watchBatteryLevel?: number;
   connectivityState: WatchConnectivityState;
   latestRuntimeError?: string;
+  tlrPaused?: boolean;
+  tlrDeferredUntil?: string;
 };
 
 export type WatchRuntimeEvent = {

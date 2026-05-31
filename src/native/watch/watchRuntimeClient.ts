@@ -10,8 +10,15 @@ export type WatchRuntimeStopOptions = {
   reason?: "user_stopped" | "completed" | "error";
 };
 
+export type WatchRuntimeDeferOptions = {
+  durationSeconds?: number;
+};
+
 export interface NativeWatchRuntimeModule {
   startWatchSession: (plan: NativeWatchSessionPlan) => Promise<void>;
+  pauseWatchTlrCueing: () => Promise<void>;
+  resumeWatchTlrCueing: () => Promise<void>;
+  deferWatchTlrCueing: (options?: WatchRuntimeDeferOptions) => Promise<void>;
   stopWatchSession: (options?: WatchRuntimeStopOptions) => Promise<void>;
   getWatchRuntimeStatus: () => Promise<WatchRuntimeStatus>;
   getWatchEpochs: (sessionId: string) => Promise<WatchEpochRecordDraft[]>;
@@ -37,6 +44,7 @@ function unavailableStatus(reason: string): WatchRuntimeStatus {
     classifierVersion: LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
     modelAvailable: false,
     connectivityState: "unknown",
+    tlrPaused: false,
   };
 }
 
@@ -65,6 +73,18 @@ export function createWatchRuntimeClient(options: WatchRuntimeClientOptions) {
 
     startWatchSession(plan: NativeWatchSessionPlan) {
       return requireNativeModule().startWatchSession(plan);
+    },
+
+    pauseWatchTlrCueing() {
+      return requireNativeModule().pauseWatchTlrCueing();
+    },
+
+    resumeWatchTlrCueing() {
+      return requireNativeModule().resumeWatchTlrCueing();
+    },
+
+    deferWatchTlrCueing(deferOptions?: WatchRuntimeDeferOptions) {
+      return requireNativeModule().deferWatchTlrCueing(deferOptions);
     },
 
     stopWatchSession(stopOptions?: WatchRuntimeStopOptions) {

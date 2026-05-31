@@ -131,6 +131,8 @@ private struct PhoneRuntimeState: Codable {
   var latestMovementIntensity: String?
   var latestMotionSummaryAt: String?
   var latestRuntimeError: String?
+  var userPaused: Bool?
+  var userDeferredUntil: String?
   var alarmRinging: Bool
   var alarmFireAt: String?
   var alarmFiredAt: String?
@@ -236,6 +238,8 @@ class LucidCuePhoneRuntime: NSObject {
         cuesInBlock: 0,
         stableLowMovementSeconds: 0,
         latestDecisionReason: "runtime_started",
+        userPaused: false,
+        userDeferredUntil: nil,
         alarmRinging: false,
         alarmFireAt: plan.alarm.fireAt,
         alarmFiredAt: nil
@@ -300,6 +304,8 @@ class LucidCuePhoneRuntime: NSObject {
         cuesInBlock: 0,
         stableLowMovementSeconds: 0,
         latestDecisionReason: "training_started",
+        userPaused: false,
+        userDeferredUntil: nil,
         alarmRinging: false,
         alarmFireAt: plan.alarm.fireAt,
         alarmFiredAt: nil
@@ -332,6 +338,94 @@ class LucidCuePhoneRuntime: NSObject {
 
     queue.async {
       self.stopRuntime(reason: reason, errorMessage: nil, logEvent: true)
+      resolve(nil)
+    }
+  }
+
+  @objc(pausePhoneTlrCueing:rejecter:)
+  func pausePhoneTlrCueing(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      guard var state = self.state, self.activePlan != nil else {
+        reject(
+          "phone_tlr_pause_failed",
+          "No active TLR runtime to pause.",
+          self.runtimeError("No active TLR runtime to pause.")
+        )
+        return
+      }
+
+      state.userPaused = true
+      state.latestDecisionReason = "user_interaction"
+      self.state = state
+      self.appendEvent("decision_tick", payload: [
+        "reason": "user_paused_tlr",
+        "userPaused": true
+      ])
+      self.persistRuntimeSnapshot()
+      resolve(nil)
+    }
+  }
+
+  @objc(resumePhoneTlrCueing:rejecter:)
+  func resumePhoneTlrCueing(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      guard var state = self.state, self.activePlan != nil else {
+        reject(
+          "phone_tlr_resume_failed",
+          "No active TLR runtime to resume.",
+          self.runtimeError("No active TLR runtime to resume.")
+        )
+        return
+      }
+
+      state.userPaused = false
+      state.userDeferredUntil = nil
+      state.latestDecisionReason = "user_interaction"
+      self.state = state
+      self.appendEvent("decision_tick", payload: [
+        "reason": "user_resumed_tlr",
+        "userPaused": false
+      ])
+      self.persistRuntimeSnapshot()
+      resolve(nil)
+    }
+  }
+
+  @objc(deferPhoneTlrCueing:resolver:rejecter:)
+  func deferPhoneTlrCueing(
+    _ options: NSDictionary?,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let durationSeconds = max(options?["durationSeconds"] as? Double ?? 1800, 60)
+
+    queue.async {
+      guard var state = self.state, self.activePlan != nil else {
+        reject(
+          "phone_tlr_defer_failed",
+          "No active TLR runtime to defer.",
+          self.runtimeError("No active TLR runtime to defer.")
+        )
+        return
+      }
+
+      let deferUntil = Date().addingTimeInterval(durationSeconds)
+      state.userPaused = false
+      state.userDeferredUntil = self.formatDate(deferUntil)
+      state.latestDecisionReason = "user_interaction"
+      self.state = state
+      self.appendEvent("decision_tick", payload: [
+        "reason": "user_deferred_tlr",
+        "durationSeconds": durationSeconds,
+        "deferUntil": self.formatDate(deferUntil)
+      ])
+      self.persistRuntimeSnapshot()
       resolve(nil)
     }
   }
@@ -1468,6 +1562,16 @@ class LucidCuePhoneRuntime: NSObject {
       return "runtime_error"
     }
 
+    if state.userPaused == true {
+      appendCueSuppressed(reason: "user_interaction", nextCheckAt: nil)
+      return "user_interaction"
+    }
+
+    if let deferUntil = state.userDeferredUntil.flatMap(parseDate), now < deferUntil {
+      appendCueSuppressed(reason: "user_interaction", nextCheckAt: deferUntil)
+      return "user_interaction"
+    }
+
     if now < earliestCueAt {
       appendCueSuppressed(reason: "before_cue_window", nextCheckAt: earliestCueAt)
       return "before_cue_window"
@@ -1545,6 +1649,14 @@ class LucidCuePhoneRuntime: NSObject {
   }
 
   private func clearExpiredPauses(state: inout PhoneRuntimeState, now: Date) {
+    if let deferUntil = state.userDeferredUntil.flatMap(parseDate), now >= deferUntil {
+      appendEvent("decision_tick", payload: [
+        "reason": "user_defer_elapsed",
+        "deferEndedAt": formatDate(now)
+      ])
+      state.userDeferredUntil = nil
+    }
+
     if let pauseUntil = state.movementPauseUntil.flatMap(parseDate), now >= pauseUntil {
       appendEvent("movement_pause_ended", payload: [
         "reason": "movement",
@@ -2285,7 +2397,9 @@ class LucidCuePhoneRuntime: NSObject {
         "alarmRinging": false,
         "motionRunning": false,
         "cueCount": 0,
-        "cuesInBlock": 0
+        "cuesInBlock": 0,
+        "tlrPaused": false,
+        "tlrDeferredUntil": ""
       ]
     }
 
@@ -2306,7 +2420,9 @@ class LucidCuePhoneRuntime: NSObject {
       "latestDecisionReason": state.latestDecisionReason ?? "",
       "latestMovementIntensity": state.latestMovementIntensity ?? "",
       "latestMotionSummaryAt": state.latestMotionSummaryAt ?? "",
-      "latestRuntimeError": state.latestRuntimeError ?? ""
+      "latestRuntimeError": state.latestRuntimeError ?? "",
+      "tlrPaused": state.userPaused ?? false,
+      "tlrDeferredUntil": state.userDeferredUntil ?? ""
     ]
   }
 

@@ -19,5 +19,14 @@ describe("phone runtime client", () => {
     expect(() =>
       client.startPhoneTlrSessionAfterPresleepTraining({} as never),
     ).toThrow("iPhone Phone Mode native runtime is unavailable");
+    expect(() => client.pausePhoneTlrCueing()).toThrow(
+      "iPhone Phone Mode native runtime is unavailable",
+    );
+    expect(() => client.resumePhoneTlrCueing()).toThrow(
+      "iPhone Phone Mode native runtime is unavailable",
+    );
+    expect(() => client.deferPhoneTlrCueing()).toThrow(
+      "iPhone Phone Mode native runtime is unavailable",
+    );
   });
 });

@@ -18,6 +18,8 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
   private var blockRestUntil: Date?
   private var lastCueAt: Date?
   private var cueAssociatedMovementPauseUntil: Date?
+  private var userPaused = false
+  private var userDeferredUntil: Date?
   private var latestCueDecisionReason = "not_started"
   private var latestConnectivityState = "unknown"
   private var classifier: WatchRandomForestModel?
@@ -62,6 +64,8 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       runtime.blockRestUntil = nil
       runtime.lastCueAt = nil
       runtime.cueAssociatedMovementPauseUntil = nil
+      runtime.userPaused = false
+      runtime.userDeferredUntil = nil
       runtime.latestCueDecisionReason = "debug_self_test_started"
 
       do {
@@ -146,6 +150,8 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       self.blockRestUntil = nil
       self.lastCueAt = nil
       self.cueAssociatedMovementPauseUntil = nil
+      self.userPaused = false
+      self.userDeferredUntil = nil
       self.latestCueDecisionReason = "watch_runtime_started"
       self.activateWatchConnectivity()
 
@@ -211,6 +217,92 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       }
 
       self.stopRuntime(reason: reason, logEvent: false)
+      resolve(nil)
+    }
+  }
+
+  @objc(pauseWatchTlrCueing:rejecter:)
+  func pauseWatchTlrCueing(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      guard self.activePlan != nil else {
+        reject(
+          "watch_tlr_pause_failed",
+          "No active Watch TLR runtime to pause.",
+          self.runtimeError("No active Watch TLR runtime to pause.")
+        )
+        return
+      }
+
+      self.userPaused = true
+      self.latestCueDecisionReason = "user_interaction"
+      self.appendEvent("watch_cue_decision", payload: [
+        "action": "pause",
+        "reason": "user_paused_tlr",
+        "shouldPlayCue": false
+      ])
+      resolve(nil)
+    }
+  }
+
+  @objc(resumeWatchTlrCueing:rejecter:)
+  func resumeWatchTlrCueing(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      guard self.activePlan != nil else {
+        reject(
+          "watch_tlr_resume_failed",
+          "No active Watch TLR runtime to resume.",
+          self.runtimeError("No active Watch TLR runtime to resume.")
+        )
+        return
+      }
+
+      self.userPaused = false
+      self.userDeferredUntil = nil
+      self.latestCueDecisionReason = "user_interaction"
+      self.appendEvent("watch_cue_decision", payload: [
+        "action": "wait",
+        "reason": "user_resumed_tlr",
+        "shouldPlayCue": false
+      ])
+      resolve(nil)
+    }
+  }
+
+  @objc(deferWatchTlrCueing:resolver:rejecter:)
+  func deferWatchTlrCueing(
+    _ options: NSDictionary?,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let durationSeconds = max(options?["durationSeconds"] as? Double ?? 1800, 60)
+
+    queue.async {
+      guard self.activePlan != nil else {
+        reject(
+          "watch_tlr_defer_failed",
+          "No active Watch TLR runtime to defer.",
+          self.runtimeError("No active Watch TLR runtime to defer.")
+        )
+        return
+      }
+
+      let deferUntil = Date().addingTimeInterval(durationSeconds)
+      self.userPaused = false
+      self.userDeferredUntil = deferUntil
+      self.latestCueDecisionReason = "user_interaction"
+      self.appendEvent("watch_cue_decision", payload: [
+        "action": "pause",
+        "reason": "user_deferred_tlr",
+        "shouldPlayCue": false,
+        "durationSeconds": durationSeconds,
+        "deferUntil": self.formatDate(deferUntil)
+      ])
       resolve(nil)
     }
   }
@@ -504,7 +596,9 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       "modelAvailable": modelAvailable,
       "watchBatteryLevel": latestEpoch?["watchBatteryLevel"] ?? NSNull(),
       "connectivityState": latestConnectivityState,
-      "latestRuntimeError": latestRuntimeError ?? ""
+      "latestRuntimeError": latestRuntimeError ?? "",
+      "tlrPaused": userPaused,
+      "tlrDeferredUntil": userDeferredUntil.map(formatDate) ?? ""
     ]
   }
 
@@ -634,6 +728,14 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     if let stopAt = stringPlanValue(section: "safety", key: "stopAt").flatMap(parseDate),
       now >= stopAt {
       return suppress("session_complete", action: "stop")
+    }
+
+    if userPaused {
+      return suppress("user_interaction")
+    }
+
+    if let deferUntil = userDeferredUntil, now < deferUntil {
+      return suppress("user_interaction")
     }
 
     if !prediction.modelAvailable || prediction.remLabel == "unknown" {
@@ -781,6 +883,16 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
   }
 
   private func clearExpiredWatchPauses(now: Date) {
+    if let deferUntil = userDeferredUntil, now >= deferUntil {
+      userDeferredUntil = nil
+      appendEvent("watch_cue_decision", payload: [
+        "action": "wait",
+        "reason": "user_defer_elapsed",
+        "shouldPlayCue": false,
+        "deferEndedAt": formatDate(now)
+      ])
+    }
+
     if let pauseUntil = cueAssociatedMovementPauseUntil, now >= pauseUntil {
       cueAssociatedMovementPauseUntil = nil
     }
@@ -971,6 +1083,8 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     blockRestUntil = nil
     lastCueAt = nil
     cueAssociatedMovementPauseUntil = nil
+    userPaused = false
+    userDeferredUntil = nil
     latestCueDecisionReason = "not_started"
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }

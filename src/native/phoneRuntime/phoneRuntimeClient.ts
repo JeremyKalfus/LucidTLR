@@ -10,6 +10,10 @@ export type RuntimeStopOptions = {
   reason?: RuntimeStopReason;
 };
 
+export type RuntimeDeferOptions = {
+  durationSeconds?: number;
+};
+
 export interface NativePhoneRuntimeModule {
   startPhoneTlrSession: (plan: NativePhoneSessionPlan) => Promise<void>;
   startPhoneTlrSessionAfterPresleepTraining: (
@@ -17,6 +21,9 @@ export interface NativePhoneRuntimeModule {
   ) => Promise<void>;
   pausePhonePresleepTraining: () => Promise<void>;
   resumePhonePresleepTraining: () => Promise<void>;
+  pausePhoneTlrCueing: () => Promise<void>;
+  resumePhoneTlrCueing: () => Promise<void>;
+  deferPhoneTlrCueing: (options?: RuntimeDeferOptions) => Promise<void>;
   stopPhoneTlrSession: (options?: RuntimeStopOptions) => Promise<void>;
   getPhoneRuntimeStatus: () => Promise<PhoneRuntimeStatus>;
   getPhoneRuntimeLogSessionIds?: () => Promise<string[]>;
@@ -42,6 +49,7 @@ function unavailableStatus(reason: string): PhoneRuntimeStatus {
     motionRunning: false,
     cueCount: 0,
     cuesInBlock: 0,
+    tlrPaused: false,
   };
 }
 
@@ -82,6 +90,18 @@ export function createPhoneRuntimeClient(options: PhoneRuntimeClientOptions) {
 
     resumePhonePresleepTraining() {
       return requireNativeModule().resumePhonePresleepTraining();
+    },
+
+    pausePhoneTlrCueing() {
+      return requireNativeModule().pausePhoneTlrCueing();
+    },
+
+    resumePhoneTlrCueing() {
+      return requireNativeModule().resumePhoneTlrCueing();
+    },
+
+    deferPhoneTlrCueing(deferOptions?: RuntimeDeferOptions) {
+      return requireNativeModule().deferPhoneTlrCueing(deferOptions);
     },
 
     stopPhoneTlrSession(stopOptions?: RuntimeStopOptions) {
