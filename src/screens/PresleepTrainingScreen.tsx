@@ -480,14 +480,50 @@ export function PresleepTrainingScreen() {
   }
 
   async function skipTraining() {
-    if (!session || session.status !== "training") {
+    if (
+      finishingTrainingRef.current ||
+      !session ||
+      session.status !== "training"
+    ) {
       return;
     }
 
-    trainingPlayer.pause();
-    cuePlayer.pause();
-    setIsTrainingPaused(false);
-    await startNightSession();
+    finishingTrainingRef.current = true;
+    const completedAt = new Date().toISOString();
+
+    try {
+      setIsTrainingPaused(false);
+
+      if (usesNativeLockedTraining) {
+        await phoneRuntime.skipPhonePresleepTrainingAndStartRuntime();
+        appendTrainingDebugEvent("training_completed", {
+          reason: "user_skipped",
+          sessionId: session.id,
+          selectedCueId: sessionCue.id,
+          playedCueCount,
+        });
+
+        const nextSession = sendSessionEvent("finish_training", completedAt);
+
+        if (nextSession) {
+          router.replace("/active-night-session");
+        }
+
+        return;
+      }
+
+      trainingPlayer.pause();
+      cuePlayer.pause();
+      await startNightSession();
+    } catch (error) {
+      finishingTrainingRef.current = false;
+
+      const message = errorMessage(error);
+
+      if (process.env.EXPO_OS !== "web") {
+        Alert.alert("Training control failed", message);
+      }
+    }
   }
 
   async function startNightSession(options?: { skipGuidedTraining?: boolean }) {

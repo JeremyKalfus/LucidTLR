@@ -115,9 +115,65 @@ function cueSuppressionReason(
   return "none";
 }
 
+const nonTerminalRuntimeStopReasons = new Set(["replaced_by_new_session"]);
+
+const terminalRuntimeStopReasons = new Set([
+  "completed",
+  "user_stopped",
+  "alarm_auto_shutoff",
+  "app_terminated",
+  "bridge_invalidated",
+  "error",
+]);
+
+function runtimeStopReason(event: NativePhoneRuntimeEvent): string | undefined {
+  return stringPayload(event.payload, "reason");
+}
+
+function isTerminalRuntimeStop(event: NativePhoneRuntimeEvent): boolean {
+  if (event.eventType !== "runtime_stopped") {
+    return false;
+  }
+
+  const reason = runtimeStopReason(event);
+
+  if (!reason) {
+    return true;
+  }
+
+  return (
+    terminalRuntimeStopReasons.has(reason) ||
+    !nonTerminalRuntimeStopReasons.has(reason)
+  );
+}
+
+function latestTerminalRuntimeStopEvent(
+  events: NativePhoneRuntimeEvent[],
+): NativePhoneRuntimeEvent | null {
+  let latestTerminalStop: NativePhoneRuntimeEvent | null = null;
+
+  for (const event of events) {
+    if (event.eventType === "runtime_started") {
+      latestTerminalStop = null;
+      continue;
+    }
+
+    if (event.eventType === "runtime_stopped") {
+      latestTerminalStop = isTerminalRuntimeStop(event) ? event : null;
+    }
+  }
+
+  return latestTerminalStop;
+}
+
 export function summarizePhoneRuntimeEvents(
   events: NativePhoneRuntimeEvent[],
 ): PhoneRuntimeLogSummary {
+  const latestTerminalStop = latestTerminalRuntimeStopEvent(events);
+  const latestTerminalStopReason = latestTerminalStop
+    ? runtimeStopReason(latestTerminalStop)
+    : undefined;
+
   return {
     cuesPlayed: events.filter((event) => event.eventType === "cue_played").length,
     cueFailures: events.filter((event) => event.eventType === "cue_failed").length,
@@ -132,18 +188,13 @@ export function summarizePhoneRuntimeEvents(
         event.eventType === "interruption_started" ||
         event.eventType === "interruption_ended",
     ).length,
-    stopped: events.some((event) => event.eventType === "runtime_stopped"),
-    completed: events.some(
-      (event) =>
-        event.eventType === "runtime_stopped" &&
-        event.payload.reason === "completed",
-    ),
+    stopped: latestTerminalStop !== null,
+    completed: latestTerminalStopReason === "completed",
     errored: events.some(
       (event) =>
         event.eventType === "runtime_error" ||
         event.eventType === "audio_bed_failed" ||
-        (event.eventType === "runtime_stopped" &&
-          event.payload.reason === "error"),
+        (event === latestTerminalStop && latestTerminalStopReason === "error"),
     ),
   };
 }
@@ -151,9 +202,7 @@ export function summarizePhoneRuntimeEvents(
 export function latestPhoneRuntimeStopTimestamp(
   events: NativePhoneRuntimeEvent[],
 ): string | null {
-  const stopEvent = [...events]
-    .reverse()
-    .find((event) => event.eventType === "runtime_stopped");
+  const stopEvent = latestTerminalRuntimeStopEvent(events);
 
   if (!stopEvent) {
     return null;

@@ -8,6 +8,42 @@ import {
 } from "@/src/native/phoneRuntime/phoneRuntimeLogMapping";
 
 describe("phone runtime log mapping", () => {
+  it("does not treat replacement stops followed by a restart as terminal", () => {
+    const events: NativePhoneRuntimeEvent[] = [
+      {
+        id: "event-1",
+        sessionId: "session-1",
+        timestamp: "2026-01-20T09:55:00.000Z",
+        eventType: "training_started",
+        payload: {},
+      },
+      {
+        id: "event-2",
+        sessionId: "session-1",
+        timestamp: "2026-01-20T10:00:00.000Z",
+        eventType: "runtime_stopped",
+        payload: {
+          reason: "replaced_by_new_session",
+          stoppedAt: "2026-01-20T10:00:00.000Z",
+        },
+      },
+      {
+        id: "event-3",
+        sessionId: "session-1",
+        timestamp: "2026-01-20T10:00:01.000Z",
+        eventType: "runtime_started",
+        payload: {},
+      },
+    ];
+
+    expect(summarizePhoneRuntimeEvents(events)).toMatchObject({
+      stopped: false,
+      completed: false,
+      errored: false,
+    });
+    expect(latestPhoneRuntimeStopTimestamp(events)).toBeNull();
+  });
+
   it("summarizes stopped native runtime logs and exposes the native stop time", () => {
     const events: NativePhoneRuntimeEvent[] = [
       {
@@ -37,6 +73,33 @@ describe("phone runtime log mapping", () => {
     expect(latestPhoneRuntimeStopTimestamp(events)).toBe(
       "2026-01-20T11:00:05.000Z",
     );
+  });
+
+  it("summarizes user-stopped native runtime logs as stopped but not completed", () => {
+    const events: NativePhoneRuntimeEvent[] = [
+      {
+        id: "event-1",
+        sessionId: "session-1",
+        timestamp: "2026-01-20T10:00:00.000Z",
+        eventType: "runtime_started",
+        payload: {},
+      },
+      {
+        id: "event-2",
+        sessionId: "session-1",
+        timestamp: "2026-01-20T11:00:00.000Z",
+        eventType: "runtime_stopped",
+        payload: {
+          reason: "user_stopped",
+        },
+      },
+    ];
+
+    expect(summarizePhoneRuntimeEvents(events)).toMatchObject({
+      stopped: true,
+      completed: false,
+      errored: false,
+    });
   });
 
   it("derives a local phone-night calibration record from runtime logs", () => {

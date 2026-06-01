@@ -250,14 +250,7 @@ class LucidCuePhoneRuntime: NSObject {
       self.appendRuntimeStartedEvent(plan: plan)
 
       do {
-        try self.configureAudioSession()
-        try self.startAudioBed(plan: plan)
-        try self.startBackgroundAudio(plan: plan)
-        try self.startMotionSummaries(plan: plan)
-        self.logBatterySummary(reason: "runtime_start")
-        self.scheduleDecisionLoop()
-        self.scheduleBatteryTimer()
-        self.scheduleAlarmIfNeeded(plan: plan)
+        try self.startRuntimeSubsystems(plan: plan)
         self.persistRuntimeSnapshot()
         resolve(nil)
       } catch {
@@ -325,6 +318,48 @@ class LucidCuePhoneRuntime: NSObject {
         ])
         self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
         reject("phone_training_start_failed", error.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc(skipPhonePresleepTrainingAndStartRuntime:rejecter:)
+  func skipPhonePresleepTrainingAndStartRuntime(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      guard let plan = self.activePlan else {
+        reject(
+          "phone_training_skip_failed",
+          "No active native presleep training plan to skip.",
+          self.runtimeError("No active native presleep training plan to skip.")
+        )
+        return
+      }
+
+      guard self.state?.phase == "training" else {
+        reject(
+          "phone_training_skip_failed",
+          "Native presleep training is not active.",
+          self.runtimeError("Native presleep training is not active.")
+        )
+        return
+      }
+
+      do {
+        _ = try self.handOffPresleepTrainingToRuntime(
+          plan: plan,
+          completionReason: "user_skipped",
+          latestDecisionReason: "training_skipped"
+        )
+        resolve(nil)
+      } catch {
+        self.appendEvent("runtime_error", payload: [
+          "operation": "training_skip_handoff_start_runtime",
+          "error": error.localizedDescription
+        ])
+        self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+        reject("phone_training_skip_failed", error.localizedDescription, error)
       }
     }
   }
@@ -685,6 +720,17 @@ class LucidCuePhoneRuntime: NSObject {
     ])
   }
 
+  private func startRuntimeSubsystems(plan: PhoneRuntimePlan) throws {
+    try configureAudioSession()
+    try startAudioBed(plan: plan)
+    try startBackgroundAudio(plan: plan)
+    try startMotionSummaries(plan: plan)
+    logBatterySummary(reason: "runtime_start")
+    scheduleDecisionLoop()
+    scheduleBatteryTimer()
+    scheduleAlarmIfNeeded(plan: plan)
+  }
+
   private func configureAudioSession() throws {
     let session = AVAudioSession.sharedInstance()
     var lastError: Error?
@@ -950,8 +996,29 @@ class LucidCuePhoneRuntime: NSObject {
   }
 
   private func completePresleepTrainingAndStartRuntime(plan: PhoneRuntimePlan) {
+    do {
+      _ = try handOffPresleepTrainingToRuntime(
+        plan: plan,
+        completionReason: "training_audio_finished",
+        latestDecisionReason: "training_completed"
+      )
+    } catch {
+      appendEvent("runtime_error", payload: [
+        "operation": "training_handoff_start_runtime",
+        "error": error.localizedDescription
+      ])
+      stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+    }
+  }
+
+  @discardableResult
+  private func handOffPresleepTrainingToRuntime(
+    plan: PhoneRuntimePlan,
+    completionReason: String,
+    latestDecisionReason: String
+  ) throws -> Bool {
     guard state?.phase == "training" else {
-      return
+      return false
     }
 
     cancelPresleepTrainingTimers()
@@ -965,9 +1032,10 @@ class LucidCuePhoneRuntime: NSObject {
     let driftMs = expectedTrainingEndedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? 0
 
     state?.phase = "runtime"
-    state?.latestDecisionReason = "training_completed"
+    state?.latestDecisionReason = latestDecisionReason
 
     appendEvent("training_completed", payload: [
+      "reason": completionReason,
       "expectedTrainingEndedAt": plan.trainingEndedAt,
       "actualTrainingEndedAt": formatDate(now),
       "driftMs": driftMs,
@@ -975,23 +1043,9 @@ class LucidCuePhoneRuntime: NSObject {
     ])
     appendRuntimeStartedEvent(plan: plan)
 
-    do {
-      try configureAudioSession()
-      try startAudioBed(plan: plan)
-      try startBackgroundAudio(plan: plan)
-      try startMotionSummaries(plan: plan)
-      logBatterySummary(reason: "runtime_start")
-      scheduleDecisionLoop()
-      scheduleBatteryTimer()
-      scheduleAlarmIfNeeded(plan: plan)
-      persistRuntimeSnapshot()
-    } catch {
-      appendEvent("runtime_error", payload: [
-        "operation": "training_handoff_start_runtime",
-        "error": error.localizedDescription
-      ])
-      stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
-    }
+    try startRuntimeSubsystems(plan: plan)
+    persistRuntimeSnapshot()
+    return true
   }
 
   private func recoverAudioBedIfNeeded(

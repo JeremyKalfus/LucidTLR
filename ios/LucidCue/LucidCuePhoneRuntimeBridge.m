@@ -11,6 +11,9 @@ RCT_EXTERN_METHOD(startPhoneTlrSessionAfterPresleepTraining:(NSDictionary *)plan
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(skipPhonePresleepTrainingAndStartRuntime:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(pausePhonePresleepTraining:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

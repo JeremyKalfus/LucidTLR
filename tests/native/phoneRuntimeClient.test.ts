@@ -11,6 +11,7 @@ function nativeRuntimeModule(
   return {
     startPhoneTlrSession: vi.fn(() => Promise.resolve()),
     startPhoneTlrSessionAfterPresleepTraining: vi.fn(() => Promise.resolve()),
+    skipPhonePresleepTrainingAndStartRuntime: vi.fn(() => Promise.resolve()),
     pausePhonePresleepTraining: vi.fn(() => Promise.resolve()),
     resumePhonePresleepTraining: vi.fn(() => Promise.resolve()),
     pausePhoneTlrCueing: vi.fn(() => Promise.resolve()),
@@ -53,6 +54,9 @@ describe("phone runtime client", () => {
     expect(() =>
       client.startPhoneTlrSessionAfterPresleepTraining({} as never),
     ).toThrow("iPhone Phone Mode native runtime is unavailable");
+    expect(() => client.skipPhonePresleepTrainingAndStartRuntime()).toThrow(
+      "iPhone Phone Mode native runtime is unavailable",
+    );
     expect(() => client.pausePhoneTlrCueing()).toThrow(
       "iPhone Phone Mode native runtime is unavailable",
     );
@@ -78,6 +82,45 @@ describe("phone runtime client", () => {
     expect(nativeModule.deferPhoneTlrCueing).toHaveBeenCalledWith({
       durationSeconds: 1800,
     });
+  });
+
+  it("calls exported native presleep skip handoff", async () => {
+    const nativeModule = nativeRuntimeModule();
+    const client = createPhoneRuntimeClient({
+      platform: "ios",
+      nativeModule,
+    });
+
+    await client.skipPhonePresleepTrainingAndStartRuntime();
+
+    expect(
+      nativeModule.skipPhonePresleepTrainingAndStartRuntime,
+    ).toHaveBeenCalledOnce();
+  });
+
+  it("requires the native presleep skip handoff in iOS builds", async () => {
+    const nativeModule = nativeRuntimeModule();
+    const partialNativeModule = nativeModule as Partial<NativePhoneRuntimeModule>;
+
+    delete partialNativeModule.skipPhonePresleepTrainingAndStartRuntime;
+
+    const client = createPhoneRuntimeClient({
+      platform: "ios",
+      nativeModule,
+    });
+    const status = await client.getPhoneRuntimeStatus();
+
+    expect(client.isAvailable()).toBe(false);
+    expect(status).toMatchObject({
+      available: false,
+      running: false,
+      unavailableReason: expect.stringContaining(
+        "skipPhonePresleepTrainingAndStartRuntime",
+      ),
+    });
+    expect(() => client.skipPhonePresleepTrainingAndStartRuntime()).toThrow(
+      "does not export skipPhonePresleepTrainingAndStartRuntime",
+    );
   });
 
   it("treats an iOS build missing TLR controls as an incomplete runtime", async () => {
