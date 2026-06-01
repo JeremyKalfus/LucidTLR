@@ -2,55 +2,74 @@ import * as React from "react";
 import { Text, View } from "react-native";
 
 import { colors, typography } from "@/src/theme/tokens";
-
-function elapsedSecondsSince(startedAt: string | undefined, nowMs: number): number {
-  if (!startedAt) {
-    return 0;
-  }
-
-  const startedAtMs = Date.parse(startedAt);
-
-  if (Number.isNaN(startedAtMs)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.floor((nowMs - startedAtMs) / 1000));
-}
-
-function formatElapsedTime(totalSeconds: number): string {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const paddedMinutes = String(minutes).padStart(2, "0");
-  const paddedSeconds = String(seconds).padStart(2, "0");
-
-  if (hours > 0) {
-    return `${hours}:${paddedMinutes}:${paddedSeconds}`;
-  }
-
-  return `${paddedMinutes}:${paddedSeconds}`;
-}
+import {
+  elapsedSecondsSince,
+  formatElapsedTime,
+} from "./runningSessionClockTime";
 
 export function RunningSessionClock({
   label,
+  paused = false,
   startedAt,
 }: {
   label?: string;
+  paused?: boolean;
   startedAt: string | undefined;
 }) {
   const [nowMs, setNowMs] = React.useState(() => Date.now());
+  const [pausedDurationMs, setPausedDurationMs] = React.useState(0);
+  const pausedStartedAtRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
+    pausedStartedAtRef.current = null;
     setNowMs(Date.now());
+    setPausedDurationMs(0);
+  }, [startedAt]);
+
+  React.useEffect(() => {
+    const currentMs = Date.now();
+
+    if (paused) {
+      if (pausedStartedAtRef.current === null) {
+        pausedStartedAtRef.current = currentMs;
+        setNowMs(currentMs);
+      }
+
+      return;
+    }
+
+    if (pausedStartedAtRef.current !== null) {
+      const pausedStartedAt = pausedStartedAtRef.current;
+
+      pausedStartedAtRef.current = null;
+      setPausedDurationMs(
+        (durationMs) => durationMs + currentMs - pausedStartedAt,
+      );
+      setNowMs(currentMs);
+    }
+  }, [paused, startedAt]);
+
+  React.useEffect(() => {
+    if (paused) {
+      return undefined;
+    }
 
     const intervalId = setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [startedAt]);
+  }, [paused, startedAt]);
 
-  const elapsedSeconds = elapsedSecondsSince(startedAt, nowMs);
+  const effectiveNowMs =
+    paused && pausedStartedAtRef.current !== null
+      ? pausedStartedAtRef.current
+      : nowMs;
+  const elapsedSeconds = elapsedSecondsSince(
+    startedAt,
+    effectiveNowMs,
+    pausedDurationMs,
+  );
 
   return (
     <View

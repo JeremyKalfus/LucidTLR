@@ -1,9 +1,17 @@
 import { router } from "expo-router";
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
-import type { LucideIcon } from "lucide-react-native";
-import { FastForward, Headphones, Pause, Play } from "lucide-react-native";
+import {
+  FastForward,
+  Headphones,
+  Moon,
+  Pause,
+  Play,
+  Plus,
+  Smartphone,
+  Watch,
+} from "lucide-react-native";
 import React from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Alert, Text, View } from "react-native";
 
 import {
   Card,
@@ -37,7 +45,7 @@ import {
   type WatchRuntimeStatus,
 } from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
-import { borders, colors, radii, typography } from "@/src/theme/tokens";
+import { colors, typography } from "@/src/theme/tokens";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Phone runtime failed.";
@@ -60,52 +68,6 @@ function planTrainingEndFallback(session: { trainingStartedAt?: string }) {
     Date.parse(session.trainingStartedAt) +
       FINAL_LUCID_TRAINING_DURATION_SECONDS * 1000,
   ).toISOString();
-}
-
-function TrainingControlButton({
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  icon: LucideIcon;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minWidth: 128,
-        minHeight: 52,
-        borderRadius: radii.button,
-        borderWidth: borders.hairline,
-        borderColor: colors.cardBorder,
-        backgroundColor: colors.card,
-        alignItems: "center",
-        justifyContent: "center",
-        flexDirection: "row",
-        gap: 8,
-        paddingHorizontal: 16,
-        opacity: pressed ? 0.72 : 1,
-      })}
-    >
-      <Icon color={colors.textMuted} size={20} strokeWidth={1.8} />
-      <Text
-        selectable
-        style={{
-          color: colors.textPrimary,
-          fontSize: typography.body.fontSize,
-          lineHeight: typography.body.lineHeight,
-          letterSpacing: typography.body.letterSpacing,
-          fontWeight: "400",
-        }}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
 }
 
 export function PresleepTrainingScreen() {
@@ -624,8 +586,26 @@ export function PresleepTrainingScreen() {
             Presleep training
           </Text>
           <RunningSessionClock
+            paused={isTrainingPaused}
             startedAt={session.trainingStartedAt ?? session.startedAt}
           />
+          <Text
+            selectable
+            accessibilityLabel={`Training audio length ${formatPlaybackTime(
+              FINAL_LUCID_TRAINING_DURATION_SECONDS,
+            )}`}
+            style={{
+              color: colors.textMuted,
+              fontSize: typography.body.fontSize,
+              lineHeight: typography.body.lineHeight,
+              letterSpacing: typography.body.letterSpacing,
+              fontVariant: ["tabular-nums"],
+              fontWeight: "400",
+              textAlign: "center",
+            }}
+          >
+            {formatPlaybackTime(FINAL_LUCID_TRAINING_DURATION_SECONDS)}
+          </Text>
           <View
             style={{
               flexDirection: "row",
@@ -634,14 +614,16 @@ export function PresleepTrainingScreen() {
               gap: 10,
             }}
           >
-            <TrainingControlButton
+            <PrimaryPillButton
+              flex={1}
               icon={isTrainingPaused ? Play : Pause}
               label={isTrainingPaused ? "Resume" : "Pause"}
               onPress={() => {
                 void toggleTrainingPause();
               }}
             />
-            <TrainingControlButton
+            <PrimaryPillButton
+              flex={1}
               icon={FastForward}
               label="Skip"
               onPress={() => {
@@ -699,6 +681,7 @@ export function PresleepTrainingScreen() {
 
       {!session ? (
         <PrimaryPillButton
+          icon={Plus}
           label="Create TLR Session"
           onPress={() => startSession("tlr")}
         />
@@ -707,6 +690,7 @@ export function PresleepTrainingScreen() {
       {canSkipGuidedTraining ? (
         <PrimaryPillButton
           disabled={isStartingRuntime}
+          icon={Moon}
           label={isStartingRuntime ? "Starting Phone Runtime..." : "Start Night Session"}
           onPress={() => {
             void startNightSession({ skipGuidedTraining: true });
@@ -717,6 +701,7 @@ export function PresleepTrainingScreen() {
       {canStart && !tlrOptions.skipGuidedTraining ? (
         <PrimaryPillButton
           disabled={!isTrainingAudioReady}
+          icon={Play}
           label={isTrainingAudioReady ? "Start Training" : "Loading Training Audio..."}
           onPress={() => {
             void startTrainingPlayback();
@@ -743,6 +728,7 @@ export function PresleepTrainingScreen() {
           {canStartRuntime ? (
             <PrimaryPillButton
               disabled={isStartingRuntime}
+              icon={session.mode === "watch" ? Watch : Smartphone}
               label={
                 isStartingRuntime
                   ? session.mode === "watch"
@@ -774,6 +760,7 @@ export function PresleepTrainingScreen() {
             </Card>
           ) : null}
           <PrimaryPillButton
+            icon={Moon}
             label="Open Night Session"
             onPress={() => router.push("/active-night-session")}
           />

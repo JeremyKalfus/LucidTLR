@@ -1,3 +1,4 @@
+import { Save } from "lucide-react-native";
 import { useState } from "react";
 import { Text, TextInput, View } from "react-native";
 
@@ -40,6 +41,7 @@ export function DreamJournalScreen() {
       />
 
       <PrimaryPillButton
+        icon={Save}
         label="Save Local Entry"
         disabled={!text.trim()}
         onPress={() => {

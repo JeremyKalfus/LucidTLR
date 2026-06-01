@@ -1,6 +1,7 @@
 import { router } from "expo-router";
+import { ClipboardList, FastForward, Home, Pause, Play, Sun } from "lucide-react-native";
 import React from "react";
-import { Alert, AppState as NativeAppState, Text } from "react-native";
+import { Alert, AppState as NativeAppState, Text, View } from "react-native";
 
 import {
   PrimaryPillButton,
@@ -281,49 +282,78 @@ export function ActiveNightSessionScreen() {
 
   if (activeSession && canEnd) {
     return (
-      <Screen bottomNav={false}>
-        <RunningSessionClock
-          label={runningSessionLabel(activeSession)}
-          startedAt={nightSessionStartedAt(activeSession)}
-        />
-        {runtimeError ? (
+      <Screen bottomNav={false} centered>
+        <View style={{ alignItems: "center", gap: 18 }}>
           <Text
             selectable
             style={{
-              color: colors.textSecondary,
-              fontSize: typography.body.fontSize,
-              lineHeight: typography.body.lineHeight,
+              color: colors.textPrimary,
+              fontSize: typography.title.fontSize,
+              lineHeight: typography.title.lineHeight,
+              letterSpacing: typography.title.letterSpacing,
               textAlign: "center",
+              fontWeight: "400",
             }}
           >
-            {runtimeError}
+            {runningSessionLabel(activeSession)}
           </Text>
-        ) : null}
-        {canControlTlrRuntime ? (
-          <PrimaryPillButton
-            disabled={runtimeControlsDisabled}
-            label="Push back TLR (30 minutes)"
-            onPress={() => {
-              void pushBackTlr();
-            }}
+          <RunningSessionClock
+            startedAt={nightSessionStartedAt(activeSession)}
           />
-        ) : null}
-        {canControlTlrRuntime ? (
-          <PrimaryPillButton
-            disabled={runtimeControlsDisabled}
-            label={tlrPaused ? "Start TLR" : "Pause TLR"}
-            onPress={() => {
-              void toggleTlrPause();
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              justifyContent: "center",
+              gap: 10,
             }}
-          />
-        ) : null}
-        <PrimaryPillButton
-          disabled={isStopping}
-          label={isStopping ? "Waking Up..." : "Wake Up"}
-          onPress={() => {
-            void stopSession();
-          }}
-        />
+          >
+            {canControlTlrRuntime ? (
+              <PrimaryPillButton
+                disabled={runtimeControlsDisabled}
+                flex={1}
+                icon={FastForward}
+                label="Push Back 30m"
+                onPress={() => {
+                  void pushBackTlr();
+                }}
+              />
+            ) : null}
+            {canControlTlrRuntime ? (
+              <PrimaryPillButton
+                disabled={runtimeControlsDisabled}
+                flex={1}
+                icon={tlrPaused ? Play : Pause}
+                label={tlrPaused ? "Start TLR" : "Pause TLR"}
+                onPress={() => {
+                  void toggleTlrPause();
+                }}
+              />
+            ) : null}
+            <PrimaryPillButton
+              disabled={isStopping}
+              flex={1}
+              icon={Sun}
+              label={isStopping ? "Waking Up..." : "Wake Up"}
+              onPress={() => {
+                void stopSession();
+              }}
+            />
+          </View>
+          {runtimeError ? (
+            <Text
+              selectable
+              style={{
+                color: colors.textSecondary,
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+                textAlign: "center",
+              }}
+            >
+              {runtimeError}
+            </Text>
+          ) : null}
+        </View>
       </Screen>
     );
   }
@@ -345,6 +375,7 @@ export function ActiveNightSessionScreen() {
           </Text>
         ) : null}
         <PrimaryPillButton
+          icon={ClipboardList}
           label="Morning Review"
           onPress={() => router.push("/morning-review")}
         />
@@ -355,7 +386,11 @@ export function ActiveNightSessionScreen() {
   return (
     <Screen>
       {canGoHome ? (
-        <PrimaryPillButton label="Back Home" onPress={() => router.replace("/")} />
+        <PrimaryPillButton
+          icon={Home}
+          label="Back Home"
+          onPress={() => router.replace("/")}
+        />
       ) : null}
     </Screen>
   );

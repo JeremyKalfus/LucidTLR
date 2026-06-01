@@ -4,10 +4,13 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
+  Download,
   History,
   Moon,
+  Share2,
   Smartphone,
   Trash2,
+  Upload,
   Watch,
 } from "lucide-react-native";
 import React from "react";
@@ -57,12 +60,14 @@ import {
   watchRuntime,
   type WatchRuntimeEvent,
   type WatchRuntimeLogSummary,
+  type WatchRuntimeStatus,
 } from "@/src/native/watch";
 import {
   phoneRuntime,
   summarizePhoneRuntimeEvents,
   type NativePhoneRuntimeEvent,
 } from "@/src/native/phoneRuntime";
+import { TLR_PROTOCOL_VERSION } from "@/src/protocol/tlrProtocol";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -877,7 +882,7 @@ async function pickFullLocalDataImportFile() {
 }
 
 export function DataScreen() {
-  const { reloadLocalData } = useAppState();
+  const { participantId, reloadLocalData } = useAppState();
   const [dataTransferError, setDataTransferError] = React.useState<string | null>(
     null,
   );
@@ -1007,9 +1012,16 @@ export function DataScreen() {
         />
       </Card>
 
-      <Card>
+      <View style={{ gap: 12 }}>
+        <InfoRow label="participant ID" value={participantId} />
+        <InfoRow label="protocol" value={TLR_PROTOCOL_VERSION} />
+        <InfoRow label="app shell" value="0.1.0" />
+      </View>
+
+      <View style={{ gap: 12 }}>
         <PrimaryPillButton
           disabled={isExportingFullData || isImportingFullData}
+          icon={Upload}
           label={isExportingFullData ? "Preparing Export..." : "Full Data Export"}
           onPress={() => {
             void exportFullData();
@@ -1017,6 +1029,7 @@ export function DataScreen() {
         />
         <PrimaryPillButton
           disabled={isExportingFullData || isImportingFullData}
+          icon={Download}
           label={isImportingFullData ? "Importing..." : "Full Data Import"}
           onPress={() => {
             void importFullData();
@@ -1026,7 +1039,7 @@ export function DataScreen() {
         {dataTransferError ? (
           <InfoRow label="data transfer" value={dataTransferError} />
         ) : null}
-      </Card>
+      </View>
     </Screen>
   );
 }
@@ -1370,6 +1383,7 @@ export function IphoneRuntimeDataScreen() {
         <InfoRow label="raw events" value={String(runtimeLogs.length)} />
         <PrimaryPillButton
           disabled={!runtimeSession || isExportingLogs}
+          icon={Share2}
           label={isExportingLogs ? "Preparing Logs..." : "Share Raw Logs JSON"}
           onPress={() => {
             void shareRuntimeLogs();
@@ -1392,6 +1406,8 @@ export function IphoneRuntimeDataScreen() {
 
 export function WatchModeDataScreen() {
   const { activeSession, sessionHistory } = useAppState();
+  const [watchRuntimeStatus, setWatchRuntimeStatus] =
+    React.useState<WatchRuntimeStatus | null>(null);
   const [epochs, setEpochs] = React.useState<WatchEpoch[]>([]);
   const [runtimeEvents, setRuntimeEvents] = React.useState<WatchRuntimeEvent[]>([]);
   const [summary, setSummary] = React.useState<{
@@ -1416,6 +1432,30 @@ export function WatchModeDataScreen() {
         event.eventType === "watch_cue_suppressed" ||
         event.eventType === "watch_cue_failed",
     );
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    async function loadWatchStatus() {
+      try {
+        const status = await watchRuntime.getWatchRuntimeStatus();
+
+        if (mounted) {
+          setWatchRuntimeStatus(status);
+        }
+      } catch {
+        if (mounted) {
+          setWatchRuntimeStatus(null);
+        }
+      }
+    }
+
+    void loadWatchStatus();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     let mounted = true;
@@ -1500,6 +1540,48 @@ export function WatchModeDataScreen() {
 
       <Card>
         <InfoRow
+          label="watch connection"
+          value={
+            watchRuntimeStatus
+              ? watchRuntimeStatus.watchReachable
+                ? "reachable"
+                : watchRuntimeStatus.connectivityState
+              : "unknown"
+          }
+        />
+        <InfoRow
+          label="latest epoch"
+          value={watchRuntimeStatus?.latestEpochAt ?? "none"}
+        />
+        <InfoRow
+          label="REM probability"
+          value={
+            typeof watchRuntimeStatus?.latestRemProbability === "number"
+              ? watchRuntimeStatus.latestRemProbability.toFixed(2)
+              : "unavailable"
+          }
+        />
+        <InfoRow
+          label="sensor quality"
+          value={watchRuntimeStatus?.latestSensorQuality ?? "unknown"}
+        />
+        <InfoRow
+          label="watch battery"
+          value={
+            typeof watchRuntimeStatus?.watchBatteryLevel === "number"
+              ? `${Math.round(watchRuntimeStatus.watchBatteryLevel * 100)}%`
+              : "unknown"
+          }
+        />
+        <InfoRow
+          label="classifier"
+          value={
+            watchRuntimeStatus?.modelAvailable
+              ? watchRuntimeStatus.classifierVersion
+              : "disabled until verified"
+          }
+        />
+        <InfoRow
           label="session"
           value={latestWatchSession?.id ?? "no local watch session"}
         />
@@ -1536,7 +1618,7 @@ export function WatchModeDataScreen() {
           value={runtimeSummary ? String(runtimeSummary.movementPauses) : "0"}
         />
         <InfoRow
-          label="classifier"
+          label="session classifier"
           value={
             summary && summary.classifierVersions.length > 0
               ? summary.classifierVersions.join(", ")

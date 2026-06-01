@@ -1,4 +1,12 @@
 import { Redirect, router } from "expo-router";
+import {
+  ArrowLeft,
+  Download,
+  Play,
+  RefreshCw,
+  Share2,
+  Square,
+} from "lucide-react-native";
 import React from "react";
 import { Alert, Platform, Share, Text, View } from "react-native";
 
@@ -364,30 +372,36 @@ export default function IPhoneKitchenSinkRoute() {
       <View style={{ gap: 8 }}>
         <PrimaryPillButton
           disabled={Boolean(busyLabel)}
+          icon={Play}
           label={busyLabel ?? "Start 45-minute locked kitchen sink"}
           onPress={() => void startTest()}
         />
         <PrimaryPillButton
           disabled={Boolean(busyLabel)}
+          icon={Square}
           label="Stop runtime"
           onPress={() => void stopTest()}
         />
         <PrimaryPillButton
           disabled={Boolean(busyLabel)}
+          icon={RefreshCw}
           label="Refresh logs"
           onPress={() => void refresh()}
         />
         <PrimaryPillButton
           disabled={Boolean(busyLabel) || logs.length === 0}
+          icon={Download}
           label="Import logs"
           onPress={() => void importLogs()}
         />
         <PrimaryPillButton
           disabled={logs.length === 0}
+          icon={Share2}
           label="Share logs"
           onPress={() => void shareLogs()}
         />
         <PrimaryPillButton
+          icon={ArrowLeft}
           label="Back to iOS Phone Mode"
           onPress={() => router.push("/settings/ios-phone-mode")}
         />

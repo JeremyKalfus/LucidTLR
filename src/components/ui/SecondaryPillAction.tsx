@@ -18,25 +18,29 @@ export function SecondaryPillAction({
       onPress={onPress}
       style={({ pressed }) => ({
         flex: 1,
-        minHeight: 72,
+        minHeight: 52,
         alignItems: "center",
         justifyContent: "center",
-        borderRadius: radii.secondaryPill,
+        borderRadius: radii.button,
         borderWidth: borders.hairline,
         borderColor: colors.cardBorder,
         backgroundColor: colors.card,
         opacity: pressed ? 0.72 : 1,
       })}
     >
-      <View style={{ gap: 7, alignItems: "center" }}>
-        <Icon color={colors.textMuted} size={24} strokeWidth={1.8} />
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+        <Icon color={colors.textMuted} size={20} strokeWidth={1.8} />
         <Text
           selectable
+          adjustsFontSizeToFit
+          minimumFontScale={0.82}
+          numberOfLines={1}
           style={{
-            color: colors.textMuted,
-            fontSize: typography.label.fontSize,
-            lineHeight: typography.label.lineHeight,
-            letterSpacing: typography.label.letterSpacing,
+            color: colors.textPrimary,
+            fontSize: typography.body.fontSize,
+            lineHeight: typography.body.lineHeight,
+            letterSpacing: typography.body.letterSpacing,
+            textAlign: "center",
           }}
         >
           {label}

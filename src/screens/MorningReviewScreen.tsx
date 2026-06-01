@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import { Eye, Save } from "lucide-react-native";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
@@ -451,6 +452,7 @@ export function MorningReviewScreen() {
       ))}
 
       <PrimaryPillButton
+        icon={Eye}
         label={showOptional ? "Hide Optional Detail" : "Optional Lucidity Detail"}
         onPress={() => setShowOptional((value) => !value)}
       />
@@ -485,6 +487,7 @@ export function MorningReviewScreen() {
       ) : null}
 
       <PrimaryPillButton
+        icon={Save}
         label="Save Review"
         onPress={async () => {
           if (activeSession) {

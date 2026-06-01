@@ -1,4 +1,5 @@
 import { Redirect } from "expo-router";
+import { Play, RefreshCw, Share2, Square, Trash2 } from "lucide-react-native";
 import React from "react";
 import { Alert, Pressable, Share, Text, View } from "react-native";
 
@@ -610,6 +611,7 @@ export default function IPhoneFeasibilityRoute() {
         {presets.map((preset) => (
           <PrimaryPillButton
             key={preset.key}
+            icon={Play}
             label={preset.label}
             onPress={() => {
               selectPreset(preset.key);
@@ -644,6 +646,7 @@ export default function IPhoneFeasibilityRoute() {
           />
         </View>
         <PrimaryPillButton
+          icon={Play}
           label="Run selected with toggles"
           onPress={() => void startSession(selectedPresetKey, true)}
         />
@@ -680,10 +683,26 @@ export default function IPhoneFeasibilityRoute() {
       </Card>
 
       <View style={{ gap: 8 }}>
-        <PrimaryPillButton label="Stop test" onPress={() => void stopSession()} />
-        <PrimaryPillButton label="Refresh logs" onPress={() => void refreshLogs()} />
-        <PrimaryPillButton label="Share logs" onPress={() => void shareLogs()} />
-        <PrimaryPillButton label="Clear logs" onPress={() => void clearLogs()} />
+        <PrimaryPillButton
+          icon={Square}
+          label="Stop test"
+          onPress={() => void stopSession()}
+        />
+        <PrimaryPillButton
+          icon={RefreshCw}
+          label="Refresh logs"
+          onPress={() => void refreshLogs()}
+        />
+        <PrimaryPillButton
+          icon={Share2}
+          label="Share logs"
+          onPress={() => void shareLogs()}
+        />
+        <PrimaryPillButton
+          icon={Trash2}
+          label="Clear logs"
+          onPress={() => void clearLogs()}
+        />
       </View>
 
       <Card>

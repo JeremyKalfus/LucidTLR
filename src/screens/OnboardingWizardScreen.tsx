@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, Text, View } from "react-native";
@@ -514,6 +515,7 @@ export function OnboardingWizardScreen() {
             {stepIndex > 0 ? (
               <View style={{ flex: 1 }}>
                 <PrimaryPillButton
+                  icon={ArrowLeft}
                   label="Back"
                   disabled={isCompletingOnboarding}
                   onPress={() => {
@@ -525,6 +527,7 @@ export function OnboardingWizardScreen() {
             ) : null}
             <View style={{ flex: 1 }}>
               <PrimaryPillButton
+                icon={isLastStep ? Check : ArrowRight}
                 label={isLastStep ? "Finish" : "Next"}
                 disabled={!canContinue || isCompletingOnboarding}
                 onPress={() => {

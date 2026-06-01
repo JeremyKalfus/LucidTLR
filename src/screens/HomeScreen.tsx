@@ -1,14 +1,14 @@
 import { router } from "expo-router";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import type { LucideIcon } from "lucide-react-native";
 import { AlarmClock, Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
 import React from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Alert, Text, View } from "react-native";
 
 import {
   Card,
   IconButton,
   InfoRow,
+  PrimaryPillButton,
   Screen,
 } from "@/src/components/ui";
 import { SleepNightGraph } from "@/src/components/sleep/SleepNightGraph";
@@ -28,14 +28,12 @@ import {
 import {
   watchTlrStartBlockReason,
   watchRuntime,
-  type WatchRuntimeStatus,
 } from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
-import { borders, colors, radii, shadows, spacing, typography } from "@/src/theme/tokens";
+import { colors, spacing, typography } from "@/src/theme/tokens";
 
 const labelToCardGap = 6;
 const actionRowGap = 10;
-const sideActionHorizontalPadding = 6;
 
 function HomeSectionLabel({ children }: { children: string }) {
   return (
@@ -51,84 +49,6 @@ function HomeSectionLabel({ children }: { children: string }) {
     >
       {children}
     </Text>
-  );
-}
-
-function HomeActionButton({
-  flex,
-  icon: Icon,
-  label,
-  onPress,
-  primary = false,
-}: {
-  flex?: number;
-  icon?: LucideIcon;
-  label: string;
-  onPress: () => void;
-  primary?: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        ...(flex === undefined
-          ? { width: "100%" }
-          : {
-              flexGrow: flex,
-              flexShrink: 1,
-              flexBasis: 0,
-            }),
-        minWidth: 0,
-        minHeight: primary ? 78 : 72,
-        alignItems: "center",
-        justifyContent: "center",
-        borderRadius: radii.primaryPill,
-        borderWidth: borders.hairline,
-        borderColor: colors.cardBorder,
-        backgroundColor: colors.card,
-        paddingHorizontal: primary ? 12 : sideActionHorizontalPadding,
-        opacity: pressed ? 0.72 : 1,
-        boxShadow: primary ? shadows.primaryGlow : undefined,
-      })}
-    >
-      <View
-        style={{
-          width: "100%",
-          minWidth: 0,
-          alignItems: "center",
-          justifyContent: "center",
-          gap: Icon ? (primary ? 4 : 5) : 0,
-        }}
-      >
-        {Icon ? (
-          <Icon
-            color={colors.textMuted}
-            size={24}
-            strokeWidth={1.8}
-          />
-        ) : null}
-        <Text
-          selectable
-          adjustsFontSizeToFit
-          minimumFontScale={0.82}
-          numberOfLines={primary ? 1 : 2}
-          style={{
-            color: primary ? colors.textPrimary : colors.textMuted,
-            fontSize: typography.label.fontSize,
-            lineHeight: typography.label.lineHeight,
-            letterSpacing: primary
-              ? typography.title.letterSpacing
-              : typography.label.letterSpacing,
-            textAlign: "center",
-            fontWeight: "400",
-          }}
-        >
-          {label}
-        </Text>
-      </View>
-    </Pressable>
   );
 }
 
@@ -163,18 +83,14 @@ export function HomeScreen() {
   const [lastSleepLogs, setLastSleepLogs] = React.useState<
     NativePhoneRuntimeEvent[]
   >([]);
-  const [watchRuntimeStatus, setWatchRuntimeStatus] =
-    React.useState<WatchRuntimeStatus | null>(null);
   const handleBeginTlr = React.useCallback(async () => {
     if (selectedMode === "watch") {
-      let status = watchRuntimeStatus;
+      let status = null;
 
       try {
         status = await watchRuntime.getWatchRuntimeStatus();
-        setWatchRuntimeStatus(status);
       } catch {
         status = null;
-        setWatchRuntimeStatus(null);
       }
 
       const blockReason = watchTlrStartBlockReason(status);
@@ -187,7 +103,7 @@ export function HomeScreen() {
 
     startSession("tlr");
     router.push("/presleep-training");
-  }, [selectedMode, startSession, watchRuntimeStatus]);
+  }, [selectedMode, startSession]);
   const handleTlrOptionsChange = React.useCallback(
     (patch: TlrOptionsPatch) => {
       void updateTlrOptions(patch);
@@ -292,36 +208,6 @@ export function HomeScreen() {
     };
   }, [lastSession]);
 
-  React.useEffect(() => {
-    if (selectedMode !== "watch") {
-      setWatchRuntimeStatus(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function refreshWatchStatus() {
-      try {
-        const status = await watchRuntime.getWatchRuntimeStatus();
-        if (!cancelled) {
-          setWatchRuntimeStatus(status);
-        }
-      } catch {
-        if (!cancelled) {
-          setWatchRuntimeStatus(null);
-        }
-      }
-    }
-
-    void refreshWatchStatus();
-    const interval = setInterval(refreshWatchStatus, 30_000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [selectedMode]);
-
   return (
     <Screen>
       <View style={{ gap: labelToCardGap }}>
@@ -340,7 +226,7 @@ export function HomeScreen() {
           />
         </View>
 
-        <Card compact>
+        <View style={{ gap: 8, paddingTop: 4 }}>
           <TlrOptionsControls
             selectedMode={selectedMode}
             tlrOptions={tlrOptions}
@@ -348,84 +234,37 @@ export function HomeScreen() {
             onModeChange={setSelectedMode}
             onOptionsChange={handleTlrOptionsChange}
           />
-          {selectedMode === "watch" ? (
-            <>
-              <InfoRow
-                label="watch connection"
-                value={
-                  watchRuntimeStatus
-                    ? watchRuntimeStatus.watchReachable
-                      ? "reachable"
-                      : watchRuntimeStatus.connectivityState
-                    : "not checked"
-                }
-              />
-              <InfoRow
-                label="latest epoch"
-                value={watchRuntimeStatus?.latestEpochAt ?? "none"}
-              />
-              <InfoRow
-                label="REM probability"
-                value={
-                  typeof watchRuntimeStatus?.latestRemProbability === "number"
-                    ? watchRuntimeStatus.latestRemProbability.toFixed(2)
-                    : "unavailable"
-                }
-              />
-              <InfoRow
-                label="sensor quality"
-                value={watchRuntimeStatus?.latestSensorQuality ?? "unknown"}
-              />
-              <InfoRow
-                label="watch battery"
-                value={
-                  typeof watchRuntimeStatus?.watchBatteryLevel === "number"
-                    ? `${Math.round(watchRuntimeStatus.watchBatteryLevel * 100)}%`
-                    : "unknown"
-                }
-              />
-              <InfoRow
-                label="classifier"
-                value={
-                  watchRuntimeStatus?.modelAvailable
-                    ? watchRuntimeStatus.classifierVersion
-                    : "disabled until verified"
-                }
-              />
-            </>
-          ) : null}
-        </Card>
+        </View>
       </View>
 
       <View style={{ gap: actionRowGap }}>
-        <HomeActionButton
+        <PrimaryPillButton
           icon={Sparkles}
           label="Begin TLR"
-          primary
           onPress={() => {
             void handleBeginTlr();
           }}
         />
         <View style={{ flexDirection: "row", gap: actionRowGap }}>
-          <HomeActionButton
+          <PrimaryPillButton
             flex={1}
             icon={AlarmClock}
-            label="set alarm"
+            label="Set Alarm"
             onPress={() => router.push("/settings")}
           />
-          <HomeActionButton
+          <PrimaryPillButton
             flex={1}
             icon={Moon}
-            label="no TLR"
+            label="No TLR"
             onPress={() => {
               startSession("sleep_log");
               router.push("/active-night-session");
             }}
           />
-          <HomeActionButton
+          <PrimaryPillButton
             flex={1}
             icon={NotebookPen}
-            label="journal"
+            label="Journal"
             onPress={() => router.push("/journal")}
           />
         </View>

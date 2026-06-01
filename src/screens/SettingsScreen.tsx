@@ -5,8 +5,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Cpu,
+  History,
+  RefreshCw,
   SlidersHorizontal,
   Smartphone,
+  Trash2,
   Watch,
 } from "lucide-react-native";
 import React from "react";
@@ -43,7 +46,6 @@ import {
   watchRuntime,
   type WatchRuntimeStatus,
 } from "@/src/native/watch";
-import { TLR_PROTOCOL_VERSION } from "@/src/protocol/tlrProtocol";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
@@ -431,7 +433,6 @@ export function SettingsScreen() {
   const [resetError, setResetError] = React.useState<string | null>(null);
   const {
     consentChoices,
-    participantId,
     resetAppData,
   } = useAppState();
 
@@ -518,24 +519,14 @@ export function SettingsScreen() {
         />
       </Card>
 
-      <Card>
+      <View style={{ gap: 12 }}>
         <InfoRow
           label="structured upload"
           value={consentChoices.structuredResearchUploadConsent ? "enabled" : "off"}
         />
-        <InfoRow
-          label="dream upload"
-          value={consentChoices.dreamJournalUploadConsent ? "enabled" : "off"}
-        />
-      </Card>
+      </View>
 
-      <Card>
-        <InfoRow label="participant ID" value={participantId} />
-        <InfoRow label="protocol" value={TLR_PROTOCOL_VERSION} />
-        <InfoRow label="app shell" value="0.1.0" />
-      </Card>
-
-      <Card>
+      <View style={{ gap: 12 }}>
         <SettingsNote>
           Reset app and delete local data clears this device. Full remote
           deletion is not implemented yet.
@@ -543,10 +534,11 @@ export function SettingsScreen() {
         {resetError ? <SettingsNote>{resetError}</SettingsNote> : null}
         <PrimaryPillButton
           disabled={isResetting}
+          icon={Trash2}
           label={isResetting ? "Resetting..." : "Reset app and delete local data"}
           onPress={confirmReset}
         />
-      </Card>
+      </View>
     </Screen>
   );
 }
@@ -622,6 +614,7 @@ export function IosPhoneModeSettingsScreen() {
             Development-only locked runtime smoke test.
           </SettingsNote>
           <PrimaryPillButton
+            icon={Cpu}
             label="45-minute kitchen sink"
             onPress={() => router.push("/debug/iphone-kitchen-sink")}
           />
@@ -876,6 +869,7 @@ export function EngineSettingsScreen() {
         </SettingsNote>
         <PrimaryPillButton
           disabled={isSyncingSleepHistory}
+          icon={History}
           label={
             sleepHistory.enabled
               ? "Turn sleep history off"
@@ -888,6 +882,7 @@ export function EngineSettingsScreen() {
         {sleepHistory.enabled ? (
           <PrimaryPillButton
             disabled={isSyncingSleepHistory}
+            icon={RefreshCw}
             label={
               isSyncingSleepHistory ? "Syncing..." : "Sync sleep history now"
             }
