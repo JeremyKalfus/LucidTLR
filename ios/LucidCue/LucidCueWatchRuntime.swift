@@ -3,13 +3,36 @@ import Foundation
 import React
 import WatchConnectivity
 
+private enum WatchRuntimeLifecycleState: String {
+  case idle
+  case startPending
+  case watchConfirmed
+  case running
+  case stopping
+  case stopped
+  case failedStart
+  case orphanDetected
+}
+
 @objc(LucidCueWatchRuntime)
 class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
   private let queue = DispatchQueue(label: "com.lucidcue.watch-runtime")
   private let isoFormatter = ISO8601DateFormatter()
+  private let startAckTimeoutSeconds: TimeInterval = 60
   private var activePlan: [String: Any]?
   private var activeLogs: [[String: Any]] = []
   private var activeEpochs: [[String: Any]] = []
+  private var lifecycleState: WatchRuntimeLifecycleState = .idle
+  private var pendingStartCommandId: String?
+  private var pendingStartExpiresAt: Date?
+  private var watchStartConfirmedAt: Date?
+  private var firstEpochConfirmedAt: Date?
+  private var watchStartFailureReason = ""
+  private var latestWatchReportedSessionId = ""
+  private var latestWatchSessionId = ""
+  private var latestWatchSessionStartedAt: Date?
+  private var latestWatchStopAt: Date?
+  private var latestWatchIsRunning = false
   private var latestRuntimeError: String?
   private var consecutiveLikelyRemEpochs = 0
   private var cueCount = 0
@@ -142,10 +165,27 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     }
 
     queue.async {
-      self.stopRuntime(reason: "replaced_by_new_session", logEvent: true)
+      if let previousPlan = self.activePlan {
+        self.sendWatchCommand(command: "stop", plan: previousPlan, reason: "replaced_by_new_session")
+        self.stopRuntime(reason: "replaced_by_new_session", logEvent: true)
+      } else if self.latestWatchIsRunning,
+        !self.latestWatchReportedSessionId.isEmpty,
+        self.latestWatchReportedSessionId != sessionId {
+        self.sendStopCommand(
+          sessionId: self.latestWatchReportedSessionId,
+          reason: "replaced_by_new_session"
+        )
+      }
+
       self.activePlan = plan
       self.activeLogs = self.loadLogs(sessionId: sessionId)
       self.activeEpochs = self.loadEpochs(sessionId: sessionId)
+      self.lifecycleState = .startPending
+      self.pendingStartCommandId = nil
+      self.pendingStartExpiresAt = nil
+      self.watchStartConfirmedAt = nil
+      self.firstEpochConfirmedAt = nil
+      self.watchStartFailureReason = ""
       self.latestRuntimeError = nil
       self.consecutiveLikelyRemEpochs = 0
       self.cueCount = 0
@@ -156,8 +196,46 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       self.cueAssociatedMovementPauseUntil = nil
       self.userPaused = false
       self.userDeferredUntil = nil
-      self.latestCueDecisionReason = "watch_runtime_started"
+      self.latestCueDecisionReason = "watch_runtime_start_requested"
       self.activateWatchConnectivity()
+      self.appendEvent("watch_runtime_start_requested", payload: [
+        "nativePolicyVersion": plan["nativePolicyVersion"] as? String ?? "",
+        "protocolVersion": plan["protocolVersion"] as? String ?? ""
+      ])
+
+      guard WCSession.isSupported() else {
+        self.failPendingStart(
+          sessionId: sessionId,
+          reason: "watch_connectivity_unavailable",
+          reject: reject,
+          code: "watch_start_not_reachable"
+        )
+        return
+      }
+
+      let session = WCSession.default
+      guard session.activationState == .activated, session.isReachable else {
+        self.latestConnectivityState = "disconnected"
+        self.failPendingStart(
+          sessionId: sessionId,
+          reason: "watch_start_not_reachable",
+          reject: reject,
+          code: "watch_start_not_reachable"
+        )
+        return
+      }
+
+      guard self.latestWatchHealthAuthorizationStatus != "denied",
+        self.latestWatchHealthAuthorizationStatus != "unavailable"
+      else {
+        self.failPendingStart(
+          sessionId: sessionId,
+          reason: "watch_health_authorization_\(self.latestWatchHealthAuthorizationStatus)",
+          reject: reject,
+          code: "watch_start_health_unavailable"
+        )
+        return
+      }
 
       do {
         self.classifier = try self.loadClassifier()
@@ -167,28 +245,162 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
         self.classifierLoadError = error.localizedDescription
       }
 
-      do {
-        try self.configureAudioSession()
-        try self.startAudioBed(plan: plan)
-        self.appendEvent("watch_runtime_started", payload: [
-          "nativePolicyVersion": plan["nativePolicyVersion"] as? String ?? "",
-          "protocolVersion": plan["protocolVersion"] as? String ?? "",
-          "classifierVersion": self.classifierVersion(plan: plan),
-          "modelAvailable": self.modelAvailable(plan: plan),
-          "remThreshold": self.remThreshold(plan: plan),
-          "watchCueingEnabled": self.modelAvailable(plan: plan),
-          "classifierLoadError": self.classifierLoadError ?? ""
+      let commandId = UUID().uuidString
+      let createdAt = Date()
+      let expiresAt = createdAt.addingTimeInterval(self.startAckTimeoutSeconds)
+      self.pendingStartCommandId = commandId
+      self.pendingStartExpiresAt = expiresAt
+
+      let message: [String: Any] = [
+        "schemaVersion": "watch-command-v1",
+        "command": "start",
+        "commandId": commandId,
+        "createdAt": self.formatDate(createdAt),
+        "expiresAt": self.formatDate(expiresAt),
+        "sessionId": sessionId,
+        "plan": self.sanitizePayload(plan)
+      ]
+
+      func finishStartFailure(code: String, reason: String, eventType: String = "watch_start_failed") {
+        guard self.pendingStartCommandId == commandId else {
+          return
+        }
+
+        self.latestRuntimeError = reason
+        self.watchStartFailureReason = reason
+        self.lifecycleState = .failedStart
+        self.pendingStartCommandId = nil
+        self.pendingStartExpiresAt = nil
+        self.latestCueDecisionReason = reason
+        self.appendEvent(eventType, payload: [
+          "commandId": commandId,
+          "reason": reason
         ])
-        self.sendWatchCommand(command: "start", plan: plan)
-        resolve(nil)
-      } catch {
-        self.latestRuntimeError = error.localizedDescription
-        self.appendEvent("watch_runtime_error", payload: [
-          "operation": "start_watch_runtime",
-          "error": error.localizedDescription
+        if eventType != "watch_start_failed" {
+          self.appendEvent("watch_start_failed", payload: [
+            "commandId": commandId,
+            "reason": reason
+          ])
+        }
+        self.sendStopCommand(sessionId: sessionId, reason: "watch_start_cancelled")
+        self.persistLogs(sessionId: sessionId)
+        self.persistEpochs(sessionId: sessionId)
+        self.stopRuntime(reason: reason, logEvent: false)
+        reject(code, reason, self.runtimeError(reason))
+      }
+
+      func finishStartSuccess(reply: [String: Any]) {
+        guard self.pendingStartCommandId == commandId else {
+          return
+        }
+
+        guard reply["schemaVersion"] as? String == "watch-started-v1" else {
+          let reason = reply["reason"] as? String ?? "watch_start_reply_invalid"
+          finishStartFailure(code: "watch_start_rejected", reason: reason)
+          return
+        }
+
+        guard reply["commandId"] as? String == commandId,
+          reply["sessionId"] as? String == sessionId,
+          reply["isRunning"] as? Bool == true
+        else {
+          finishStartFailure(code: "watch_start_rejected", reason: "watch_start_reply_mismatch")
+          return
+        }
+
+        if Date() >= expiresAt {
+          finishStartFailure(code: "watch_start_timeout", reason: "watch_start_timeout")
+          return
+        }
+
+        self.lifecycleState = .watchConfirmed
+        self.watchStartConfirmedAt = Date()
+        self.latestWatchIsRunning = true
+        self.latestWatchReportedSessionId = sessionId
+        self.latestWatchSessionId = reply["watchSessionId"] as? String ?? self.latestWatchSessionId
+        self.latestWatchSessionStartedAt = (reply["startedAt"] as? String).flatMap {
+          self.parseDate($0)
+        }
+        self.latestWatchStopAt = (reply["stopAt"] as? String).flatMap {
+          self.parseDate($0)
+        }
+        if let status = reply["healthAuthorizationStatus"] as? String,
+          ["unknown", "authorized", "denied", "unavailable"].contains(status) {
+          self.latestWatchHealthAuthorizationStatus = status
+        }
+        if self.latestWatchHealthAuthorizationStatus == "denied"
+          || self.latestWatchHealthAuthorizationStatus == "unavailable" {
+          finishStartFailure(
+            code: "watch_start_health_unavailable",
+            reason: "watch_health_authorization_\(self.latestWatchHealthAuthorizationStatus)"
+          )
+          return
+        }
+        self.latestConnectivityState = "connected"
+        self.latestCueDecisionReason = "watch_start_confirmed"
+        self.appendEvent("watch_start_confirmed", payload: [
+          "commandId": commandId,
+          "watchSessionId": self.latestWatchSessionId,
+          "watchStartedAt": reply["startedAt"] as? String ?? "",
+          "stopAt": reply["stopAt"] as? String ?? ""
         ])
-        self.stopRuntime(reason: "error", logEvent: true)
-        reject("watch_runtime_start_failed", error.localizedDescription, error)
+
+        do {
+          try self.configureAudioSession()
+          try self.startAudioBed(plan: plan)
+          self.appendEvent("watch_runtime_started", payload: [
+            "nativePolicyVersion": plan["nativePolicyVersion"] as? String ?? "",
+            "protocolVersion": plan["protocolVersion"] as? String ?? "",
+            "classifierVersion": self.classifierVersion(plan: plan),
+            "modelAvailable": self.modelAvailable(plan: plan),
+            "remThreshold": self.remThreshold(plan: plan),
+            "watchCueingEnabled": self.modelAvailable(plan: plan),
+            "classifierLoadError": self.classifierLoadError ?? "",
+            "commandId": commandId,
+            "watchSessionId": self.latestWatchSessionId
+          ])
+          self.pendingStartCommandId = nil
+          self.pendingStartExpiresAt = nil
+          resolve(nil)
+        } catch {
+          self.appendEvent("watch_runtime_error", payload: [
+            "operation": "start_watch_runtime_audio",
+            "error": error.localizedDescription
+          ])
+          finishStartFailure(code: "watch_runtime_start_failed", reason: error.localizedDescription)
+        }
+      }
+
+      session.sendMessage(message) { reply in
+        self.queue.async {
+          finishStartSuccess(reply: reply)
+        }
+      } errorHandler: { error in
+        self.queue.async {
+          self.latestConnectivityState = "delayed"
+          self.appendEvent("watch_command_failed", payload: [
+            "command": "start",
+            "commandId": commandId,
+            "error": error.localizedDescription
+          ])
+          finishStartFailure(code: "watch_start_not_reachable", reason: error.localizedDescription)
+        }
+      }
+
+      self.latestConnectivityState = "connected"
+      self.appendEvent("watch_start_command_sent", payload: [
+        "commandId": commandId,
+        "delivery": "sendMessage",
+        "createdAt": self.formatDate(createdAt),
+        "expiresAt": self.formatDate(expiresAt)
+      ])
+
+      self.queue.asyncAfter(deadline: .now() + self.startAckTimeoutSeconds) {
+        finishStartFailure(
+          code: "watch_start_timeout",
+          reason: "watch_start_timeout",
+          eventType: "watch_start_timeout"
+        )
       }
     }
   }
@@ -200,23 +412,36 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
     let reason = options?["reason"] as? String ?? "user_stopped"
+    let requestedSessionId = options?["sessionId"] as? String
 
     queue.async {
       let sessionId = self.activePlan?["sessionId"] as? String
+        ?? requestedSessionId
+        ?? (self.latestWatchReportedSessionId.isEmpty ? nil : self.latestWatchReportedSessionId)
       let plan = self.activePlan
 
       if let plan {
-        self.sendWatchCommand(command: "stop", plan: plan)
+        self.sendWatchCommand(command: "stop", plan: plan, reason: reason)
+      } else if let sessionId, !sessionId.isEmpty {
+        self.sendStopCommand(sessionId: sessionId, reason: reason)
       }
 
       if let sessionId {
-        self.appendEvent("watch_runtime_stopped", payload: [
+        let payload: [String: Any] = [
           "reason": reason,
           "stoppedAt": self.formatDate(Date()),
           "cueCount": self.cueCount,
           "consecutiveLikelyRemEpochs": self.consecutiveLikelyRemEpochs
-        ])
-        self.persistLogs(sessionId: sessionId)
+        ]
+        if plan != nil {
+          self.appendEvent("watch_runtime_stopped", payload: payload)
+        } else {
+          self.appendDetachedEvent(
+            sessionId: sessionId,
+            eventType: "watch_runtime_stopped",
+            payload: payload
+          )
+        }
         self.persistEpochs(sessionId: sessionId)
       }
 
@@ -317,7 +542,7 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
     queue.async {
-      resolve(self.statusPayload())
+      self.queryWatchStatusIfReachable(resolve: resolve)
     }
   }
 
@@ -383,7 +608,89 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     session.activate()
   }
 
-  private func sendWatchCommand(command: String, plan: [String: Any]) {
+  private func queryWatchStatusIfReachable(resolve: @escaping RCTPromiseResolveBlock) {
+    guard WCSession.isSupported() else {
+      resolve(statusPayload())
+      return
+    }
+
+    let session = WCSession.default
+    guard session.activationState == .activated, session.isReachable else {
+      resolve(statusPayload())
+      return
+    }
+
+    let message: [String: Any] = [
+      "schemaVersion": "watch-command-v1",
+      "command": "status",
+      "commandId": UUID().uuidString,
+      "createdAt": formatDate(Date()),
+      "sessionId": activePlan?["sessionId"] as? String ?? ""
+    ]
+
+    session.sendMessage(message) { reply in
+      self.queue.async {
+        if reply["schemaVersion"] as? String == "watch-status-v1" {
+          self.handleIncomingWatchStatus(reply, delayed: false)
+          let control = self.watchStatusReply(for: reply)
+          if control["schemaVersion"] as? String == "watch-command-v1" {
+            self.sendWatchCommandMessage(control)
+          }
+        }
+        resolve(self.statusPayload())
+      }
+    } errorHandler: { error in
+      self.queue.async {
+        self.latestConnectivityState = "delayed"
+        self.latestRuntimeError = error.localizedDescription
+        resolve(self.statusPayload())
+      }
+    }
+  }
+
+  private func failPendingStart(
+    sessionId: String,
+    reason: String,
+    reject: @escaping RCTPromiseRejectBlock,
+    code: String
+  ) {
+    latestRuntimeError = reason
+    watchStartFailureReason = reason
+    lifecycleState = .failedStart
+    pendingStartCommandId = nil
+    pendingStartExpiresAt = nil
+    latestCueDecisionReason = reason
+    appendEvent("watch_start_failed", payload: [
+      "reason": reason
+    ])
+    persistLogs(sessionId: sessionId)
+    persistEpochs(sessionId: sessionId)
+    stopRuntime(reason: reason, logEvent: false)
+    reject(code, reason, runtimeError(reason))
+  }
+
+  private func sendWatchCommand(command: String, plan: [String: Any], reason: String = "iphone_command") {
+    sendWatchCommandMessage([
+      "schemaVersion": "watch-command-v1",
+      "command": command,
+      "sessionId": plan["sessionId"] as? String ?? "",
+      "reason": reason,
+      "plan": sanitizePayload(plan)
+    ])
+  }
+
+  private func sendStopCommand(sessionId: String, reason: String) {
+    sendWatchCommandMessage([
+      "schemaVersion": "watch-command-v1",
+      "command": "stop",
+      "sessionId": sessionId,
+      "reason": reason
+    ])
+  }
+
+  private func sendWatchCommandMessage(_ message: [String: Any]) {
+    let command = message["command"] as? String ?? ""
+
     guard WCSession.isSupported() else {
       appendEvent("watch_command_failed", payload: [
         "command": command,
@@ -393,12 +700,6 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     }
 
     let session = WCSession.default
-    let message: [String: Any] = [
-      "schemaVersion": "watch-command-v1",
-      "command": command,
-      "sessionId": plan["sessionId"] as? String ?? "",
-      "plan": sanitizePayload(plan)
-    ]
 
     guard session.activationState == .activated, session.isReachable else {
       session.transferUserInfo(message)
@@ -428,22 +729,29 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     ])
   }
 
-  private func handleIncomingEpoch(_ rawMessage: [String: Any], delayed: Bool) {
+  @discardableResult
+  private func handleIncomingEpoch(_ rawMessage: [String: Any], delayed: Bool) -> [String: Any] {
     guard let sessionId = rawMessage["sessionId"] as? String else {
       appendEvent("watch_runtime_error", payload: [
         "operation": "receive_epoch",
         "error": "missing sessionId"
       ])
-      return
+      return ["schemaVersion": "watch-status-ack-v1"]
     }
 
-    guard sessionId == activePlan?["sessionId"] as? String else {
-      appendEvent("watch_epoch_ignored", payload: [
+    let activeSessionId = activePlan?["sessionId"] as? String
+    guard sessionId == activeSessionId else {
+      recordOrphanedWatchSession(
+        sessionId: sessionId,
+        watchSessionId: rawMessage["watchSessionId"] as? String ?? "",
+        reason: "inactive_or_replaced_session"
+      )
+      appendDetachedEvent(sessionId: sessionId, eventType: "watch_epoch_ignored", payload: [
         "sessionId": sessionId,
         "reason": "inactive_or_replaced_session",
         "delayed": delayed
       ])
-      return
+      return stopCommandPayload(sessionId: sessionId, reason: "inactive_or_replaced_session")
     }
 
     let epochId = stableEpochId(rawMessage)
@@ -453,7 +761,7 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
         "epochId": epochId,
         "delayed": delayed
       ])
-      return
+      return ["schemaVersion": "watch-status-ack-v1"]
     }
 
     var epoch = mapEpoch(rawMessage, epochId: epochId, delayed: delayed)
@@ -474,6 +782,20 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     activeEpochs.append(epoch)
     latestConnectivityState = delayed ? "delayed" : "connected"
     latestCueDecisionReason = finalDecisionReason
+    latestWatchReportedSessionId = sessionId
+    latestWatchSessionId = rawMessage["watchSessionId"] as? String ?? latestWatchSessionId
+    latestWatchIsRunning = true
+
+    if firstEpochConfirmedAt == nil {
+      let confirmedAt = Date()
+      firstEpochConfirmedAt = confirmedAt
+      lifecycleState = .running
+      appendEvent("watch_first_epoch_confirmed", payload: [
+        "epochId": epochId,
+        "confirmedAt": formatDate(confirmedAt),
+        "watchSessionId": latestWatchSessionId
+      ])
+    }
 
     appendEvent(delayed ? "watch_epoch_delayed" : "watch_epoch_received", payload: [
       "epochId": epochId,
@@ -519,12 +841,26 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       persistEpochs(sessionId: sessionId)
       stopRuntime(reason: "completed", logEvent: false)
     }
+
+    return ["schemaVersion": "watch-status-ack-v1"]
   }
 
   private func handleIncomingWatchStatus(_ rawMessage: [String: Any], delayed: Bool) {
-    let sentAt = (rawMessage["sentAt"] as? String).flatMap(parseDate)
-    latestWatchStatusAt = sentAt ?? Date()
+    latestWatchStatusAt = Date()
     latestWatchStatusReason = rawMessage["reason"] as? String ?? ""
+    latestWatchIsRunning = rawMessage["isRunning"] as? Bool ?? latestWatchIsRunning
+    if let sessionId = rawMessage["sessionId"] as? String, !sessionId.isEmpty {
+      latestWatchReportedSessionId = sessionId
+    }
+    if let watchSessionId = rawMessage["watchSessionId"] as? String, !watchSessionId.isEmpty {
+      latestWatchSessionId = watchSessionId
+    }
+    latestWatchSessionStartedAt = (rawMessage["startedAt"] as? String).flatMap {
+      parseDate($0)
+    } ?? latestWatchSessionStartedAt
+    latestWatchStopAt = (rawMessage["stopAt"] as? String).flatMap {
+      parseDate($0)
+    } ?? latestWatchStopAt
     if let status = rawMessage["healthAuthorizationStatus"] as? String,
       ["unknown", "authorized", "denied", "unavailable"].contains(status) {
       latestWatchHealthAuthorizationStatus = status
@@ -532,24 +868,42 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     latestConnectivityState = delayed && !isWatchRecentlySeen()
       ? "delayed"
       : "connected"
+
+    let activeSessionId = activePlan?["sessionId"] as? String
+    if latestWatchIsRunning,
+      !latestWatchReportedSessionId.isEmpty,
+      latestWatchReportedSessionId != activeSessionId {
+      recordOrphanedWatchSession(
+        sessionId: latestWatchReportedSessionId,
+        watchSessionId: latestWatchSessionId,
+        reason: "watch_status_mismatch"
+      )
+    }
+
+    if latestWatchIsRunning == false,
+      let activeSessionId,
+      latestWatchReportedSessionId == activeSessionId,
+      activePlan != nil {
+      let reason = latestWatchStatusReason.isEmpty ? "watch_stopped" : latestWatchStatusReason
+      appendEvent("watch_runtime_stopped", payload: [
+        "reason": reason,
+        "stoppedAt": formatDate(Date()),
+        "cueCount": cueCount,
+        "consecutiveLikelyRemEpochs": consecutiveLikelyRemEpochs
+      ])
+      persistLogs(sessionId: activeSessionId)
+      persistEpochs(sessionId: activeSessionId)
+      stopRuntime(reason: reason, logEvent: false)
+    }
   }
 
   private func watchStatusReply(for rawMessage: [String: Any]) -> [String: Any] {
-    if let plan = activePlan {
-      return [
-        "schemaVersion": "watch-command-v1",
-        "command": "start",
-        "sessionId": plan["sessionId"] as? String ?? "",
-        "plan": sanitizePayload(plan)
-      ]
-    }
+    let watchSessionId = rawMessage["sessionId"] as? String ?? ""
 
-    if rawMessage["isRunning"] as? Bool == true {
-      return [
-        "schemaVersion": "watch-command-v1",
-        "command": "stop",
-        "sessionId": rawMessage["sessionId"] as? String ?? ""
-      ]
+    if let activeSessionId = activePlan?["sessionId"] as? String,
+      rawMessage["isRunning"] as? Bool == true,
+      watchSessionId != activeSessionId {
+      return stopCommandPayload(sessionId: watchSessionId, reason: "inactive_or_replaced_session")
     }
 
     return [
@@ -616,22 +970,37 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     let modelAvailable = modelAvailable(plan: plan)
     let watchReachable = WCSession.isSupported() ? WCSession.default.isReachable : false
     let watchRecentlySeen = isWatchRecentlySeen()
-    let effectiveConnectivityState = watchReachable || watchRecentlySeen
+    let watchAppInstalled = WCSession.isSupported()
+      ? WCSession.default.isWatchAppInstalled
+      : false
+    let watchHealthBlocked = latestWatchHealthAuthorizationStatus == "denied"
+      || latestWatchHealthAuthorizationStatus == "unavailable"
+    let watchStartEligible = watchReachable && watchAppInstalled && !watchHealthBlocked
+    let phoneRuntimeRunning = lifecycleState == .watchConfirmed || lifecycleState == .running
+    let effectiveConnectivityState = watchReachable
       ? "connected"
       : latestConnectivityState
 
     return [
       "available": WCSession.isSupported(),
       "unavailableReason": WCSession.isSupported() ? "" : "WatchConnectivity is unavailable.",
-      "running": plan != nil,
-      "sessionId": plan?["sessionId"] as? String ?? "",
-      "watchSessionRunning": plan != nil,
-      "watchReachable": watchReachable || watchRecentlySeen,
-      "watchAppInstalled": WCSession.isSupported() ? WCSession.default.isWatchAppInstalled : false,
+      "lifecycleState": lifecycleState.rawValue,
+      "running": phoneRuntimeRunning,
+      "sessionId": plan?["sessionId"] as? String ?? latestWatchReportedSessionId,
+      "watchSessionRunning": latestWatchIsRunning,
+      "watchReachable": watchReachable,
+      "watchAppInstalled": watchAppInstalled,
       "watchRecentlySeen": watchRecentlySeen,
+      "watchStartEligible": watchStartEligible,
       "watchLastSeenAt": latestWatchStatusAt.map(formatDate) ?? "",
       "watchStatusReason": latestWatchStatusReason,
       "watchHealthAuthorizationStatus": latestWatchHealthAuthorizationStatus,
+      "watchStartConfirmedAt": watchStartConfirmedAt.map(formatDate) ?? "",
+      "watchFirstEpochConfirmedAt": firstEpochConfirmedAt.map(formatDate) ?? "",
+      "watchStartFailureReason": watchStartFailureReason,
+      "latestWatchSessionId": latestWatchSessionId,
+      "latestWatchSessionStartedAt": latestWatchSessionStartedAt.map(formatDate) ?? "",
+      "latestWatchStopAt": latestWatchStopAt.map(formatDate) ?? "",
       "audioBedRunning": isAudioBedRunning(),
       "cueCount": cueCount,
       "consecutiveLikelyRemEpochs": consecutiveLikelyRemEpochs,
@@ -664,16 +1033,66 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       return
     }
 
-    let event: [String: Any] = [
+    let event = makeEvent(sessionId: sessionId, eventType: eventType, payload: payload)
+
+    activeLogs.append(event)
+    persistLogs(sessionId: sessionId)
+  }
+
+  private func appendDetachedEvent(sessionId: String, eventType: String, payload: [String: Any]) {
+    guard !sessionId.isEmpty else {
+      return
+    }
+
+    let activeSessionId = activePlan?["sessionId"] as? String
+    if sessionId == activeSessionId {
+      appendEvent(eventType, payload: payload)
+      return
+    }
+
+    var logs = loadLogs(sessionId: sessionId)
+    logs.append(makeEvent(sessionId: sessionId, eventType: eventType, payload: payload))
+    writeJson(logs, to: logsURL(sessionId: sessionId))
+  }
+
+  private func makeEvent(
+    sessionId: String,
+    eventType: String,
+    payload: [String: Any]
+  ) -> [String: Any] {
+    [
       "id": UUID().uuidString,
       "sessionId": sessionId,
       "timestamp": formatDate(Date()),
       "eventType": eventType,
       "payload": sanitizePayload(payload)
     ]
+  }
 
-    activeLogs.append(event)
-    persistLogs(sessionId: sessionId)
+  private func recordOrphanedWatchSession(
+    sessionId: String,
+    watchSessionId: String,
+    reason: String
+  ) {
+    lifecycleState = .orphanDetected
+    latestWatchReportedSessionId = sessionId
+    latestWatchSessionId = watchSessionId
+    latestWatchIsRunning = true
+    latestCueDecisionReason = reason
+    appendDetachedEvent(sessionId: sessionId, eventType: "watch_orphan_detected", payload: [
+      "reason": reason,
+      "watchSessionId": watchSessionId,
+      "activeSessionId": activePlan?["sessionId"] as? String ?? ""
+    ])
+  }
+
+  private func stopCommandPayload(sessionId: String, reason: String) -> [String: Any] {
+    [
+      "schemaVersion": "watch-command-v1",
+      "command": "stop",
+      "sessionId": sessionId,
+      "reason": reason
+    ]
   }
 
   private func classifierVersion(plan: [String: Any]?) -> String {
@@ -1100,6 +1519,8 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
   private func stopRuntime(reason: String, logEvent: Bool) {
     let sessionId = activePlan?["sessionId"] as? String
     let wasAudioBedRunning = isAudioBedRunning()
+    let shouldPreserveFailureState = lifecycleState == .failedStart
+    let shouldPreserveOrphanState = lifecycleState == .orphanDetected
 
     audioBedPlayer?.stop()
     cuePlayer?.stop()
@@ -1131,6 +1552,8 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     }
 
     activePlan = nil
+    pendingStartCommandId = nil
+    pendingStartExpiresAt = nil
     activeLogs = []
     activeEpochs = []
     consecutiveLikelyRemEpochs = 0
@@ -1142,7 +1565,11 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     cueAssociatedMovementPauseUntil = nil
     userPaused = false
     userDeferredUntil = nil
+    latestWatchIsRunning = false
     latestCueDecisionReason = "not_started"
+    if !shouldPreserveFailureState && !shouldPreserveOrphanState {
+      lifecycleState = .stopped
+    }
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 
@@ -1478,7 +1905,7 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       }
 
       self.latestConnectivityState = activationState == .activated
-        ? (session.isReachable || self.isWatchRecentlySeen() ? "connected" : "unknown")
+        ? (session.isReachable ? "connected" : "unknown")
         : "unknown"
       self.appendEvent("watch_connectivity_activated", payload: [
         "activationState": activationState.rawValue,
@@ -1491,9 +1918,16 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
     queue.async {
       if message["schemaVersion"] as? String == "watch-epoch-v1" {
-        self.handleIncomingEpoch(message, delayed: false)
+        let reply = self.handleIncomingEpoch(message, delayed: false)
+        if reply["schemaVersion"] as? String == "watch-command-v1" {
+          self.sendWatchCommandMessage(reply)
+        }
       } else if message["schemaVersion"] as? String == "watch-status-v1" {
         self.handleIncomingWatchStatus(message, delayed: false)
+        let reply = self.watchStatusReply(for: message)
+        if reply["schemaVersion"] as? String == "watch-command-v1" {
+          self.sendWatchCommandMessage(reply)
+        }
       }
     }
   }
@@ -1511,7 +1945,8 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       }
 
       if message["schemaVersion"] as? String == "watch-epoch-v1" {
-        self.handleIncomingEpoch(message, delayed: false)
+        replyHandler(self.handleIncomingEpoch(message, delayed: false))
+        return
       }
 
       replyHandler([
@@ -1523,27 +1958,34 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
     queue.async {
       if userInfo["schemaVersion"] as? String == "watch-epoch-v1" {
-        self.handleIncomingEpoch(userInfo, delayed: true)
+        let reply = self.handleIncomingEpoch(userInfo, delayed: true)
+        if reply["schemaVersion"] as? String == "watch-command-v1" {
+          self.sendWatchCommandMessage(reply)
+        }
       } else if userInfo["schemaVersion"] as? String == "watch-status-v1" {
         self.handleIncomingWatchStatus(userInfo, delayed: true)
+        let reply = self.watchStatusReply(for: userInfo)
+        if reply["schemaVersion"] as? String == "watch-command-v1" {
+          self.sendWatchCommandMessage(reply)
+        }
       }
     }
   }
 
   func sessionReachabilityDidChange(_ session: WCSession) {
     queue.async {
-      self.latestConnectivityState = session.isReachable || self.isWatchRecentlySeen()
+      self.latestConnectivityState = session.isReachable
         ? "connected"
         : "unknown"
     }
   }
 
   func sessionDidBecomeInactive(_ session: WCSession) {
-    latestConnectivityState = isWatchRecentlySeen() ? "connected" : "unknown"
+    latestConnectivityState = session.isReachable ? "connected" : "unknown"
   }
 
   func sessionDidDeactivate(_ session: WCSession) {
-    latestConnectivityState = isWatchRecentlySeen() ? "connected" : "unknown"
+    latestConnectivityState = session.isReachable ? "connected" : "unknown"
     session.activate()
   }
 }

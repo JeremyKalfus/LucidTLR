@@ -54,6 +54,24 @@ describe("watch runtime client", () => {
     });
   });
 
+  it("passes the target Watch session id when stopping", async () => {
+    const nativeModule = nativeRuntimeModule();
+    const client = createWatchRuntimeClient({
+      platform: "ios",
+      nativeModule,
+    });
+
+    await client.stopWatchSession({
+      reason: "user_stopped",
+      sessionId: "watch-session-1",
+    });
+
+    expect(nativeModule.stopWatchSession).toHaveBeenCalledWith({
+      reason: "user_stopped",
+      sessionId: "watch-session-1",
+    });
+  });
+
   it("treats an iOS build missing TLR controls as an incomplete runtime", async () => {
     const nativeModule = nativeRuntimeModule();
 

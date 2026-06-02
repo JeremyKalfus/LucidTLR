@@ -18,6 +18,11 @@ import {
   type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
 import {
+  applyPhoneNightCalibrationToSettings,
+  buildSleepTimingPrior,
+} from "@/src/engine";
+import {
+  buildNativeWatchSessionPlan,
   importWatchRuntimeDataToLocalRecords,
   reconcileStoppedWatchRuntime,
   watchRuntime,
@@ -64,7 +69,14 @@ function watchHealthStatusAction(status: WatchRuntimeStatus | null): string | nu
 }
 
 export function ActiveNightSessionScreen() {
-  const { activeSession, sendSessionEvent } = useAppState();
+  const {
+    activeSession,
+    engineSettings,
+    phoneNightCalibration,
+    sendSessionEvent,
+    sleepHistory,
+    tlrOptions,
+  } = useAppState();
   const [runtimeStatus, setRuntimeStatus] =
     React.useState<PhoneRuntimeStatus | null>(null);
   const [watchRuntimeStatus, setWatchRuntimeStatus] =
@@ -95,6 +107,16 @@ export function ActiveNightSessionScreen() {
     (usesWatchRuntime && watchRuntimeStatus?.tlrPaused === true);
   const runtimeControlsDisabled = isStopping || runtimeAction !== null;
   const watchHealthAction = watchHealthStatusAction(watchRuntimeStatus);
+  const effectiveEngineSettings = React.useMemo(
+    () =>
+      applyPhoneNightCalibrationToSettings(
+        engineSettings,
+        phoneNightCalibration.nightsIncluded > 0
+          ? phoneNightCalibration
+          : undefined,
+      ),
+    [engineSettings, phoneNightCalibration],
+  );
 
   const refreshRuntimeStatus = React.useCallback(async () => {
     if (!usesPhoneRuntime) {
@@ -137,6 +159,56 @@ export function ActiveNightSessionScreen() {
 
       setWatchRuntimeStatus(status);
 
+      if (
+        activeSession?.sessionType === "tlr" &&
+        activeSession.mode === "watch" &&
+        status.available &&
+        !status.running &&
+        status.watchSessionRunning &&
+        status.sessionId === activeSession.id &&
+        activeSession.trainingEndedAt
+      ) {
+        const sleepTiming = buildSleepTimingPrior({
+          trainingEndedAt: activeSession.trainingEndedAt,
+          settings: effectiveEngineSettings,
+          historicalSleepPrior:
+            sleepHistory.enabled &&
+            sleepHistory.prior &&
+            sleepHistory.prior.confidence !== "none"
+              ? sleepHistory.prior
+              : undefined,
+          phoneNightPrior:
+            phoneNightCalibration.nightsIncluded > 0
+              ? phoneNightCalibration
+              : undefined,
+        });
+        const plan = buildNativeWatchSessionPlan({
+          session: activeSession,
+          settings: effectiveEngineSettings,
+          tlrOptions,
+          sleepTiming,
+        });
+
+        await watchRuntime.startWatchSession(plan);
+        setWatchRuntimeStatus(await watchRuntime.getWatchRuntimeStatus());
+        return;
+      }
+
+      if (
+        activeSession?.sessionType === "tlr" &&
+        activeSession.mode === "watch" &&
+        status.watchSessionRunning &&
+        status.sessionId &&
+        status.sessionId !== activeSession.id
+      ) {
+        await watchRuntime.stopWatchSession({
+          reason: "orphaned",
+          sessionId: status.sessionId,
+        });
+        setWatchRuntimeStatus(await watchRuntime.getWatchRuntimeStatus());
+        return;
+      }
+
       if (!activeSession || !canEnd) {
         return;
       }
@@ -160,7 +232,16 @@ export function ActiveNightSessionScreen() {
     } catch (error) {
       setRuntimeError(errorMessage(error));
     }
-  }, [activeSession, canEnd, sendSessionEvent, usesWatchRuntime]);
+  }, [
+    activeSession,
+    canEnd,
+    effectiveEngineSettings,
+    phoneNightCalibration,
+    sendSessionEvent,
+    sleepHistory,
+    tlrOptions,
+    usesWatchRuntime,
+  ]);
 
   React.useEffect(() => {
     void refreshRuntimeStatus();
@@ -221,7 +302,10 @@ export function ActiveNightSessionScreen() {
       }
 
       if (usesWatchRuntime) {
-        await watchRuntime.stopWatchSession({ reason: "user_stopped" });
+        await watchRuntime.stopWatchSession({
+          reason: "user_stopped",
+          sessionId: activeSession.id,
+        });
         const db = await getLocalDb();
 
         await importWatchRuntimeDataToLocalRecords({

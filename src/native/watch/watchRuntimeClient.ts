@@ -7,7 +7,15 @@ import type {
 import { LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION } from "@/src/engine/watchRem";
 
 export type WatchRuntimeStopOptions = {
-  reason?: "user_stopped" | "completed" | "error";
+  reason?:
+    | "user_stopped"
+    | "completed"
+    | "error"
+    | "orphaned"
+    | "replaced_by_new_session"
+    | "watch_start_cancelled"
+    | "watch_start_timeout";
+  sessionId?: string;
 };
 
 export type WatchRuntimeDeferOptions = {
@@ -49,10 +57,12 @@ function unavailableStatus(reason: string): WatchRuntimeStatus {
   return {
     available: false,
     unavailableReason: reason,
+    lifecycleState: "idle",
     running: false,
     watchSessionRunning: false,
     watchReachable: false,
     watchRecentlySeen: false,
+    watchStartEligible: false,
     watchHealthAuthorizationStatus: "unknown",
     audioBedRunning: false,
     cueCount: 0,

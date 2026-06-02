@@ -40,6 +40,19 @@ describe("watchTlrStartBlockReason", () => {
     ).toBeNull();
   });
 
+  it("blocks final runtime start when only recently-seen state is available", () => {
+    expect(
+      watchTlrStartBlockReason(
+        status({
+          watchReachable: false,
+          watchRecentlySeen: true,
+          connectivityState: "unknown",
+        }),
+        { requireStrictReachability: true },
+      ),
+    ).toContain("Apple Watch is not connected");
+  });
+
   it("blocks when watch status is unavailable or the watch app is missing", () => {
     expect(
       watchTlrStartBlockReason(
@@ -52,6 +65,45 @@ describe("watchTlrStartBlockReason", () => {
     ).toBe("WatchConnectivity is unavailable.");
     expect(
       watchTlrStartBlockReason(status({ watchAppInstalled: false })),
+    ).toBe("The LucidCue Watch app is not detected.");
+  });
+
+  it("allows Watch Mode start when the watch app heartbeat is fresh even if the install flag is stale", () => {
+    expect(
+      watchTlrStartBlockReason(
+        status({
+          watchAppInstalled: false,
+          watchRecentlySeen: true,
+          watchReachable: false,
+          connectivityState: "unknown",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not allow stale install evidence as final runtime start eligibility", () => {
+    expect(
+      watchTlrStartBlockReason(
+        status({
+          watchAppInstalled: false,
+          watchRecentlySeen: true,
+          watchReachable: false,
+          connectivityState: "unknown",
+        }),
+        { requireStrictReachability: true },
+      ),
+    ).toBe("The LucidCue Watch app is not detected.");
+
+    expect(
+      watchTlrStartBlockReason(
+        status({
+          watchAppInstalled: false,
+          watchRecentlySeen: true,
+          watchReachable: true,
+          watchStartEligible: false,
+        }),
+        { requireStrictReachability: true },
+      ),
     ).toBe("The LucidCue Watch app is not detected.");
   });
 

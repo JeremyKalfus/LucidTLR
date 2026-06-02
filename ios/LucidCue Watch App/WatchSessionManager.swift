@@ -26,6 +26,9 @@ final class WatchSessionManager: NSObject, ObservableObject {
   private var sessionId = ""
   private var watchSessionId = UUID().uuidString
   private var sessionStartedAt = Date()
+  private var plannedStopAt: Date?
+  private var currentStartCommandId = ""
+  private var lastEpochAt: Date?
   private var heartRates: [Double] = []
   private var motionSamples: [(t: Double, x: Double, y: Double, z: Double)] = []
   private var hrEma: Double?
@@ -54,19 +57,67 @@ final class WatchSessionManager: NSObject, ObservableObject {
     presenceTimer = nil
   }
 
-  func startSession(sessionId commandSessionId: String? = nil) {
-    guard !isRunning else {
-      return
-    }
-
+  func startSession(
+    sessionId commandSessionId: String?,
+    commandId: String,
+    expiresAt: Date?,
+    plan: [String: Any]
+  ) -> [String: Any] {
     guard let commandSessionId, !commandSessionId.isEmpty else {
       statusText = "Start TLR on phone"
-      return
+      return startRejectedReply(
+        commandId: commandId,
+        sessionId: "",
+        reason: "missing_session_id"
+      )
+    }
+
+    let now = Date()
+    if let expiresAt, now >= expiresAt {
+      return startRejectedReply(
+        commandId: commandId,
+        sessionId: commandSessionId,
+        reason: "start_command_expired"
+      )
+    }
+
+    let stopAt = stopAtDate(from: plan)
+    if let stopAt, now >= stopAt {
+      return startRejectedReply(
+        commandId: commandId,
+        sessionId: commandSessionId,
+        reason: "plan_stop_at_elapsed"
+      )
+    }
+
+    if healthAuthorizationStatus == "denied" || healthAuthorizationStatus == "unavailable" {
+      return startRejectedReply(
+        commandId: commandId,
+        sessionId: commandSessionId,
+        reason: "health_authorization_\(healthAuthorizationStatus)"
+      )
+    }
+
+    if isRunning {
+      guard sessionId == commandSessionId else {
+        return startRejectedReply(
+          commandId: commandId,
+          sessionId: commandSessionId,
+          reason: "watch_busy"
+        )
+      }
+
+      plannedStopAt = stopAt ?? plannedStopAt
+      currentStartCommandId = commandId
+      return startedReply(commandId: commandId)
     }
 
     sessionId = commandSessionId
     watchSessionId = UUID().uuidString
-    sessionStartedAt = Date()
+    currentStartCommandId = commandId
+    sessionStartedAt = now
+    plannedStopAt = stopAt
+    lastEpochAt = nil
     epochCount = 0
     heartRates = []
     motionSamples = []
@@ -75,14 +126,17 @@ final class WatchSessionManager: NSObject, ObservableObject {
     stableLowMovementSeconds = 0
     isRunning = true
     statusText = "running"
-    sendStatus(reason: "started")
     requestHealthAuthorization()
     startWorkout()
     startMotion()
     WKInterfaceDevice.current().enableWaterLock()
+    epochTimer?.invalidate()
     epochTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-      self?.emitEpoch(connectivityState: "connected")
+      self?.handleEpochTimer()
     }
+    sendStatus(reason: "started")
+
+    return startedReply(commandId: commandId)
   }
 
   func stopSession(reason: String) {
@@ -90,7 +144,9 @@ final class WatchSessionManager: NSObject, ObservableObject {
       return
     }
 
-    emitEpoch(connectivityState: "connected")
+    if reason != "planned_stop_at" {
+      emitEpoch(connectivityState: "connected")
+    }
     epochTimer?.invalidate()
     epochTimer = nil
     motionManager.stopAccelerometerUpdates()
@@ -101,6 +157,9 @@ final class WatchSessionManager: NSObject, ObservableObject {
     statusText = "Start TLR on phone"
     sendStatus(reason: reason)
     sessionId = ""
+    currentStartCommandId = ""
+    plannedStopAt = nil
+    lastEpochAt = nil
   }
 
   private func activateConnectivity() {
@@ -219,8 +278,22 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
   }
 
+  private func handleEpochTimer() {
+    if let plannedStopAt, Date() >= plannedStopAt {
+      stopSession(reason: "planned_stop_at")
+      return
+    }
+
+    emitEpoch(connectivityState: "connected")
+  }
+
   private func emitEpoch(connectivityState: String) {
     guard isRunning, !sessionId.isEmpty else {
+      return
+    }
+
+    if let plannedStopAt, Date() >= plannedStopAt {
+      stopSession(reason: "planned_stop_at")
       return
     }
 
@@ -265,6 +338,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
     sensorQuality = quality
     batteryText = formatBattery()
+    lastEpochAt = now
 
     var heartRatePayload: [String: Any] = [
       "sampleCount": hrSamples.count,
@@ -369,24 +443,85 @@ final class WatchSessionManager: NSObject, ObservableObject {
       return
     }
 
-    let message: [String: Any] = [
-      "schemaVersion": "watch-status-v1",
-      "sessionId": sessionId,
-      "reason": reason,
-      "isRunning": isRunning,
-      "status": statusText,
-      "sentAt": isoFormatter.string(from: Date()),
-      "batteryLevel": WKInterfaceDevice.current().batteryLevel,
-      "healthAuthorizationStatus": healthAuthorizationStatus,
-    ]
+    let message = statusPayload(reason: reason)
 
     if WCSession.default.isReachable {
-      WCSession.default.sendMessage(message, replyHandler: nil) { _ in
+      WCSession.default.sendMessage(message) { [weak self] reply in
+        DispatchQueue.main.async {
+          self?.handleWatchCommand(reply)
+        }
+      } errorHandler: { _ in
         WCSession.default.transferUserInfo(message)
       }
     } else {
       WCSession.default.transferUserInfo(message)
     }
+  }
+
+  private func statusPayload(reason: String) -> [String: Any] {
+    var message: [String: Any] = [
+      "schemaVersion": "watch-status-v1",
+      "sessionId": sessionId,
+      "watchSessionId": watchSessionId,
+      "reason": reason,
+      "isRunning": isRunning,
+      "status": statusText,
+      "sentAt": isoFormatter.string(from: Date()),
+      "startedAt": isRunning ? isoFormatter.string(from: sessionStartedAt) : "",
+      "stopAt": plannedStopAt.map { isoFormatter.string(from: $0) } ?? "",
+      "epochCount": epochCount,
+      "lastEpochAt": lastEpochAt.map { isoFormatter.string(from: $0) } ?? "",
+      "batteryLevel": WKInterfaceDevice.current().batteryLevel,
+      "healthAuthorizationStatus": healthAuthorizationStatus,
+    ]
+
+    if !currentStartCommandId.isEmpty {
+      message["commandId"] = currentStartCommandId
+    }
+
+    return message
+  }
+
+  private func startedReply(commandId: String) -> [String: Any] {
+    [
+      "schemaVersion": "watch-started-v1",
+      "commandId": commandId,
+      "sessionId": sessionId,
+      "watchSessionId": watchSessionId,
+      "startedAt": isoFormatter.string(from: sessionStartedAt),
+      "isRunning": isRunning,
+      "healthAuthorizationStatus": healthAuthorizationStatus,
+      "stopAt": plannedStopAt.map { isoFormatter.string(from: $0) } ?? ""
+    ]
+  }
+
+  private func startRejectedReply(
+    commandId: String,
+    sessionId: String,
+    reason: String
+  ) -> [String: Any] {
+    [
+      "schemaVersion": "watch-start-rejected-v1",
+      "commandId": commandId,
+      "sessionId": sessionId,
+      "reason": reason,
+      "isRunning": isRunning,
+      "watchSessionId": watchSessionId,
+      "healthAuthorizationStatus": healthAuthorizationStatus
+    ]
+  }
+
+  private func stopAtDate(from plan: [String: Any]) -> Date? {
+    let safety = plan["safety"] as? [String: Any]
+    guard let value = safety?["stopAt"] as? String, !value.isEmpty else {
+      return nil
+    }
+
+    return parseDate(value)
+  }
+
+  private func parseDate(_ value: String) -> Date? {
+    isoFormatter.date(from: value)
   }
 
   private func sensorQualityFor(hrCount: Int, motionCount: Int) -> String {
@@ -443,28 +578,70 @@ extension WatchSessionManager: WCSessionDelegate {
   }
 
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-    handleWatchCommand(message)
+    DispatchQueue.main.async {
+      _ = self.handleWatchCommand(message, allowsStart: false)
+    }
+  }
+
+  func session(
+    _ session: WCSession,
+    didReceiveMessage message: [String: Any],
+    replyHandler: @escaping ([String: Any]) -> Void
+  ) {
+    DispatchQueue.main.async {
+      replyHandler(self.handleWatchCommand(message, allowsStart: true))
+    }
   }
 
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-    handleWatchCommand(userInfo)
+    DispatchQueue.main.async {
+      _ = self.handleWatchCommand(userInfo, allowsStart: false)
+    }
   }
 
-  private func handleWatchCommand(_ message: [String: Any]) {
+  @discardableResult
+  private func handleWatchCommand(
+    _ message: [String: Any],
+    allowsStart: Bool = false
+  ) -> [String: Any] {
     guard message["schemaVersion"] as? String == "watch-command-v1" else {
-      return
+      return ["schemaVersion": "watch-status-ack-v1"]
     }
 
-    DispatchQueue.main.async {
-      let sessionId = message["sessionId"] as? String
-      let command = message["command"] as? String
+    let commandSessionId = message["sessionId"] as? String
+    let command = message["command"] as? String
+    let commandId = message["commandId"] as? String ?? ""
 
-      if command == "start" {
-        self.startSession(sessionId: sessionId)
-      } else if command == "stop" {
-        self.stopSession(reason: "iphone_command")
+    if command == "start" {
+      guard allowsStart else {
+        return startRejectedReply(
+          commandId: commandId,
+          sessionId: commandSessionId ?? "",
+          reason: "start_requires_live_reply"
+        )
       }
+
+      return startSession(
+        sessionId: commandSessionId,
+        commandId: commandId,
+        expiresAt: (message["expiresAt"] as? String).flatMap(parseDate),
+        plan: message["plan"] as? [String: Any] ?? [:]
+      )
     }
+
+    if command == "stop" {
+      let reason = message["reason"] as? String ?? "iphone_command"
+      if commandSessionId?.isEmpty != false || commandSessionId == sessionId {
+        stopSession(reason: reason)
+      }
+      return ["schemaVersion": "watch-status-ack-v1"]
+    }
+
+    if command == "status" {
+      return statusPayload(reason: "query")
+    }
+
+    return ["schemaVersion": "watch-status-ack-v1"]
   }
 }
 

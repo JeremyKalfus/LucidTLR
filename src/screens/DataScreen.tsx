@@ -21,6 +21,7 @@ import {
   graphPointsForLogs,
   SleepNightGraph,
 } from "@/src/components/sleep/SleepNightGraph";
+import { graphPointsForWatchData } from "@/src/components/sleep/watchSleepGraphData";
 import {
   Card,
   InfoRow,
@@ -213,6 +214,14 @@ function lastLogTimestamp(logs: NativePhoneRuntimeEvent[]): string | undefined {
   return logs[logs.length - 1]?.timestamp;
 }
 
+function firstWatchEpochTimestamp(epochs: WatchEpoch[]): string | undefined {
+  return epochs[0]?.epochStart;
+}
+
+function lastWatchEpochTimestamp(epochs: WatchEpoch[]): string | undefined {
+  return epochs[epochs.length - 1]?.epochEnd;
+}
+
 function runtimeStopTimestamp(logs: NativePhoneRuntimeEvent[]): string | undefined {
   return [...logs]
     .reverse()
@@ -224,7 +233,8 @@ function nightStartedAt(record: SleepNightRecord): string | undefined {
   return (
     record.session?.trainingStartedAt ??
     record.session?.startedAt ??
-    firstLogTimestamp(record.logs)
+    firstLogTimestamp(record.logs) ??
+    firstWatchEpochTimestamp(record.watchEpochs)
   );
 }
 
@@ -232,7 +242,8 @@ function nightEndedAt(record: SleepNightRecord): string | undefined {
   return (
     record.session?.endedAt ??
     runtimeStopTimestamp(record.logs) ??
-    lastLogTimestamp(record.logs)
+    lastLogTimestamp(record.logs) ??
+    lastWatchEpochTimestamp(record.watchEpochs)
   );
 }
 
@@ -1877,6 +1888,10 @@ export function SleepHistoryDataScreen() {
   const watchEpochs = selectedRecord?.watchEpochs ?? [];
   const watchRuntimeEvents = selectedRecord?.watchRuntimeEvents ?? [];
   const watchRuntimeSummary = selectedRecord?.watchRuntimeSummary ?? null;
+  const watchGraph = graphPointsForWatchData({
+    epochs: watchEpochs,
+    runtimeEvents: watchRuntimeEvents,
+  });
   const latestWatchEpoch = watchEpochs[watchEpochs.length - 1];
   const latestWatchCueDecision = [...watchRuntimeEvents]
     .reverse()
@@ -2110,10 +2125,54 @@ export function SleepHistoryDataScreen() {
 
           <SectionTitle>Night graph</SectionTitle>
           <Card>
-            <SleepNightGraph endAt={endAt} logs={logs} startAt={startAt} />
-            <InfoRow label="motion points" value={String(graph.motion.length)} />
-            <InfoRow label="battery points" value={String(graph.battery.length)} />
-            <InfoRow label="cue markers" value={String(graph.cues.length)} />
+            <SleepNightGraph
+              endAt={endAt}
+              logs={logs}
+              startAt={startAt}
+              watchEpochs={watchEpochs}
+              watchRuntimeEvents={watchRuntimeEvents}
+            />
+            <InfoRow
+              label={isWatchRecord ? "phone motion points" : "motion points"}
+              value={String(graph.motion.length)}
+            />
+            <InfoRow
+              label={isWatchRecord ? "phone battery points" : "battery points"}
+              value={String(graph.battery.length)}
+            />
+            <InfoRow
+              label={isWatchRecord ? "phone cue markers" : "cue markers"}
+              value={String(graph.cues.length)}
+            />
+            {isWatchRecord || watchEpochs.length > 0 ? (
+              <>
+                <InfoRow
+                  label="sleep phase points"
+                  value={String(watchGraph.sleep.length)}
+                />
+                <InfoRow label="REM points" value={String(watchGraph.rem.length)} />
+                <InfoRow
+                  label="HR points"
+                  value={String(watchGraph.heartRate.length)}
+                />
+                <InfoRow
+                  label="watch movement points"
+                  value={String(watchGraph.movement.length)}
+                />
+                <InfoRow
+                  label="sensor quality points"
+                  value={String(watchGraph.sensorQuality.length)}
+                />
+                <InfoRow
+                  label="watch battery points"
+                  value={String(watchGraph.battery.length)}
+                />
+                <InfoRow
+                  label="watch cue markers"
+                  value={String(watchGraph.cues.length)}
+                />
+              </>
+            ) : null}
           </Card>
 
           <SectionTitle>Session data</SectionTitle>

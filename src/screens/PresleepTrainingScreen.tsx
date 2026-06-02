@@ -45,6 +45,7 @@ import {
 } from "@/src/native/phoneRuntime";
 import {
   buildNativeWatchSessionPlan,
+  watchTlrStartBlockReason,
   watchRuntime,
   type WatchRuntimeStatus,
 } from "@/src/native/watch";
@@ -512,6 +513,23 @@ export function PresleepTrainingScreen() {
       if (runtimeSession.mode === "watch") {
         if (!runtimeSession.trainingEndedAt) {
           throw new Error("Watch Mode requires completed presleep training.");
+        }
+
+        let finalWatchStatus: WatchRuntimeStatus | null = null;
+
+        try {
+          finalWatchStatus = await watchRuntime.getWatchRuntimeStatus();
+        } finally {
+          setWatchRuntimeStatus(finalWatchStatus);
+        }
+
+        const watchStartBlockReason = watchTlrStartBlockReason(
+          finalWatchStatus,
+          { requireStrictReachability: true },
+        );
+
+        if (watchStartBlockReason) {
+          throw new Error(watchStartBlockReason);
         }
 
         const sleepTiming = buildSleepTimingPrior({

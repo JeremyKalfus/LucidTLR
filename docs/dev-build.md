@@ -91,6 +91,13 @@ npx expo prebuild --platform ios
 Review the resulting native diff before committing. Do not treat simulator or
 development-build success as physical overnight validation.
 
+## Deployment Targets
+
+The checked-in iOS and watchOS deployment targets are source-of-truth native
+configuration. If the available Xcode/EAS environment cannot build iOS 26
+targets, still update the source-of-truth config/docs and report the native
+build limitation rather than silently reverting to 16.4.
+
 ## iPhone Feasibility Harness
 
 The hidden native locked-background harness lives at:

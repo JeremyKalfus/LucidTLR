@@ -14,6 +14,16 @@ export type WatchHealthAuthorizationStatus =
   | "denied"
   | "unavailable";
 
+export type WatchRuntimeLifecycleState =
+  | "idle"
+  | "startPending"
+  | "watchConfirmed"
+  | "running"
+  | "stopping"
+  | "stopped"
+  | "failedStart"
+  | "orphanDetected";
+
 export type WatchEpochMessage = {
   schemaVersion: "watch-epoch-v1";
   sessionId: string;
@@ -111,18 +121,37 @@ export type NativeWatchSessionPlan = {
   };
 };
 
+export type WatchStartedReply = {
+  schemaVersion: "watch-started-v1";
+  commandId: string;
+  sessionId: string;
+  watchSessionId: string;
+  startedAt: string;
+  isRunning: true;
+  healthAuthorizationStatus?: WatchHealthAuthorizationStatus;
+  stopAt?: string;
+};
+
 export type WatchRuntimeStatus = {
   available: boolean;
   unavailableReason?: string;
+  lifecycleState?: WatchRuntimeLifecycleState;
   running: boolean;
   sessionId?: string;
   watchSessionRunning: boolean;
   watchReachable: boolean;
   watchAppInstalled?: boolean;
   watchRecentlySeen?: boolean;
+  watchStartEligible?: boolean;
   watchLastSeenAt?: string;
   watchStatusReason?: string;
   watchHealthAuthorizationStatus?: WatchHealthAuthorizationStatus;
+  watchStartConfirmedAt?: string;
+  watchFirstEpochConfirmedAt?: string;
+  watchStartFailureReason?: string;
+  latestWatchSessionId?: string;
+  latestWatchSessionStartedAt?: string;
+  latestWatchStopAt?: string;
   audioBedRunning: boolean;
   cueCount: number;
   consecutiveLikelyRemEpochs: number;
@@ -146,6 +175,13 @@ export type WatchRuntimeEvent = {
   sessionId: string;
   timestamp: string;
   eventType:
+    | "watch_runtime_start_requested"
+    | "watch_start_command_sent"
+    | "watch_start_confirmed"
+    | "watch_start_timeout"
+    | "watch_start_failed"
+    | "watch_first_epoch_confirmed"
+    | "watch_orphan_detected"
     | "watch_runtime_started"
     | "watch_runtime_stopped"
     | "watch_connectivity_activated"
