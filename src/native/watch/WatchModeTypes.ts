@@ -8,6 +8,12 @@ export type WatchConnectivityState = "connected" | "delayed" | "disconnected" | 
 
 export type WatchMovementIntensity = "still" | "light" | "moderate" | "large";
 
+export type WatchHealthAuthorizationStatus =
+  | "unknown"
+  | "authorized"
+  | "denied"
+  | "unavailable";
+
 export type WatchEpochMessage = {
   schemaVersion: "watch-epoch-v1";
   sessionId: string;
@@ -113,6 +119,10 @@ export type WatchRuntimeStatus = {
   watchSessionRunning: boolean;
   watchReachable: boolean;
   watchAppInstalled?: boolean;
+  watchRecentlySeen?: boolean;
+  watchLastSeenAt?: string;
+  watchStatusReason?: string;
+  watchHealthAuthorizationStatus?: WatchHealthAuthorizationStatus;
   audioBedRunning: boolean;
   cueCount: number;
   consecutiveLikelyRemEpochs: number;

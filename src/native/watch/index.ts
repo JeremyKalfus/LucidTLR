@@ -5,4 +5,5 @@ export * from "./WatchSensorAdapter";
 export * from "./watchEpochMapping";
 export * from "./watchRuntimeClient";
 export * from "./watchRuntimeLogMapping";
+export * from "./watchRuntimePersistence";
 export * from "./watchStartGate";

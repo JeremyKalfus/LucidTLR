@@ -7,11 +7,12 @@ import WatchKit
 final class WatchSessionManager: NSObject, ObservableObject {
   @Published private(set) var isConnected = false
   @Published private(set) var isRunning = false
-  @Published private(set) var statusText = "idle"
+  @Published private(set) var statusText = "Start TLR on phone"
   @Published private(set) var heartRateSampleCount = 0
   @Published private(set) var motionSampleCount = 0
   @Published private(set) var epochCount = 0
   @Published private(set) var sensorQuality = "missing"
+  @Published private(set) var healthAuthorizationStatus = "unknown"
   @Published private(set) var batteryText = "unknown"
 
   private let healthStore = HKHealthStore()
@@ -21,6 +22,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
   private var workoutSession: HKWorkoutSession?
   private var workoutBuilder: HKLiveWorkoutBuilder?
   private var epochTimer: Timer?
+  private var presenceTimer: Timer?
   private var sessionId = ""
   private var watchSessionId = UUID().uuidString
   private var sessionStartedAt = Date()
@@ -39,12 +41,30 @@ final class WatchSessionManager: NSObject, ObservableObject {
     batteryText = formatBattery()
   }
 
+  func watchAppBecameActive() {
+    sendStatus(reason: "foreground")
+    presenceTimer?.invalidate()
+    presenceTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+      self?.sendStatus(reason: "heartbeat")
+    }
+  }
+
+  func watchAppBecameInactive() {
+    presenceTimer?.invalidate()
+    presenceTimer = nil
+  }
+
   func startSession(sessionId commandSessionId: String? = nil) {
     guard !isRunning else {
       return
     }
 
-    sessionId = commandSessionId?.isEmpty == false ? commandSessionId! : UUID().uuidString
+    guard let commandSessionId, !commandSessionId.isEmpty else {
+      statusText = "Start TLR on phone"
+      return
+    }
+
+    sessionId = commandSessionId
     watchSessionId = UUID().uuidString
     sessionStartedAt = Date()
     epochCount = 0
@@ -54,7 +74,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
     motionEma = nil
     stableLowMovementSeconds = 0
     isRunning = true
-    statusText = "session running"
+    statusText = "running"
+    sendStatus(reason: "started")
     requestHealthAuthorization()
     startWorkout()
     startMotion()
@@ -77,8 +98,9 @@ final class WatchSessionManager: NSObject, ObservableObject {
     workoutSession = nil
     workoutBuilder = nil
     isRunning = false
-    statusText = "stopped: \(reason)"
+    statusText = "Start TLR on phone"
     sendStatus(reason: reason)
+    sessionId = ""
   }
 
   private func activateConnectivity() {
@@ -92,16 +114,59 @@ final class WatchSessionManager: NSObject, ObservableObject {
   }
 
   private func requestHealthAuthorization() {
-    guard HKHealthStore.isHealthDataAvailable(),
-      let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate)
-    else {
+    guard HKHealthStore.isHealthDataAvailable() else {
+      updateHealthAuthorizationStatus("unavailable", reason: "health_unavailable")
+      return
+    }
+
+    guard let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+      updateHealthAuthorizationStatus("unavailable", reason: "heart_rate_unavailable")
       return
     }
 
     healthStore.requestAuthorization(
       toShare: [HKQuantityType.workoutType()],
       read: [heartRateType]
-    ) { _, _ in }
+    ) { success, error in
+      DispatchQueue.main.async {
+        if let status = self.healthAuthorizationStatus(for: error) {
+          self.updateHealthAuthorizationStatus(status, reason: "health_authorization_error")
+        } else if success {
+          self.sendStatus(reason: "health_authorization_requested")
+        } else {
+          self.sendStatus(reason: "health_authorization_unknown")
+        }
+      }
+    }
+  }
+
+  private func healthAuthorizationStatus(for error: Error?) -> String? {
+    guard let error else {
+      return nil
+    }
+
+    guard let hkError = error as? HKError else {
+      return nil
+    }
+
+    if hkError.code == .errorAuthorizationDenied {
+      return "denied"
+    }
+
+    if hkError.code == .errorHealthDataUnavailable {
+      return "unavailable"
+    }
+
+    return nil
+  }
+
+  private func updateHealthAuthorizationStatus(_ status: String, reason: String) {
+    guard healthAuthorizationStatus != status else {
+      return
+    }
+
+    healthAuthorizationStatus = status
+    sendStatus(reason: reason)
   }
 
   private func startWorkout() {
@@ -128,6 +193,9 @@ final class WatchSessionManager: NSObject, ObservableObject {
       workoutBuilder = builder
     } catch {
       statusText = "workout failed"
+      if let status = healthAuthorizationStatus(for: error) {
+        updateHealthAuthorizationStatus(status, reason: "workout_health_error")
+      }
     }
   }
 
@@ -201,8 +269,11 @@ final class WatchSessionManager: NSObject, ObservableObject {
     var heartRatePayload: [String: Any] = [
       "sampleCount": hrSamples.count,
     ]
+    var missingReasons: [String] = []
     if let avgHr {
       heartRatePayload["meanBpm"] = avgHr
+    } else if healthAuthorizationStatus == "denied" || healthAuthorizationStatus == "unavailable" {
+      missingReasons.append("heart_rate_\(healthAuthorizationStatus)")
     }
     if let minBpm = hrSamples.min() {
       heartRatePayload["minBpm"] = minBpm
@@ -249,7 +320,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
       modelFeatures["motionFeature"] = motionFeature
     }
 
-    let message: [String: Any] = [
+    var message: [String: Any] = [
       "schemaVersion": "watch-epoch-v1",
       "sessionId": sessionId,
       "watchSessionId": watchSessionId,
@@ -267,6 +338,9 @@ final class WatchSessionManager: NSObject, ObservableObject {
       "sensorQuality": quality,
       "connectivityState": connectivityState,
     ]
+    if !missingReasons.isEmpty {
+      message["missingReasons"] = missingReasons
+    }
 
     sendEpoch(message)
   }
@@ -278,7 +352,11 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
 
     if WCSession.default.isReachable {
-      WCSession.default.sendMessage(message, replyHandler: nil) { _ in
+      WCSession.default.sendMessage(message) { [weak self] reply in
+        DispatchQueue.main.async {
+          self?.handleWatchCommand(reply)
+        }
+      } errorHandler: { _ in
         WCSession.default.transferUserInfo(message)
       }
     } else {
@@ -291,12 +369,24 @@ final class WatchSessionManager: NSObject, ObservableObject {
       return
     }
 
-    WCSession.default.transferUserInfo([
+    let message: [String: Any] = [
       "schemaVersion": "watch-status-v1",
       "sessionId": sessionId,
       "reason": reason,
+      "isRunning": isRunning,
+      "status": statusText,
+      "sentAt": isoFormatter.string(from: Date()),
       "batteryLevel": WKInterfaceDevice.current().batteryLevel,
-    ])
+      "healthAuthorizationStatus": healthAuthorizationStatus,
+    ]
+
+    if WCSession.default.isReachable {
+      WCSession.default.sendMessage(message, replyHandler: nil) { _ in
+        WCSession.default.transferUserInfo(message)
+      }
+    } else {
+      WCSession.default.transferUserInfo(message)
+    }
   }
 
   private func sensorQualityFor(hrCount: Int, motionCount: Int) -> String {
@@ -346,7 +436,9 @@ extension WatchSessionManager: WCSessionDelegate {
   ) {
     DispatchQueue.main.async {
       self.isConnected = activationState == .activated
-      self.statusText = error?.localizedDescription ?? "connected"
+      self.statusText = error?.localizedDescription ??
+        (self.isRunning ? "running" : "Start TLR on phone")
+      self.sendStatus(reason: "activated")
     }
   }
 
@@ -410,6 +502,7 @@ extension WatchSessionManager: HKLiveWorkoutBuilderDelegate {
 
     DispatchQueue.main.async {
       if let bpm {
+        self.updateHealthAuthorizationStatus("authorized", reason: "heart_rate_sample_received")
         self.heartRates.append(bpm)
         self.heartRateSampleCount = self.heartRates.count
       }

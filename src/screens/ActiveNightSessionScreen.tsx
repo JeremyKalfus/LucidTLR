@@ -18,14 +18,12 @@ import {
   type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
 import {
+  importWatchRuntimeDataToLocalRecords,
+  reconcileStoppedWatchRuntime,
   watchRuntime,
   type WatchRuntimeStatus,
 } from "@/src/native/watch";
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
-import {
-  saveWatchEpochs,
-  saveWatchRuntimeEvents,
-} from "@/src/data/local/repositories";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -47,6 +45,22 @@ function runningSessionLabel(session: NightSession): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Runtime action failed.";
+}
+
+function watchHealthStatusLabel(status: WatchRuntimeStatus | null): string {
+  return status?.watchHealthAuthorizationStatus ?? "unknown";
+}
+
+function watchHealthStatusAction(status: WatchRuntimeStatus | null): string | null {
+  if (status?.watchHealthAuthorizationStatus === "denied") {
+    return "Enable HealthKit heart-rate access for LucidCue before relying on Watch Mode.";
+  }
+
+  if (status?.watchHealthAuthorizationStatus === "unavailable") {
+    return "HealthKit heart-rate access is unavailable on this Apple Watch.";
+  }
+
+  return null;
 }
 
 export function ActiveNightSessionScreen() {
@@ -80,6 +94,7 @@ export function ActiveNightSessionScreen() {
     (usesPhoneRuntime && runtimeStatus?.tlrPaused === true) ||
     (usesWatchRuntime && watchRuntimeStatus?.tlrPaused === true);
   const runtimeControlsDisabled = isStopping || runtimeAction !== null;
+  const watchHealthAction = watchHealthStatusAction(watchRuntimeStatus);
 
   const refreshRuntimeStatus = React.useCallback(async () => {
     if (!usesPhoneRuntime) {
@@ -121,10 +136,31 @@ export function ActiveNightSessionScreen() {
       const status = await watchRuntime.getWatchRuntimeStatus();
 
       setWatchRuntimeStatus(status);
+
+      if (!activeSession || !canEnd) {
+        return;
+      }
+
+      const db = await getLocalDb();
+      const result = await reconcileStoppedWatchRuntime({
+        db,
+        sessionId: activeSession.id,
+        runtime: watchRuntime,
+        status,
+      });
+
+      if (!result.shouldEndSession) {
+        return;
+      }
+
+      sendSessionEvent(
+        "end_session",
+        result.stopTimestamp ?? new Date().toISOString(),
+      );
     } catch (error) {
       setRuntimeError(errorMessage(error));
     }
-  }, [usesWatchRuntime]);
+  }, [activeSession, canEnd, sendSessionEvent, usesWatchRuntime]);
 
   React.useEffect(() => {
     void refreshRuntimeStatus();
@@ -186,14 +222,13 @@ export function ActiveNightSessionScreen() {
 
       if (usesWatchRuntime) {
         await watchRuntime.stopWatchSession({ reason: "user_stopped" });
-        const [epochs, logs, db] = await Promise.all([
-          watchRuntime.getWatchEpochs(activeSession.id),
-          watchRuntime.getWatchRuntimeLogs(activeSession.id),
-          getLocalDb(),
-        ]);
+        const db = await getLocalDb();
 
-        await saveWatchEpochs({ db, records: epochs });
-        await saveWatchRuntimeEvents({ db, events: logs });
+        await importWatchRuntimeDataToLocalRecords({
+          db,
+          sessionId: activeSession.id,
+          runtime: watchRuntime,
+        });
       }
 
       sendSessionEvent("end_session");
@@ -300,6 +335,32 @@ export function ActiveNightSessionScreen() {
           <RunningSessionClock
             startedAt={nightSessionStartedAt(activeSession)}
           />
+          {usesWatchRuntime ? (
+            <Text
+              selectable
+              style={{
+                color: colors.textSecondary,
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+                textAlign: "center",
+              }}
+            >
+              {`HealthKit heart rate: ${watchHealthStatusLabel(watchRuntimeStatus)}`}
+            </Text>
+          ) : null}
+          {usesWatchRuntime && watchHealthAction ? (
+            <Text
+              selectable
+              style={{
+                color: colors.textSecondary,
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+                textAlign: "center",
+              }}
+            >
+              {watchHealthAction}
+            </Text>
+          ) : null}
           <View
             style={{
               flexDirection: "row",

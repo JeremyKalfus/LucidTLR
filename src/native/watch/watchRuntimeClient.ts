@@ -52,6 +52,8 @@ function unavailableStatus(reason: string): WatchRuntimeStatus {
     running: false,
     watchSessionRunning: false,
     watchReachable: false,
+    watchRecentlySeen: false,
+    watchHealthAuthorizationStatus: "unknown",
     audioBedRunning: false,
     cueCount: 0,
     consecutiveLikelyRemEpochs: 0,

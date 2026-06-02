@@ -34,6 +34,13 @@ import { colors, spacing, typography } from "@/src/theme/tokens";
 
 const labelToCardGap = 6;
 const actionRowGap = 10;
+const WATCH_STATUS_RETRY_DELAY_MS = 1500;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function HomeSectionLabel({ children }: { children: string }) {
   return (
@@ -93,10 +100,21 @@ export function HomeScreen() {
         status = null;
       }
 
-      const blockReason = watchTlrStartBlockReason(status);
+      let blockReason = watchTlrStartBlockReason(status);
 
       if (blockReason) {
-        Alert.alert("Watch not connected", blockReason);
+        await delay(WATCH_STATUS_RETRY_DELAY_MS);
+
+        try {
+          status = await watchRuntime.getWatchRuntimeStatus();
+          blockReason = watchTlrStartBlockReason(status);
+        } catch {
+          blockReason = watchTlrStartBlockReason(null);
+        }
+      }
+
+      if (blockReason) {
+        Alert.alert("Watch Mode setup needed", blockReason);
         return;
       }
     }

@@ -22,6 +22,10 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
   private var userDeferredUntil: Date?
   private var latestCueDecisionReason = "not_started"
   private var latestConnectivityState = "unknown"
+  private var latestWatchStatusAt: Date?
+  private var latestWatchStatusReason = ""
+  private var latestWatchHealthAuthorizationStatus = "unknown"
+  private let watchPresenceFreshnessSeconds: TimeInterval = 120
   private var classifier: WatchRandomForestModel?
   private var classifierLoadError: String?
   private var audioEngine: AVAudioEngine?
@@ -517,6 +521,42 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     }
   }
 
+  private func handleIncomingWatchStatus(_ rawMessage: [String: Any], delayed: Bool) {
+    let sentAt = (rawMessage["sentAt"] as? String).flatMap(parseDate)
+    latestWatchStatusAt = sentAt ?? Date()
+    latestWatchStatusReason = rawMessage["reason"] as? String ?? ""
+    if let status = rawMessage["healthAuthorizationStatus"] as? String,
+      ["unknown", "authorized", "denied", "unavailable"].contains(status) {
+      latestWatchHealthAuthorizationStatus = status
+    }
+    latestConnectivityState = delayed && !isWatchRecentlySeen()
+      ? "delayed"
+      : "connected"
+  }
+
+  private func watchStatusReply(for rawMessage: [String: Any]) -> [String: Any] {
+    if let plan = activePlan {
+      return [
+        "schemaVersion": "watch-command-v1",
+        "command": "start",
+        "sessionId": plan["sessionId"] as? String ?? "",
+        "plan": sanitizePayload(plan)
+      ]
+    }
+
+    if rawMessage["isRunning"] as? Bool == true {
+      return [
+        "schemaVersion": "watch-command-v1",
+        "command": "stop",
+        "sessionId": rawMessage["sessionId"] as? String ?? ""
+      ]
+    }
+
+    return [
+      "schemaVersion": "watch-status-ack-v1"
+    ]
+  }
+
   private func mapEpoch(
     _ rawMessage: [String: Any],
     epochId: String,
@@ -574,6 +614,11 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     let latestEpoch = activeEpochs.last
     let classifierVersion = classifierVersion(plan: plan)
     let modelAvailable = modelAvailable(plan: plan)
+    let watchReachable = WCSession.isSupported() ? WCSession.default.isReachable : false
+    let watchRecentlySeen = isWatchRecentlySeen()
+    let effectiveConnectivityState = watchReachable || watchRecentlySeen
+      ? "connected"
+      : latestConnectivityState
 
     return [
       "available": WCSession.isSupported(),
@@ -581,8 +626,12 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       "running": plan != nil,
       "sessionId": plan?["sessionId"] as? String ?? "",
       "watchSessionRunning": plan != nil,
-      "watchReachable": WCSession.isSupported() ? WCSession.default.isReachable : false,
+      "watchReachable": watchReachable || watchRecentlySeen,
       "watchAppInstalled": WCSession.isSupported() ? WCSession.default.isWatchAppInstalled : false,
+      "watchRecentlySeen": watchRecentlySeen,
+      "watchLastSeenAt": latestWatchStatusAt.map(formatDate) ?? "",
+      "watchStatusReason": latestWatchStatusReason,
+      "watchHealthAuthorizationStatus": latestWatchHealthAuthorizationStatus,
       "audioBedRunning": isAudioBedRunning(),
       "cueCount": cueCount,
       "consecutiveLikelyRemEpochs": consecutiveLikelyRemEpochs,
@@ -595,11 +644,19 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       "classifierVersion": classifierVersion,
       "modelAvailable": modelAvailable,
       "watchBatteryLevel": latestEpoch?["watchBatteryLevel"] ?? NSNull(),
-      "connectivityState": latestConnectivityState,
+      "connectivityState": effectiveConnectivityState,
       "latestRuntimeError": latestRuntimeError ?? "",
       "tlrPaused": userPaused,
       "tlrDeferredUntil": userDeferredUntil.map(formatDate) ?? ""
     ]
+  }
+
+  private func isWatchRecentlySeen(now: Date = Date()) -> Bool {
+    guard let latestWatchStatusAt else {
+      return false
+    }
+
+    return now.timeIntervalSince(latestWatchStatusAt) <= watchPresenceFreshnessSeconds
   }
 
   private func appendEvent(_ eventType: String, payload: [String: Any]) {
@@ -1421,7 +1478,7 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       }
 
       self.latestConnectivityState = activationState == .activated
-        ? (session.isReachable ? "connected" : "disconnected")
+        ? (session.isReachable || self.isWatchRecentlySeen() ? "connected" : "unknown")
         : "unknown"
       self.appendEvent("watch_connectivity_activated", payload: [
         "activationState": activationState.rawValue,
@@ -1435,7 +1492,31 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     queue.async {
       if message["schemaVersion"] as? String == "watch-epoch-v1" {
         self.handleIncomingEpoch(message, delayed: false)
+      } else if message["schemaVersion"] as? String == "watch-status-v1" {
+        self.handleIncomingWatchStatus(message, delayed: false)
       }
+    }
+  }
+
+  func session(
+    _ session: WCSession,
+    didReceiveMessage message: [String: Any],
+    replyHandler: @escaping ([String: Any]) -> Void
+  ) {
+    queue.async {
+      if message["schemaVersion"] as? String == "watch-status-v1" {
+        self.handleIncomingWatchStatus(message, delayed: false)
+        replyHandler(self.watchStatusReply(for: message))
+        return
+      }
+
+      if message["schemaVersion"] as? String == "watch-epoch-v1" {
+        self.handleIncomingEpoch(message, delayed: false)
+      }
+
+      replyHandler([
+        "schemaVersion": "watch-status-ack-v1"
+      ])
     }
   }
 
@@ -1443,16 +1524,26 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     queue.async {
       if userInfo["schemaVersion"] as? String == "watch-epoch-v1" {
         self.handleIncomingEpoch(userInfo, delayed: true)
+      } else if userInfo["schemaVersion"] as? String == "watch-status-v1" {
+        self.handleIncomingWatchStatus(userInfo, delayed: true)
       }
     }
   }
 
+  func sessionReachabilityDidChange(_ session: WCSession) {
+    queue.async {
+      self.latestConnectivityState = session.isReachable || self.isWatchRecentlySeen()
+        ? "connected"
+        : "unknown"
+    }
+  }
+
   func sessionDidBecomeInactive(_ session: WCSession) {
-    latestConnectivityState = "disconnected"
+    latestConnectivityState = isWatchRecentlySeen() ? "connected" : "unknown"
   }
 
   func sessionDidDeactivate(_ session: WCSession) {
-    latestConnectivityState = "disconnected"
+    latestConnectivityState = isWatchRecentlySeen() ? "connected" : "unknown"
     session.activate()
   }
 }

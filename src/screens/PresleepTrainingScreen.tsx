@@ -30,6 +30,10 @@ import { getCueAppAsset } from "@/src/audio/cueAssets";
 import { FINAL_LUCID_TRAINING_AUDIO_ASSET } from "@/src/audio/trainingAssets";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
 import {
+  nativeRuntimeStartButtonLabel,
+  runtimeStartLoadingLabel,
+} from "@/src/features/sessions/runtimeStartLabels";
+import {
   applyPhoneNightCalibrationToSettings,
   buildSleepTimingPrior,
 } from "@/src/engine";
@@ -691,7 +695,11 @@ export function PresleepTrainingScreen() {
         <PrimaryPillButton
           disabled={isStartingRuntime}
           icon={Moon}
-          label={isStartingRuntime ? "Starting Phone Runtime..." : "Start Night Session"}
+          label={
+            isStartingRuntime && session
+              ? runtimeStartLoadingLabel(session.mode === "watch" ? "watch" : "phone")
+              : "Start Night Session"
+          }
           onPress={() => {
             void startNightSession({ skipGuidedTraining: true });
           }}
@@ -729,15 +737,10 @@ export function PresleepTrainingScreen() {
             <PrimaryPillButton
               disabled={isStartingRuntime}
               icon={session.mode === "watch" ? Watch : Smartphone}
-              label={
-                isStartingRuntime
-                  ? session.mode === "watch"
-                    ? "Starting Watch Runtime..."
-                    : "Starting Phone Runtime..."
-                  : session.mode === "watch"
-                    ? "Start Native Watch Runtime"
-                    : "Start Native Phone Runtime"
-              }
+              label={nativeRuntimeStartButtonLabel({
+                mode: session.mode === "watch" ? "watch" : "phone",
+                isStarting: isStartingRuntime,
+              })}
               onPress={() => {
                 void startNightSession();
               }}

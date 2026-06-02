@@ -26,6 +26,7 @@ function nativeRuntimeModule(
         classifierVersion: "lucidcue-watch-rem-v1",
         modelAvailable: true,
         connectivityState: "connected" as const,
+        watchHealthAuthorizationStatus: "authorized" as const,
         tlrPaused: false,
       }),
     ),
@@ -73,5 +74,33 @@ describe("watch runtime client", () => {
     expect(() => client.pauseWatchTlrCueing()).toThrow(
       "does not export pauseWatchTlrCueing",
     );
+  });
+
+  it("preserves Watch HealthKit authorization status from native status", async () => {
+    const nativeModule = nativeRuntimeModule({
+      getWatchRuntimeStatus: vi.fn(() =>
+        Promise.resolve({
+          available: true,
+          running: false,
+          watchSessionRunning: false,
+          watchReachable: true,
+          audioBedRunning: false,
+          cueCount: 0,
+          consecutiveLikelyRemEpochs: 0,
+          classifierVersion: "lucidcue-watch-rem-v1",
+          modelAvailable: true,
+          connectivityState: "connected" as const,
+          watchHealthAuthorizationStatus: "denied" as const,
+        }),
+      ),
+    });
+    const client = createWatchRuntimeClient({
+      platform: "ios",
+      nativeModule,
+    });
+
+    await expect(client.getWatchRuntimeStatus()).resolves.toMatchObject({
+      watchHealthAuthorizationStatus: "denied",
+    });
   });
 });

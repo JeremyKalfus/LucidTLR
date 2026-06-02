@@ -170,7 +170,7 @@ Relevant implementation points:
   probability signal plus LucidCue safety gates. Do not claim exact Mallela
   feature parity or scientific validation from this implementation alone.
 - iPhone plays cues during likely REM.
-- If likely REM persists for five consecutive epochs, suppress additional cues until the REM period ends.
+- Beginning with the fifth consecutive likely-REM epoch, suppress additional cues until the REM period ends.
 - Watch motion should also gate cueing:
   - large movement pauses cueing,
   - movement shortly after a cue triggers a longer pause,
@@ -260,7 +260,7 @@ Aligned with Mallela/Mallett 2024, with LucidCue product safety gates:
   probability signal plus LucidCue safety gates. This is not a claim of exact
   Mallela feature parity.
 - If likely REM is detected, iPhone plays cue.
-- If likely REM persists for five consecutive epochs, suppress additional cues until the REM period ends to reduce awakenings.
+- Beginning with the fifth consecutive likely-REM epoch, suppress additional cues until the REM period ends to reduce awakenings.
 - Watch movement data is also used for arousal gating:
   - large movement pauses cueing,
   - movement shortly after a cue triggers a longer pause,

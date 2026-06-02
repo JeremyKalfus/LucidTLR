@@ -13,9 +13,9 @@ The Mallela random-forest model asset is exported from the public
 `9cc30e7157696331dbb79e0cf43f164cfc9685c2`. The native Watch runtime loads the
 bundled model as the REM-probability signal for `lucidcue-watch-rem-v1`, then
 adds LucidCue safety gates for sensor quality, sleep probability, movement
-stability, cue budget, recent cueing, cue-associated movement, and five-epoch
-persistent likely-REM suppression. This is not claimed as exact Mallela feature
-parity.
+stability, cue budget, recent cueing, cue-associated movement, and persistent
+likely-REM suppression beginning with the fifth consecutive likely-REM epoch.
+This is not claimed as exact Mallela feature parity.
 
 Watch epoch and runtime data stay local by default. Raw motion debug payloads
 are not persisted by default and should not be uploaded without a separate

@@ -45,6 +45,10 @@ import {
   summarizePhoneRuntimeEvents,
 } from "@/src/native/phoneRuntime";
 import {
+  reconcileStoppedWatchRuntime,
+  watchRuntime,
+} from "@/src/native/watch";
+import {
   ONBOARDING_FORM_ID,
   STUDY_OPT_IN_VALUE,
   STUDY_OPT_OUT_VALUE,
@@ -1086,18 +1090,59 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [activeSession, refreshPhoneNightCalibration, sendSessionEvent]);
 
+  const reconcileNativeWatchRuntimeCompletion = React.useCallback(async () => {
+    if (
+      !activeSession ||
+      activeSession.sessionType !== "tlr" ||
+      activeSession.mode !== "watch" ||
+      !canTransitionSession(
+        activeSession.sessionType,
+        activeSession.status,
+        "end_session",
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const db = await getLocalDb();
+      const result = await reconcileStoppedWatchRuntime({
+        db,
+        sessionId: activeSession.id,
+        runtime: watchRuntime,
+      });
+
+      if (!result.shouldEndSession) {
+        return;
+      }
+
+      sendSessionEvent(
+        "end_session",
+        result.stopTimestamp ?? new Date().toISOString(),
+      );
+    } catch {
+      // Screen-level runtime panels surface actionable native errors.
+    }
+  }, [activeSession, sendSessionEvent]);
+
   React.useEffect(() => {
     if (!isHydrated) {
       return;
     }
 
     void reconcileNativePhoneRuntimeCompletion();
-  }, [isHydrated, reconcileNativePhoneRuntimeCompletion]);
+    void reconcileNativeWatchRuntimeCompletion();
+  }, [
+    isHydrated,
+    reconcileNativePhoneRuntimeCompletion,
+    reconcileNativeWatchRuntimeCompletion,
+  ]);
 
   React.useEffect(() => {
     const subscription = NativeAppState.addEventListener("change", (state) => {
       if (state === "active") {
         void reconcileNativePhoneRuntimeCompletion();
+        void reconcileNativeWatchRuntimeCompletion();
         void importCompletedPhoneRuntimeCalibrations(sessionHistory).then(
           refreshPhoneNightCalibration,
         );
@@ -1107,6 +1152,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return () => subscription.remove();
   }, [
     reconcileNativePhoneRuntimeCompletion,
+    reconcileNativeWatchRuntimeCompletion,
     refreshPhoneNightCalibration,
     sessionHistory,
   ]);

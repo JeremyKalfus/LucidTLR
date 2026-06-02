@@ -3,11 +3,12 @@
 LucidCue needs a custom iOS development build before testing locked-background
 behavior. Expo Go is not sufficient for this project because Expo Go cannot
 include LucidCue-specific native modules, iOS background-mode entitlements, or
-custom native audio/motion behavior.
+custom native audio/motion/watch behavior.
 
-This setup does not add production native TLR logic, Watch Mode, or any science
-protocol changes. It only prepares the app to run custom native iOS code on a
-physical iPhone.
+The custom development build is required for the native Phone runtime and Watch
+Mode. Watch Mode is code-complete for simulator and development-build testing,
+but physical overnight reliability is not claimed until paired-device overnight
+validation passes.
 
 ## One-time Setup
 
@@ -71,16 +72,24 @@ npx expo start --dev-client --tunnel
 
 ## Native Project
 
-The `ios/` project has been generated from Expo config. Regenerate it after
-Expo config changes with:
+The checked-in `ios/` project is authoritative for the Watch target setup.
+Do not run a destructive clean prebuild without preserving or reapplying:
+
+- the Watch app target,
+- the Embed Watch Content phase,
+- Watch entitlements,
+- HealthKit usage strings,
+- WatchConnectivity/native bridge files,
+- bundled model/audio resource inclusion.
+
+Non-destructive prebuilds may still be useful after Expo config changes:
 
 ```sh
 npx expo prebuild --platform ios
 ```
 
-Use this when changing native iOS files, entitlements, or config plugins. The
-feasibility harness adds iOS background audio mode for testing only; do not treat
-that as production TLR support until physical-device logs pass.
+Review the resulting native diff before committing. Do not treat simulator or
+development-build success as physical overnight validation.
 
 ## iPhone Feasibility Harness
 
@@ -106,3 +115,15 @@ compressed 45-minute test plan, an audible audio bed, motion summaries, native
 cue scheduling, a test-only predicted REM window, local native logs, and log
 sharing/import controls. It is for locked-device stress testing only and does
 not change the public Phone Mode protocol.
+
+## Watch Runtime Self-Test
+
+Development builds can run the DEBUG-only Watch runtime self-test by launching
+the iPhone app with:
+
+```text
+--lucidcue-watch-runtime-self-test
+```
+
+The self-test injects one synthetic likely-REM epoch through the native Watch
+runtime and writes local runtime artifacts without persisting raw motion.

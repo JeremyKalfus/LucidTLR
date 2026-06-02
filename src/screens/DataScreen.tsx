@@ -38,6 +38,8 @@ import {
 } from "@/src/data/local/fullDataBackup";
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import {
+  getLocalParticipant,
+  loadLocalSessions,
   loadMorningReportForSession,
   loadWatchEpochsForSession,
   loadWatchRuntimeEventsForSession,
@@ -56,6 +58,7 @@ import type {
 import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import {
+  collectWatchRuntimeDataForLocalSessions,
   summarizeWatchRuntime,
   watchRuntime,
   type WatchRuntimeEvent,
@@ -88,6 +91,9 @@ type SleepNightRecord = {
   session?: NightSession;
   morningReport?: MorningReport | null;
   logs: NativePhoneRuntimeEvent[];
+  watchEpochs: WatchEpoch[];
+  watchRuntimeEvents: WatchRuntimeEvent[];
+  watchRuntimeSummary: WatchRuntimeLogSummary | null;
 };
 
 function isOvernightEngineStatus(status: string): boolean {
@@ -273,6 +279,10 @@ function compactTimelineEvents(logs: NativePhoneRuntimeEvent[]): NativePhoneRunt
     .reverse();
 }
 
+function compactWatchRuntimeEvents(events: WatchRuntimeEvent[]): WatchRuntimeEvent[] {
+  return events.slice(-60).reverse();
+}
+
 function nullableBooleanLabel(value: boolean | null | undefined): string {
   if (value === undefined || value === null) {
     return "skipped";
@@ -297,6 +307,12 @@ function durationLabel(startAt?: string, endAt?: string): string {
   const remainder = minutes % 60;
 
   return hours > 0 ? `${hours}h ${remainder}m` : `${minutes}m`;
+}
+
+function fixedNumberLabel(value: unknown, digits: number): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value.toFixed(digits)
+    : "not available";
 }
 
 function minMaxLabel(values: number[], format: (value: number) => string): string {
@@ -541,6 +557,22 @@ function DataNote({ children }: { children: string }) {
   );
 }
 
+function watchHealthStatusLabel(status: WatchRuntimeStatus | null): string {
+  return status?.watchHealthAuthorizationStatus ?? "unknown";
+}
+
+function watchHealthStatusAction(status: WatchRuntimeStatus | null): string | null {
+  if (status?.watchHealthAuthorizationStatus === "denied") {
+    return "Enable HealthKit heart-rate access for LucidCue on Apple Watch before starting Watch Mode.";
+  }
+
+  if (status?.watchHealthAuthorizationStatus === "unavailable") {
+    return "HealthKit heart-rate access is unavailable on this Apple Watch.";
+  }
+
+  return null;
+}
+
 function useRuntimeTimeline() {
   const [runtimeLogs, setRuntimeLogs] = React.useState<NativePhoneRuntimeEvent[]>(
     [],
@@ -650,12 +682,20 @@ function useSleepNightRecords() {
       try {
         const nativeLogSessionIds = await phoneRuntime.getPhoneRuntimeLogSessionIds();
         const db = await getLocalDb();
+        const participant = await getLocalParticipant(db);
+        const persistedSessions = participant
+          ? await loadLocalSessions({ db, participantId: participant.id })
+          : [];
+        const allLocalSessions = localSessionRecords(null, [
+          ...localSessions,
+          ...persistedSessions,
+        ]);
         const archivedRuntimeLogs = await loadArchivedPhoneRuntimeLogs(db);
         const localSessionById = new Map(
-          localSessions.map((session) => [session.id, session]),
+          allLocalSessions.map((session) => [session.id, session]),
         );
         const candidateIds = [
-          ...localSessions.map((session) => session.id),
+          ...allLocalSessions.map((session) => session.id),
           ...nativeLogSessionIds,
           ...Object.keys(archivedRuntimeLogs),
         ].filter((id, index, ids) => ids.indexOf(id) === index);
@@ -666,12 +706,45 @@ function useSleepNightRecords() {
               nativeLogSessionIds.includes(id) ||
               (session?.sessionType === "tlr" && session.mode === "phone");
             let nativeLogs: NativePhoneRuntimeEvent[] = [];
+            let watchEpochs: WatchEpoch[] = [];
+            let watchRuntimeEvents: WatchRuntimeEvent[] = [];
 
             if (shouldTryNativeLogs) {
               try {
                 nativeLogs = await phoneRuntime.getPhoneRuntimeLogs(id);
               } catch {
                 nativeLogs = [];
+              }
+            }
+
+            if (session?.sessionType === "tlr" && session.mode === "watch") {
+              const [storedEpochs, storedEvents] = await Promise.all([
+                loadWatchEpochsForSession({ db, sessionId: id }),
+                loadWatchRuntimeEventsForSession({ db, sessionId: id }),
+              ]);
+
+              watchEpochs = storedEpochs;
+              watchRuntimeEvents = storedEvents;
+
+              if (watchRuntime.isAvailable()) {
+                try {
+                  const [nativeEpochs, nativeEvents] = await Promise.all([
+                    watchRuntime.getWatchEpochs(id),
+                    watchRuntime.getWatchRuntimeLogs(id),
+                  ]);
+
+                  if (nativeEpochs.length > 0) {
+                    await saveWatchEpochs({ db, records: nativeEpochs });
+                    watchEpochs = nativeEpochs;
+                  }
+
+                  if (nativeEvents.length > 0) {
+                    await saveWatchRuntimeEvents({ db, events: nativeEvents });
+                    watchRuntimeEvents = nativeEvents;
+                  }
+                } catch {
+                  // SQLite watch data remains available after the native runtime is closed.
+                }
               }
             }
 
@@ -684,6 +757,12 @@ function useSleepNightRecords() {
               logs: nativeLogs.length > 0
                 ? nativeLogs
                 : archivedRuntimeLogs[id] ?? [],
+              watchEpochs,
+              watchRuntimeEvents,
+              watchRuntimeSummary:
+                watchEpochs.length > 0 || watchRuntimeEvents.length > 0
+                  ? summarizeWatchRuntime(watchRuntimeEvents, watchEpochs)
+                  : null,
             };
           }),
         );
@@ -725,6 +804,9 @@ function useSleepNightRecords() {
               session,
               morningReport: null,
               logs: [],
+              watchEpochs: [],
+              watchRuntimeEvents: [],
+              watchRuntimeSummary: null,
             })),
           );
           setError(
@@ -780,6 +862,12 @@ order by started_at desc`,
   }
 
   return nativeLogs;
+}
+
+async function collectWatchRuntimeDataForExport(
+  db: Awaited<ReturnType<typeof getLocalDb>>,
+): Promise<void> {
+  await collectWatchRuntimeDataForLocalSessions({ db, runtime: watchRuntime });
 }
 
 function confirmFullDataImport(): Promise<boolean> {
@@ -899,6 +987,7 @@ export function DataScreen() {
     try {
       const db = await getLocalDb();
       const nativePhoneRuntimeLogs = await collectPhoneRuntimeLogsForExport(db);
+      await collectWatchRuntimeDataForExport(db);
       await saveArchivedPhoneRuntimeLogs({
         db,
         logs: nativePhoneRuntimeLogs,
@@ -1432,6 +1521,7 @@ export function WatchModeDataScreen() {
         event.eventType === "watch_cue_suppressed" ||
         event.eventType === "watch_cue_failed",
     );
+  const watchHealthAction = watchHealthStatusAction(watchRuntimeStatus);
 
   React.useEffect(() => {
     let mounted = true;
@@ -1566,6 +1656,10 @@ export function WatchModeDataScreen() {
           value={watchRuntimeStatus?.latestSensorQuality ?? "unknown"}
         />
         <InfoRow
+          label="HealthKit heart rate"
+          value={watchHealthStatusLabel(watchRuntimeStatus)}
+        />
+        <InfoRow
           label="watch battery"
           value={
             typeof watchRuntimeStatus?.watchBatteryLevel === "number"
@@ -1585,6 +1679,9 @@ export function WatchModeDataScreen() {
           label="session"
           value={latestWatchSession?.id ?? "no local watch session"}
         />
+        {watchHealthAction ? (
+          <DataNote>{watchHealthAction}</DataNote>
+        ) : null}
         <InfoRow
           label="epochs"
           value={summary ? String(summary.epochsReceived) : "0"}
@@ -1688,19 +1785,11 @@ export function WatchModeDataScreen() {
               />
               <InfoRow
                 label="HR"
-                value={
-                  epoch.heartRateSummary === undefined
-                    ? "not available"
-                    : epoch.heartRateSummary.toFixed(1)
-                }
+                value={fixedNumberLabel(epoch.heartRateSummary, 1)}
               />
               <InfoRow
                 label="motion"
-                value={
-                  epoch.motionSummary === undefined
-                    ? "not available"
-                    : epoch.motionSummary.toFixed(3)
-                }
+                value={fixedNumberLabel(epoch.motionSummary, 3)}
               />
               <InfoRow
                 label="REM probability"
@@ -1784,6 +1873,20 @@ export function SleepHistoryDataScreen() {
   const routeChanges = eventTypeCount(logs, "route_changed");
   const runtimeErrors = eventTypeCount(logs, "runtime_error");
   const graph = graphPointsForLogs(logs);
+  const isWatchRecord = selectedRecord?.session?.mode === "watch";
+  const watchEpochs = selectedRecord?.watchEpochs ?? [];
+  const watchRuntimeEvents = selectedRecord?.watchRuntimeEvents ?? [];
+  const watchRuntimeSummary = selectedRecord?.watchRuntimeSummary ?? null;
+  const latestWatchEpoch = watchEpochs[watchEpochs.length - 1];
+  const latestWatchCueDecision = [...watchRuntimeEvents]
+    .reverse()
+    .find(
+      (event) =>
+        event.eventType === "watch_cue_decision" ||
+        event.eventType === "watch_cue_played" ||
+        event.eventType === "watch_cue_suppressed" ||
+        event.eventType === "watch_cue_failed",
+    );
 
   React.useEffect(() => {
     setSelectedIndex((index) => Math.min(index, Math.max(0, records.length - 1)));
@@ -2060,38 +2163,121 @@ export function SleepHistoryDataScreen() {
 
           <SectionTitle>Runtime data</SectionTitle>
           <Card>
-            <InfoRow label="raw native events" value={String(logs.length)} />
-            <InfoRow label="training cues" value={String(trainingCuesPlayed)} />
-            <InfoRow label="runtime cues" value={String(cuesPlayed)} />
-            <InfoRow label="cue failures" value={String(cueFailures)} />
-            <InfoRow label="motion summaries" value={String(motionSummaries)} />
-            <InfoRow
-              label="motion intensity"
-              value={motionIntensityCounts(logs)}
-            />
-            <InfoRow label="movement pauses" value={String(movementPauses)} />
-            <InfoRow label="interruptions" value={String(interruptions)} />
-            <InfoRow label="route changes" value={String(routeChanges)} />
-            <InfoRow label="runtime errors" value={String(runtimeErrors)} />
-            <InfoRow
-              label="battery range"
-              value={batteryLevelLabel(logs)}
-            />
-            <InfoRow
-              label="Low Power samples"
-              value={String(
-                countPayloadMatches(
-                  logs,
-                  "battery_summary",
-                  "lowPowerMode",
-                  true,
-                ),
-              )}
-            />
-            <InfoRow
-              label="thermal states"
-              value={uniquePayloadValues(logs, "battery_summary", "thermalState")}
-            />
+            {isWatchRecord ? (
+              <>
+                <InfoRow label="watch epochs" value={String(watchEpochs.length)} />
+                <InfoRow
+                  label="runtime events"
+                  value={String(watchRuntimeEvents.length)}
+                />
+                <InfoRow
+                  label="latest epoch"
+                  value={
+                    latestWatchEpoch
+                      ? new Date(latestWatchEpoch.epochEnd).toLocaleString()
+                      : "none"
+                  }
+                />
+                <InfoRow
+                  label="latest HR"
+                  value={fixedNumberLabel(latestWatchEpoch?.heartRateSummary, 1)}
+                />
+                <InfoRow
+                  label="latest motion"
+                  value={fixedNumberLabel(latestWatchEpoch?.motionSummary, 3)}
+                />
+                <InfoRow
+                  label="REM probability"
+                  value={formatEnginePercent(latestWatchEpoch?.remProbability)}
+                />
+                <InfoRow
+                  label="sensor quality"
+                  value={latestWatchEpoch?.sensorQuality ?? "unknown"}
+                />
+                <InfoRow
+                  label="connectivity"
+                  value={latestWatchEpoch?.watchConnectivityState ?? "unknown"}
+                />
+                <InfoRow
+                  label="cue decision"
+                  value={
+                    latestWatchEpoch?.cueDecisionReason ??
+                    (latestWatchCueDecision
+                      ? stringPayload(latestWatchCueDecision.payload, "reason")
+                      : undefined) ??
+                    "none yet"
+                  }
+                />
+                <InfoRow
+                  label="cues played"
+                  value={
+                    watchRuntimeSummary
+                      ? String(watchRuntimeSummary.cuesPlayed)
+                      : "0"
+                  }
+                />
+                <InfoRow
+                  label="cue suppressions"
+                  value={
+                    watchRuntimeSummary
+                      ? String(watchRuntimeSummary.cueSuppressions)
+                      : "0"
+                  }
+                />
+                <InfoRow
+                  label="cue failures"
+                  value={
+                    watchRuntimeSummary
+                      ? String(watchRuntimeSummary.cueFailures)
+                      : "0"
+                  }
+                />
+                <InfoRow
+                  label="classifier"
+                  value={
+                    watchRuntimeSummary &&
+                    watchRuntimeSummary.classifierVersions.length > 0
+                      ? watchRuntimeSummary.classifierVersions.join(", ")
+                      : "unknown"
+                  }
+                />
+              </>
+            ) : (
+              <>
+                <InfoRow label="raw native events" value={String(logs.length)} />
+                <InfoRow label="training cues" value={String(trainingCuesPlayed)} />
+                <InfoRow label="runtime cues" value={String(cuesPlayed)} />
+                <InfoRow label="cue failures" value={String(cueFailures)} />
+                <InfoRow label="motion summaries" value={String(motionSummaries)} />
+                <InfoRow
+                  label="motion intensity"
+                  value={motionIntensityCounts(logs)}
+                />
+                <InfoRow label="movement pauses" value={String(movementPauses)} />
+                <InfoRow label="interruptions" value={String(interruptions)} />
+                <InfoRow label="route changes" value={String(routeChanges)} />
+                <InfoRow label="runtime errors" value={String(runtimeErrors)} />
+                <InfoRow
+                  label="battery range"
+                  value={batteryLevelLabel(logs)}
+                />
+                <InfoRow
+                  label="Low Power samples"
+                  value={String(
+                    countPayloadMatches(
+                      logs,
+                      "battery_summary",
+                      "lowPowerMode",
+                      true,
+                    ),
+                  )}
+                />
+                <InfoRow
+                  label="thermal states"
+                  value={uniquePayloadValues(logs, "battery_summary", "thermalState")}
+                />
+              </>
+            )}
           </Card>
 
           <SectionTitle>Morning review</SectionTitle>
@@ -2138,7 +2324,25 @@ export function SleepHistoryDataScreen() {
 
           <SectionTitle>Event listing</SectionTitle>
           <Card>
-            {compactTimelineEvents(logs).length === 0 ? (
+            {isWatchRecord ? (
+              compactWatchRuntimeEvents(watchRuntimeEvents).length === 0 ? (
+                <InfoRow label="events" value="none for this night" />
+              ) : (
+                compactWatchRuntimeEvents(watchRuntimeEvents).map((event) => (
+                  <Text
+                    selectable
+                    key={event.id}
+                    style={{
+                      color: colors.textSecondary,
+                      fontSize: typography.label.fontSize,
+                      lineHeight: typography.label.lineHeight,
+                    }}
+                  >
+                    {watchRuntimeEventLabel(event)}
+                  </Text>
+                ))
+              )
+            ) : compactTimelineEvents(logs).length === 0 ? (
               <InfoRow label="events" value="none for this night" />
             ) : (
               compactTimelineEvents(logs).map((event) => (

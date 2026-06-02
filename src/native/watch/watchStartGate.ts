@@ -15,12 +15,18 @@ export function watchTlrStartBlockReason(
     return "The LucidCue Watch app is not detected.";
   }
 
-  if (
-    !status.watchReachable ||
-    status.connectivityState === "disconnected" ||
-    status.connectivityState === "delayed" ||
-    status.connectivityState === "unknown"
-  ) {
+  if (status.watchHealthAuthorizationStatus === "denied") {
+    return "HealthKit heart-rate access is denied. Enable heart-rate access for LucidCue on the Apple Watch before starting Watch Mode.";
+  }
+
+  if (status.watchHealthAuthorizationStatus === "unavailable") {
+    return "HealthKit heart-rate access is unavailable on this Apple Watch.";
+  }
+
+  const hasFreshWatchPresence =
+    status.watchReachable || status.watchRecentlySeen === true;
+
+  if (!hasFreshWatchPresence) {
     return "Apple Watch is not connected. Open LucidCue on the watch and keep it reachable before starting Watch Mode.";
   }
 

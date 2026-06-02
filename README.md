@@ -5,18 +5,20 @@ reactivation (TLR) lucid-dream induction.
 
 The app is designed to be local-first, with optional consent-gated research
 upload through Supabase. It currently contains the protocol, domain, onboarding,
-session, local storage, sync-policy, native-boundary, and theme scaffolding.
+session, local storage, sync-policy, native Phone runtime, native Watch runtime,
+and theme foundations.
 
 This is not a medical device or treatment, and results are not guaranteed.
 
 ## Current Status
 
-- Phone Mode and Watch Mode protocol scaffolding is defined in `src/protocol`.
+- Phone Mode and Watch Mode are implemented for custom iOS development builds.
 - Domain/session/report/journal types are defined before UI work.
 - Onboarding is modeled as a single data-driven survey wizard.
 - Local SQLite and Supabase schemas are scaffolded.
 - Upload decisions are centralized and consent-gated.
-- Native overnight behavior is represented by TypeScript adapter interfaces.
+- Watch Mode is code-complete for simulator/dev-build testing, but physical
+  overnight reliability is not yet claimed.
 
 ## Development Builds
 

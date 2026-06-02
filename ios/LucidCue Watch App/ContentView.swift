@@ -4,33 +4,23 @@ struct ContentView: View {
   @EnvironmentObject private var manager: WatchSessionManager
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text("LucidCue Watch")
-        .font(.headline)
-      Text(manager.statusText)
-        .font(.footnote)
-      Button("Start Watch Session") {
-        manager.startSession()
+    VStack(alignment: .center, spacing: 10) {
+      if manager.isRunning {
+        Text("TLR running")
+          .font(.headline)
+        Grid(alignment: .leading, horizontalSpacing: 6, verticalSpacing: 4) {
+          row("connection", manager.isConnected ? "connected" : "connecting")
+          row("session", manager.statusText)
+          row("epochs", String(manager.epochCount))
+        }
+      } else {
+        Text("Start TLR on phone")
+          .font(.headline)
+          .multilineTextAlignment(.center)
       }
-      .disabled(manager.isRunning)
-      Button("Stop Watch Session") {
-        manager.stopSession(reason: "watch_button")
-      }
-      .disabled(!manager.isRunning)
-      Grid(alignment: .leading, horizontalSpacing: 6, verticalSpacing: 4) {
-        row("connected", manager.isConnected ? "yes" : "no")
-        row("session", manager.isRunning ? "running" : "idle")
-        row("HR samples", String(manager.heartRateSampleCount))
-        row("motion", String(manager.motionSampleCount))
-        row("epochs", String(manager.epochCount))
-        row("battery", manager.batteryText)
-        row("quality", manager.sensorQuality)
-      }
-      Text("Start iPhone session first. Keep watch charged/worn.")
-        .font(.caption2)
-        .foregroundStyle(.secondary)
     }
     .padding()
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   private func row(_ label: String, _ value: String) -> some View {

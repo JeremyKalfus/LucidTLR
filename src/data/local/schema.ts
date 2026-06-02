@@ -25,6 +25,10 @@ export const LOCAL_MIGRATIONS = [
     id: "006_watch_mode_epochs",
     filename: "006_watch_mode_epochs.sql",
   },
+  {
+    id: "007_watch_mode_runtime_completion",
+    filename: "007_watch_mode_runtime_completion.sql",
+  },
 ] as const;
 
 export const LOCAL_TABLES = [
