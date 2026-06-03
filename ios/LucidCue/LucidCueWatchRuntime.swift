@@ -22,6 +22,10 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
   private var activePlan: [String: Any]?
   private var activeLogs: [[String: Any]] = []
   private var activeEpochs: [[String: Any]] = []
+  private var latestWatchOwnedPlan: [String: Any]?
+  private var latestWatchOwnedPreparedAt: Date?
+  private var latestWatchOwnedStatus: [String: Any]?
+  private var watchOwnedLogPackages: [String: [[String: Any]]] = [:]
   private var lifecycleState: WatchRuntimeLifecycleState = .idle
   private var pendingStartCommandId: String?
   private var pendingStartExpiresAt: Date?
@@ -405,6 +409,165 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     }
   }
 
+  @objc(prepareWatchOwnedSession:resolver:rejecter:)
+  func prepareWatchOwnedSession(
+    _ planDictionary: NSDictionary,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let plan = planDictionary as? [String: Any] ?? [:]
+
+    guard plan["protocol"] as? String == "watch-session-plan-v2" else {
+      reject(
+        "invalid_watch_owned_plan",
+        "Watch-owned session plan must use watch-session-plan-v2.",
+        runtimeError("Watch-owned session plan must use watch-session-plan-v2.")
+      )
+      return
+    }
+
+    guard let sessionId = plan["sessionId"] as? String, !sessionId.isEmpty else {
+      reject(
+        "invalid_watch_owned_plan",
+        "Watch-owned session plan requires a sessionId.",
+        runtimeError("Watch-owned session plan requires a sessionId.")
+      )
+      return
+    }
+
+    queue.async {
+      self.activateWatchConnectivity()
+      self.latestWatchOwnedPlan = plan
+      self.latestWatchOwnedPreparedAt = Date()
+      self.latestWatchOwnedStatus = [
+        "protocol": "watch-owned-status-v2",
+        "available": true,
+        "runtimeOwner": "watch",
+        "state": "ready",
+        "preparedSessionId": sessionId,
+        "sessionId": sessionId,
+        "reason": "prepared_on_phone",
+        "stopAt": plan["stopAt"] as? String ?? "",
+        "cueMode": plan["cueMode"] as? String ?? "",
+        "watchReachable": WCSession.isSupported() ? WCSession.default.isReachable : false,
+        "connectivityState": WCSession.isSupported() && WCSession.default.isReachable
+          ? "connected"
+          : "delayed",
+        "syncPending": false
+      ]
+
+      let message: [String: Any] = [
+        "schemaVersion": "watch-owned-plan-v2",
+        "sessionId": sessionId,
+        "preparedAt": self.formatDate(self.latestWatchOwnedPreparedAt ?? Date()),
+        "plan": self.sanitizePayload(plan)
+      ]
+
+      guard WCSession.isSupported() else {
+        self.latestConnectivityState = "disconnected"
+        resolve(nil)
+        return
+      }
+
+      let session = WCSession.default
+
+      if session.activationState == .activated {
+        do {
+          try session.updateApplicationContext(message)
+        } catch {
+          self.latestRuntimeError = error.localizedDescription
+        }
+
+        session.transferUserInfo(message)
+
+        if session.isReachable {
+          session.sendMessage(message, replyHandler: nil) { error in
+            self.queue.async {
+              self.latestConnectivityState = "delayed"
+              self.latestRuntimeError = error.localizedDescription
+            }
+          }
+          self.latestConnectivityState = "connected"
+        } else {
+          self.latestConnectivityState = "delayed"
+        }
+      }
+
+      resolve(nil)
+    }
+  }
+
+  @objc(requestWatchOwnedStart:resolver:rejecter:)
+  func requestWatchOwnedStart(
+    _ options: NSDictionary,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let sessionId = options["sessionId"] as? String ?? ""
+
+    queue.async {
+      self.sendWatchOwnedCommand(command: "start", sessionId: sessionId, reason: "phone_request")
+      resolve(nil)
+    }
+  }
+
+  @objc(requestWatchOwnedStop:resolver:rejecter:)
+  func requestWatchOwnedStop(
+    _ options: NSDictionary?,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let sessionId = options?["sessionId"] as? String
+      ?? latestWatchOwnedPlan?["sessionId"] as? String
+      ?? latestWatchReportedSessionId
+    let reason = options?["reason"] as? String ?? "user_stopped"
+
+    queue.async {
+      self.sendWatchOwnedCommand(command: "stop", sessionId: sessionId, reason: reason)
+      resolve(nil)
+    }
+  }
+
+  @objc(getLatestWatchOwnedStatus:rejecter:)
+  func getLatestWatchOwnedStatus(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      var status = self.latestWatchOwnedStatus ?? [
+        "protocol": "watch-owned-status-v2",
+        "available": WCSession.isSupported(),
+        "runtimeOwner": "watch",
+        "state": self.latestWatchOwnedPlan == nil ? "no_plan" : "ready",
+        "preparedSessionId": self.latestWatchOwnedPlan?["sessionId"] as? String ?? "",
+        "sessionId": self.latestWatchOwnedPlan?["sessionId"] as? String ?? "",
+        "reason": self.latestWatchOwnedPlan == nil ? "no_plan_on_phone" : "prepared_on_phone"
+      ]
+
+      status["watchReachable"] = WCSession.isSupported() ? WCSession.default.isReachable : false
+      status["connectivityState"] = WCSession.isSupported() && WCSession.default.isReachable
+        ? "connected"
+        : self.latestConnectivityState
+      status["syncPending"] = !self.watchOwnedLogPackages.isEmpty
+      resolve(status)
+    }
+  }
+
+  @objc(importWatchOwnedSessionLogs:resolver:rejecter:)
+  func importWatchOwnedSessionLogs(
+    _ sessionId: NSString,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    queue.async {
+      let id = sessionId as String
+      let packages = self.watchOwnedLogPackages[id] ?? self.loadWatchOwnedLogPackages(sessionId: id)
+      let payload = self.mergeWatchOwnedLogPackages(sessionId: id, packages: packages)
+
+      resolve(payload)
+    }
+  }
+
   @objc(stopWatchSession:resolver:rejecter:)
   func stopWatchSession(
     _ options: NSDictionary?,
@@ -688,6 +851,42 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     ])
   }
 
+  private func sendWatchOwnedCommand(command: String, sessionId: String, reason: String) {
+    let message: [String: Any] = [
+      "schemaVersion": "watch-owned-command-v2",
+      "command": command,
+      "sessionId": sessionId,
+      "reason": reason,
+      "createdAt": formatDate(Date())
+    ]
+
+    guard WCSession.isSupported() else {
+      latestConnectivityState = "disconnected"
+      return
+    }
+
+    let session = WCSession.default
+
+    guard session.activationState == .activated else {
+      latestConnectivityState = "delayed"
+      return
+    }
+
+    if session.isReachable {
+      session.sendMessage(message, replyHandler: nil) { [weak self] error in
+        self?.queue.async {
+          self?.latestRuntimeError = error.localizedDescription
+          self?.latestConnectivityState = "delayed"
+          session.transferUserInfo(message)
+        }
+      }
+      latestConnectivityState = "connected"
+    } else {
+      session.transferUserInfo(message)
+      latestConnectivityState = "delayed"
+    }
+  }
+
   private func sendWatchCommandMessage(_ message: [String: Any]) {
     let command = message["command"] as? String ?? ""
 
@@ -897,6 +1096,46 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     }
   }
 
+  private func handleIncomingWatchOwnedStatus(_ rawMessage: [String: Any], delayed: Bool) {
+    var status = rawMessage
+    status["protocol"] = "watch-owned-status-v2"
+    status["available"] = true
+    status["runtimeOwner"] = "watch"
+    status["watchReachable"] = WCSession.isSupported() ? WCSession.default.isReachable : false
+    status["connectivityState"] = delayed ? "delayed" : "connected"
+    latestWatchOwnedStatus = sanitizePayload(status) as? [String: Any] ?? status
+    latestConnectivityState = delayed ? "delayed" : "connected"
+
+    if let sessionId = rawMessage["sessionId"] as? String, !sessionId.isEmpty {
+      latestWatchReportedSessionId = sessionId
+    }
+  }
+
+  private func handleIncomingWatchOwnedLogPackage(_ rawMessage: [String: Any]) {
+    guard let sessionId = rawMessage["sessionId"] as? String, !sessionId.isEmpty else {
+      latestRuntimeError = "watch_owned_log_package_missing_session"
+      return
+    }
+
+    var packages = watchOwnedLogPackages[sessionId] ?? loadWatchOwnedLogPackages(sessionId: sessionId)
+    packages.append(sanitizePayload(rawMessage) as? [String: Any] ?? rawMessage)
+    watchOwnedLogPackages[sessionId] = packages
+    writeJson(packages, to: watchOwnedLogsURL(sessionId: sessionId))
+
+    latestWatchOwnedStatus = [
+      "protocol": "watch-owned-status-v2",
+      "available": true,
+      "runtimeOwner": "watch",
+      "state": "sync_pending",
+      "sessionId": sessionId,
+      "preparedSessionId": latestWatchOwnedPlan?["sessionId"] as? String ?? "",
+      "reason": "logs_received_on_phone",
+      "syncPending": true,
+      "watchReachable": WCSession.isSupported() ? WCSession.default.isReachable : false,
+      "connectivityState": latestConnectivityState
+    ]
+  }
+
   private func watchStatusReply(for rawMessage: [String: Any]) -> [String: Any] {
     let watchSessionId = rawMessage["sessionId"] as? String ?? ""
 
@@ -909,6 +1148,60 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     return [
       "schemaVersion": "watch-status-ack-v1"
     ]
+  }
+
+  private func mergeWatchOwnedLogPackages(
+    sessionId: String,
+    packages: [[String: Any]]
+  ) -> [String: Any] {
+    var epochs: [[String: Any]] = []
+    var cueDeliveries: [[String: Any]] = []
+    var summary: [String: Any]?
+
+    for package in packages {
+      if let packageEpochs = package["epochs"] as? [[String: Any]] {
+        epochs.append(contentsOf: packageEpochs)
+      }
+      if let deliveries = package["cueDeliveries"] as? [[String: Any]] {
+        cueDeliveries.append(contentsOf: deliveries)
+      }
+      if let packageSummary = package["summary"] as? [String: Any] {
+        summary = packageSummary
+      }
+    }
+
+    var payload: [String: Any] = [
+      "sessionId": sessionId,
+      "epochs": dedupeRecords(epochs),
+      "cueDeliveries": dedupeRecords(cueDeliveries)
+    ]
+
+    if let summary {
+      payload["summary"] = summary
+    }
+
+    return payload
+  }
+
+  private func dedupeRecords(_ records: [[String: Any]]) -> [[String: Any]] {
+    var seen = Set<String>()
+    var result: [[String: Any]] = []
+
+    for record in records {
+      let id = record["id"] as? String
+        ?? record["requestedAt"] as? String
+        ?? record["endedAt"] as? String
+        ?? UUID().uuidString
+
+      guard !seen.contains(id) else {
+        continue
+      }
+
+      seen.insert(id)
+      result.append(record)
+    }
+
+    return result
   }
 
   private func mapEpoch(
@@ -1793,6 +2086,10 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     loadJsonArray(from: epochsURL(sessionId: sessionId))
   }
 
+  private func loadWatchOwnedLogPackages(sessionId: String) -> [[String: Any]] {
+    loadJsonArray(from: watchOwnedLogsURL(sessionId: sessionId))
+  }
+
   private func writeJson(_ value: [[String: Any]], to url: URL) {
     do {
       let data = try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted])
@@ -1822,6 +2119,10 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
 
   private func epochsURL(sessionId: String) -> URL {
     storageDirectory().appendingPathComponent("\(sessionId)-epochs.json")
+  }
+
+  private func watchOwnedLogsURL(sessionId: String) -> URL {
+    storageDirectory().appendingPathComponent("\(sessionId)-watch-owned-log-packages.json")
   }
 
   private func storageDirectory() -> URL {
@@ -1928,6 +2229,10 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
         if reply["schemaVersion"] as? String == "watch-command-v1" {
           self.sendWatchCommandMessage(reply)
         }
+      } else if message["schemaVersion"] as? String == "watch-owned-status-v2" {
+        self.handleIncomingWatchOwnedStatus(message, delayed: false)
+      } else if message["schemaVersion"] as? String == "watch-owned-log-package-v2" {
+        self.handleIncomingWatchOwnedLogPackage(message)
       }
     }
   }
@@ -1946,6 +2251,18 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
 
       if message["schemaVersion"] as? String == "watch-epoch-v1" {
         replyHandler(self.handleIncomingEpoch(message, delayed: false))
+        return
+      }
+
+      if message["schemaVersion"] as? String == "watch-owned-status-v2" {
+        self.handleIncomingWatchOwnedStatus(message, delayed: false)
+        replyHandler(["schemaVersion": "watch-owned-ack-v2"])
+        return
+      }
+
+      if message["schemaVersion"] as? String == "watch-owned-log-package-v2" {
+        self.handleIncomingWatchOwnedLogPackage(message)
+        replyHandler(["schemaVersion": "watch-owned-ack-v2"])
         return
       }
 
@@ -1968,6 +2285,10 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
         if reply["schemaVersion"] as? String == "watch-command-v1" {
           self.sendWatchCommandMessage(reply)
         }
+      } else if userInfo["schemaVersion"] as? String == "watch-owned-status-v2" {
+        self.handleIncomingWatchOwnedStatus(userInfo, delayed: true)
+      } else if userInfo["schemaVersion"] as? String == "watch-owned-log-package-v2" {
+        self.handleIncomingWatchOwnedLogPackage(userInfo)
       }
     }
   }

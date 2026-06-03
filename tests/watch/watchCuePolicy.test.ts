@@ -147,4 +147,44 @@ describe("WatchCuePolicy", () => {
     expect(budget.reason).toBe("cue_budget_exhausted");
     expect(sleepProbability.reason).toBe("outside_sleep_opportunity");
   });
+
+  it("suppresses before earliest cue time and after stopAt", () => {
+    const beforeCueWindow = evaluateWatchCuePolicy(
+      baseInput({
+        now: "2026-01-01T04:59:00.000Z",
+        settings: {
+          ...baseInput().settings,
+          earliestCueAt: "2026-01-01T05:00:00.000Z",
+        },
+      }),
+    );
+    const afterStop = evaluateWatchCuePolicy(
+      baseInput({
+        now: "2026-01-01T07:00:00.000Z",
+        settings: {
+          ...baseInput().settings,
+          stopAt: "2026-01-01T07:00:00.000Z",
+        },
+      }),
+    );
+
+    expect(beforeCueWindow.reason).toBe("outside_sleep_opportunity");
+    expect(beforeCueWindow.nextCheckAt).toBe("2026-01-01T05:00:00.000Z");
+    expect(afterStop.reason).toBe("outside_sleep_opportunity");
+  });
+
+  it("suppresses cueing below the Watch battery cue threshold", () => {
+    const decision = evaluateWatchCuePolicy(
+      baseInput({
+        settings: {
+          ...baseInput().settings,
+          batteryPct: 25,
+          disableCueingBelowPct: 25,
+        },
+      }),
+    );
+
+    expect(decision.reason).toBe("sensor_quality_bad");
+    expect(decision.shouldPlayCue).toBe(false);
+  });
 });

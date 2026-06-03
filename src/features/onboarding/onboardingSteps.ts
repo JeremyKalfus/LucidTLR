@@ -27,7 +27,7 @@ export const onboardingSteps: OnboardingStep[] = [
         id: "welcome_modes_copy",
         type: "info",
         prompt:
-          "Phone Mode uses your phone beside the bed. Watch Mode can use Apple Watch sensing while the iPhone remains the sound source.",
+          "Phone Mode uses your phone beside the bed. Watch Mode prepares on the phone, starts from the Watch app, and syncs watch records back later.",
       },
       {
         id: "welcome_setup_copy",
@@ -63,7 +63,7 @@ export const onboardingSteps: OnboardingStep[] = [
           {
             value: "watch",
             label: "Phone + Apple Watch",
-            note: "Apple Watch adds sensing; iPhone plays sound.",
+            note: "Prepare on phone, start on Watch, sync later.",
           },
         ],
       },
@@ -310,7 +310,7 @@ export const onboardingSteps: OnboardingStep[] = [
         type: "permission_summary",
         mode: "watch",
         prompt:
-          "Watch Mode needs audio, motion, HealthKit, WatchConnectivity/watch app setup, and notifications if needed.",
+          "Watch Mode needs audio/haptic cue settings, HealthKit, Watch app setup, sync access, and notifications if needed.",
       },
       {
         id: "excluded_permissions_copy",

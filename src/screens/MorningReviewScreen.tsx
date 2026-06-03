@@ -35,6 +35,7 @@ import {
 } from "@/src/native/phoneRuntime";
 import {
   latestWatchRuntimeStopTimestamp,
+  importWatchOwnedRuntimeDataToLocalRecords,
   summarizeWatchRuntime,
   watchRuntime,
   type WatchRuntimeLogSummary,
@@ -241,15 +242,32 @@ export function MorningReviewScreen() {
       }
 
       try {
-        const [epochs, logs] = await Promise.all([
-          watchRuntime.getWatchEpochs(activeSession.id),
-          watchRuntime.getWatchRuntimeLogs(activeSession.id),
-        ]);
-        const summary = summarizeWatchRuntime(logs, epochs);
         const db = await getLocalDb();
+        let stopTimestamp: string | null = null;
+        let summary: WatchRuntimeLogSummary;
 
-        await saveWatchEpochs({ db, records: epochs });
-        await saveWatchRuntimeEvents({ db, events: logs });
+        try {
+          const payload = await watchRuntime.importWatchOwnedSessionLogs(
+            activeSession.id,
+          );
+          const imported = await importWatchOwnedRuntimeDataToLocalRecords({
+            db,
+            payload,
+          });
+
+          summary = summarizeWatchRuntime(imported.logs, imported.epochs);
+          stopTimestamp = payload.summary?.stoppedAt ?? null;
+        } catch {
+          const [epochs, logs] = await Promise.all([
+            watchRuntime.getWatchEpochs(activeSession.id),
+            watchRuntime.getWatchRuntimeLogs(activeSession.id),
+          ]);
+
+          summary = summarizeWatchRuntime(logs, epochs);
+          stopTimestamp = latestWatchRuntimeStopTimestamp(logs);
+          await saveWatchEpochs({ db, records: epochs });
+          await saveWatchRuntimeEvents({ db, events: logs });
+        }
 
         if (
           (summary.stopped || summary.completed || summary.errored) &&
@@ -261,7 +279,7 @@ export function MorningReviewScreen() {
         ) {
           sendSessionEvent(
             "end_session",
-            latestWatchRuntimeStopTimestamp(logs) ?? new Date().toISOString(),
+            stopTimestamp ?? new Date().toISOString(),
           );
         }
 
@@ -274,7 +292,7 @@ export function MorningReviewScreen() {
           setWatchRuntimeSummaryError(
             error instanceof Error
               ? error.message
-              : "Could not load native watch runtime logs.",
+              : "Could not sync watch night logs.",
           );
         }
       }
@@ -365,7 +383,7 @@ export function MorningReviewScreen() {
             }
           />
           <InfoRow
-            label="cues played"
+            label="cue deliveries"
             value={
               watchRuntimeSummary
                 ? String(watchRuntimeSummary.cuesPlayed)
@@ -397,7 +415,7 @@ export function MorningReviewScreen() {
             }
           />
           <InfoRow
-            label="runtime status"
+            label="watch sync status"
             value={
               watchRuntimeSummary
                 ? watchRuntimeSummary.errored

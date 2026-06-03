@@ -31,7 +31,29 @@ export function evaluateWatchCuePolicy(
     return suppress("classifier_unavailable");
   }
 
+  if (
+    input.settings.earliestCueAt &&
+    Date.parse(input.now) < Date.parse(input.settings.earliestCueAt)
+  ) {
+    return suppress("outside_sleep_opportunity", input.settings.earliestCueAt);
+  }
+
+  if (
+    input.settings.stopAt &&
+    Date.parse(input.now) >= Date.parse(input.settings.stopAt)
+  ) {
+    return suppress("outside_sleep_opportunity");
+  }
+
   if (input.sensorQuality === "missing" || input.sensorQuality === "bad") {
+    return suppress("sensor_quality_bad");
+  }
+
+  if (
+    typeof input.settings.batteryPct === "number" &&
+    typeof input.settings.disableCueingBelowPct === "number" &&
+    input.settings.batteryPct <= input.settings.disableCueingBelowPct
+  ) {
     return suppress("sensor_quality_bad");
   }
 

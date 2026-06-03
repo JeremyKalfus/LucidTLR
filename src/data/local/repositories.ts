@@ -25,6 +25,7 @@ import type {
   PhoneRuntimeMovementRecordDraft,
 } from "@/src/native/phoneRuntime/NativePhoneSessionPlan";
 import type {
+  WatchCueRecordDraft,
   WatchEpochRecordDraft,
   WatchRuntimeEvent,
 } from "@/src/native/watch/WatchModeTypes";
@@ -87,6 +88,7 @@ interface CueEventRow {
   timestamp: string;
   cue_id: string;
   volume_level: number;
+  delivery_device: CueEvent["deliveryDevice"];
   played: number;
   suppression_reason: CueEvent["suppressionReason"];
 }
@@ -310,7 +312,7 @@ function toCueEvent(row: CueEventRow): CueEvent {
     timestamp: row.timestamp,
     cueId: row.cue_id,
     volumeLevel: row.volume_level,
-    deliveryDevice: "phone",
+    deliveryDevice: row.delivery_device === "watch" ? "watch" : "phone",
     played: row.played === 1,
     suppressionReason: row.suppression_reason,
   };
@@ -589,6 +591,38 @@ on conflict(id) do nothing`,
   }
 }
 
+export async function saveWatchCueRecords(input: {
+  db: LocalDb;
+  records: WatchCueRecordDraft[];
+}): Promise<void> {
+  for (const record of input.records) {
+    await input.db.execute(
+      `insert into cue_events (
+  id,
+  session_id,
+  timestamp,
+  cue_id,
+  volume_level,
+  delivery_device,
+  played,
+  suppression_reason,
+  upload_status
+) values (?, ?, ?, ?, ?, ?, ?, ?, 'local_only')
+on conflict(id) do nothing`,
+      [
+        record.id,
+        record.sessionId,
+        record.timestamp,
+        record.cueId,
+        record.volumeLevel,
+        record.deliveryDevice ?? "watch",
+        record.played ? 1 : 0,
+        record.suppressionReason,
+      ],
+    );
+  }
+}
+
 export async function savePhoneRuntimeMovementRecords(input: {
   db: LocalDb;
   records: PhoneRuntimeMovementRecordDraft[];
@@ -630,6 +664,7 @@ export async function loadCueEventsForSession(input: {
   timestamp,
   cue_id,
   volume_level,
+  delivery_device,
   played,
   suppression_reason
 from cue_events

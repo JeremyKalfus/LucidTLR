@@ -20,9 +20,11 @@ These papers are included as full PDFs in the repo. You may also refer to Jeremy
 ### Watch Mode
 
 - iPhone + Apple Watch.
-- Apple Watch acts as the sensing device.
-- iPhone plays the audio cue.
-- Watch tracks heart rate, motion, and elapsed session time for REM-informed cueing.
+- Apple Watch owns the overnight Watch Mode runtime: sensor collection, experimental REM probability, cue timing, cue delivery, movement gates, and local logs.
+- iPhone prepares and syncs the pre-sleep session plan, cue assets, and bundled Watch REM model before sleep, then imports Watch logs after waking.
+- WatchConnectivity is for pre-sleep plan/assets/model sync and morning log sync, not live cue timing.
+- Watch uses heart rate, motion, and elapsed session time for REM-informed cueing.
+- Watch Mode does not use GPS, SensorKit, live Apple sleep stages, wrist temperature, respiratory rate, or SpO2.
 - Android watch support is excluded for now.
 
 ## Supported Devices
@@ -110,11 +112,12 @@ treatment.
 
 ### Watch Mode
 
-- iPhone charging near bed.
+- iPhone nearby before sleep for WatchConnectivity sync, then charging near bed.
 - Apple Watch charged and worn.
-- Watch app starts sensor session.
-- Watch sends HR/motion/time data to iPhone.
-- iPhone plays cues when REM is estimated.
+- iPhone syncs the session plan, cue assets, and Watch REM model before sleep.
+- Watch app owns overnight sensor collection, experimental REM probability, cue timing, cue delivery, movement gates, and local logs.
+- Watch Mode does not depend on live iPhone messages for cue timing.
+- iPhone imports Watch epoch, cue, and movement logs after waking.
 - Watch-detected movement pauses cueing to reduce arousal/awakening risk.
 - If movement occurs shortly after a cue, cueing is suppressed for a pause window before resuming.
 
@@ -166,10 +169,15 @@ Relevant implementation points:
   - triaxial motion,
   - elapsed time.
 - Data is processed in **30-second epochs**.
-- REM cueing uses `lucidcue-watch-rem-v1`: a bundled random-forest REM
-  probability signal plus LucidCue safety gates. Do not claim exact Mallela
+- REM cueing uses `lucidcue-watch-rem-v1`: a bundled random-forest
+  experimental REM-probability signal plus LucidCue safety gates. This is
+  REM-informed cueing, not validated sleep staging. Do not claim exact Mallela
   feature parity or scientific validation from this implementation alone.
-- iPhone plays cues during likely REM.
+- Watch owns overnight cue timing and cue delivery during likely REM.
+- iPhone involvement is pre-sleep plan/assets/model sync and morning log import.
+- WatchConnectivity is not a live cue-timing dependency.
+- Watch Mode does not use GPS, SensorKit, live Apple sleep stages, wrist
+  temperature, respiratory rate, or SpO2.
 - Beginning with the fifth consecutive likely-REM epoch, suppress additional cues until the REM period ends.
 - Watch motion should also gate cueing:
   - large movement pauses cueing,
@@ -255,16 +263,24 @@ Aligned with Mallela/Mallett 2024, with LucidCue product safety gates:
   - heart rate,
   - triaxial motion,
   - elapsed session time.
-- Processing occurs in **30-second epochs**.
-- REM cueing uses `lucidcue-watch-rem-v1`: a bundled random-forest REM
-  probability signal plus LucidCue safety gates. This is not a claim of exact
-  Mallela feature parity.
-- If likely REM is detected, iPhone plays cue.
+- Watch Mode does not use GPS, SensorKit, live Apple sleep stages, wrist
+  temperature, respiratory rate, or SpO2.
+- Processing occurs in **30-second epochs** on the Watch.
+- REM cueing uses `lucidcue-watch-rem-v1`: a bundled random-forest
+  experimental REM-probability signal plus LucidCue safety gates. This is
+  REM-informed cueing, not validated sleep staging or exact Mallela feature
+  parity.
+- If likely REM is detected, Watch delivers the cue.
+- iPhone involvement is pre-sleep plan/assets/model sync and morning log import.
+- WatchConnectivity is not used for live cue timing.
 - Beginning with the fifth consecutive likely-REM epoch, suppress additional cues until the REM period ends to reduce awakenings.
 - Watch movement data is also used for arousal gating:
   - large movement pauses cueing,
   - movement shortly after a cue triggers a longer pause,
   - cueing resumes only after a stable low-movement period.
+
+Implementation status: the current phone-dependent Watch runtime is legacy.
+Watch-owned Watch Mode v2 is the target.
 
 ## Research / Data Posture
 
@@ -274,7 +290,8 @@ Aligned with Mallela/Mallett 2024, with LucidCue product safety gates:
 - Everyone gets the same active TLR protocol.
 - No no-cue or untrained-cue conditions.
 - Deidentified data only by default.
-- No names, GPS, advertising IDs, or unnecessary identifiers.
+- No names, GPS, advertising IDs, SensorKit, live Apple sleep stages, wrist
+  temperature, respiratory rate, SpO2, or unnecessary identifiers.
 - Dream journal text/audio is local-only unless separately consented for research upload.
 - Avoid therapeutic claims unless CNL/IRB explicitly approves them.
 
@@ -524,8 +541,11 @@ Meaning:
 - watchOS Swift app for:
   - HR collection,
   - motion collection,
-  - epoch transmission,
+  - 30-second epoch processing,
+  - experimental REM probability,
+  - cue timing and delivery,
   - movement/arousal gating,
+  - local runtime logging,
   - sleep-safe interaction pattern.
 
 ## Android
@@ -605,7 +625,7 @@ Use the Karpathy-style `AGENTS.md` ruleset from `multica-ai/andrej-karpathy-skil
   approval.
 - Do not make therapeutic claims.
 - Do not add Android watch support.
-- Do not make Apple Watch speaker cueing a core path.
+- Do not make Watch Mode depend on live iPhone cue timing.
 - Use React Native + TypeScript for shared UI.
 - Use native code only where required.
 - Keep the first implementation minimal and working.
@@ -624,7 +644,7 @@ Do not:
 - add placebo/no-cue/untrained-cue nights,
 - add therapeutic claims,
 - upload dream journal text by default,
-- use Apple Watch as the primary audio cue device,
+- make Watch Mode depend on live iPhone cue timing,
 - rename TLR to TMR,
 - turn Phone Mode into a lesser fallback.
 

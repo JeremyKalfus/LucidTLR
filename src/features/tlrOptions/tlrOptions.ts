@@ -76,6 +76,8 @@ export function createDefaultTlrOptions(
   return {
     selectedCueId: DEFAULT_CUE_ID,
     backgroundNoise: "none",
+    watchAudioCueEnabled: true,
+    watchHapticCueEnabled: true,
     skipGuidedTraining: false,
     requireAccelerometer: true,
     alarm: {
@@ -104,6 +106,8 @@ export function normalizeTlrOptions(
     backgroundNoise: isBackgroundNoiseOption(value?.backgroundNoise)
       ? value.backgroundNoise
       : defaults.backgroundNoise,
+    watchAudioCueEnabled: value?.watchAudioCueEnabled !== false,
+    watchHapticCueEnabled: value?.watchHapticCueEnabled !== false,
     skipGuidedTraining: value?.skipGuidedTraining === true,
     requireAccelerometer: value?.requireAccelerometer !== false,
     alarm: {

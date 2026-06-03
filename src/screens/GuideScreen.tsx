@@ -51,7 +51,7 @@ export function GuideScreen() {
       />
       <GuideCard
         title="Watch Mode"
-        body="Watch Mode uses Apple Watch heart rate, motion, and elapsed session time while the iPhone plays cues. Charge the iPhone, fully charge and wear the watch, start the iPhone session first, then keep both apps running."
+        body="Watch Mode uses Apple Watch heart rate, motion, and elapsed session time. Prepare the night on the phone, start it from the Watch app, then sync watch records back for review."
       />
       <GuideCard
         title="Expectations"

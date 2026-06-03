@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { AlarmClock, Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
 import React from "react";
-import { Alert, Text, View } from "react-native";
+import { Alert, Switch, Text, View } from "react-native";
 
 import {
   Card,
@@ -26,7 +26,6 @@ import {
   type NativePhoneRuntimeEvent,
 } from "@/src/native/phoneRuntime";
 import {
-  watchTlrStartBlockReason,
   watchRuntime,
 } from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
@@ -34,12 +33,33 @@ import { colors, spacing, typography } from "@/src/theme/tokens";
 
 const labelToCardGap = 6;
 const actionRowGap = 10;
-const WATCH_STATUS_RETRY_DELAY_MS = 1500;
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Watch Mode setup failed.";
+}
+
+function watchCueTogglePatch(
+  channel: "audio" | "haptic",
+  enabled: boolean,
+  current: {
+    watchAudioCueEnabled: boolean;
+    watchHapticCueEnabled: boolean;
+  },
+): TlrOptionsPatch {
+  const nextAudio =
+    channel === "audio" ? enabled : current.watchAudioCueEnabled;
+  const nextHaptic =
+    channel === "haptic" ? enabled : current.watchHapticCueEnabled;
+
+  if (!nextAudio && !nextHaptic) {
+    return channel === "audio"
+      ? { watchAudioCueEnabled: false, watchHapticCueEnabled: true }
+      : { watchAudioCueEnabled: true, watchHapticCueEnabled: false };
+  }
+
+  return channel === "audio"
+    ? { watchAudioCueEnabled: enabled }
+    : { watchHapticCueEnabled: enabled };
 }
 
 function HomeSectionLabel({ children }: { children: string }) {
@@ -56,6 +76,47 @@ function HomeSectionLabel({ children }: { children: string }) {
     >
       {children}
     </Text>
+  );
+}
+
+function WatchCueToggleRow({
+  label,
+  value,
+  onValueChange,
+}: {
+  label: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+}) {
+  return (
+    <View
+      style={{
+        minHeight: 34,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+      }}
+    >
+      <Text
+        selectable
+        style={{
+          color: colors.textMuted,
+          flexShrink: 1,
+          fontSize: typography.body.fontSize,
+          lineHeight: typography.body.lineHeight,
+        }}
+      >
+        {label}
+      </Text>
+      <Switch
+        accessibilityLabel={label}
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: colors.cardBorder, true: colors.textDim }}
+        ios_backgroundColor={colors.cardBorder}
+      />
+    </View>
   );
 }
 
@@ -92,29 +153,18 @@ export function HomeScreen() {
   >([]);
   const handleBeginTlr = React.useCallback(async () => {
     if (selectedMode === "watch") {
-      let status = null;
-
       try {
-        status = await watchRuntime.getWatchRuntimeStatus();
-      } catch {
-        status = null;
-      }
+        const status = await watchRuntime.getLatestWatchOwnedStatus();
 
-      let blockReason = watchTlrStartBlockReason(status);
-
-      if (blockReason) {
-        await delay(WATCH_STATUS_RETRY_DELAY_MS);
-
-        try {
-          status = await watchRuntime.getWatchRuntimeStatus();
-          blockReason = watchTlrStartBlockReason(status);
-        } catch {
-          blockReason = watchTlrStartBlockReason(null);
+        if (!status.available) {
+          Alert.alert(
+            "Watch Mode setup needed",
+            status.reason ?? "Install a current iOS development build before preparing Watch Mode.",
+          );
+          return;
         }
-      }
-
-      if (blockReason) {
-        Alert.alert("Watch Mode setup needed", blockReason);
+      } catch (error) {
+        Alert.alert("Watch Mode setup needed", errorMessage(error));
         return;
       }
     }
@@ -252,6 +302,32 @@ export function HomeScreen() {
             onModeChange={setSelectedMode}
             onOptionsChange={handleTlrOptionsChange}
           />
+          {selectedMode === "watch" ? (
+            <View style={{ gap: 7, paddingTop: 2 }}>
+              <WatchCueToggleRow
+                label="watch audio cue"
+                value={tlrOptions.watchAudioCueEnabled}
+                onValueChange={(watchAudioCueEnabled) => {
+                  void updateTlrOptions(
+                    watchCueTogglePatch("audio", watchAudioCueEnabled, tlrOptions),
+                  );
+                }}
+              />
+              <WatchCueToggleRow
+                label="watch haptic cue"
+                value={tlrOptions.watchHapticCueEnabled}
+                onValueChange={(watchHapticCueEnabled) => {
+                  void updateTlrOptions(
+                    watchCueTogglePatch(
+                      "haptic",
+                      watchHapticCueEnabled,
+                      tlrOptions,
+                    ),
+                  );
+                }}
+              />
+            </View>
+          ) : null}
         </View>
       </View>
 

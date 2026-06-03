@@ -232,6 +232,7 @@ export type WatchCueRecordDraft = {
   timestamp: string;
   cueId: string;
   volumeLevel: number;
+  deliveryDevice?: "phone" | "watch";
   played: boolean;
   suppressionReason: CueSuppressionReason;
 };

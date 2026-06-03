@@ -328,6 +328,41 @@ function SettingsToggleRow({
   );
 }
 
+function watchCueChannelLabel(input: {
+  watchAudioCueEnabled: boolean;
+  watchHapticCueEnabled: boolean;
+}): string {
+  if (input.watchAudioCueEnabled && input.watchHapticCueEnabled) {
+    return "audio + haptic";
+  }
+
+  return input.watchAudioCueEnabled ? "audio" : "haptic";
+}
+
+function watchCueTogglePatch(
+  channel: "audio" | "haptic",
+  enabled: boolean,
+  current: {
+    watchAudioCueEnabled: boolean;
+    watchHapticCueEnabled: boolean;
+  },
+) {
+  const nextAudio =
+    channel === "audio" ? enabled : current.watchAudioCueEnabled;
+  const nextHaptic =
+    channel === "haptic" ? enabled : current.watchHapticCueEnabled;
+
+  if (!nextAudio && !nextHaptic) {
+    return channel === "audio"
+      ? { watchAudioCueEnabled: false, watchHapticCueEnabled: true }
+      : { watchAudioCueEnabled: true, watchHapticCueEnabled: false };
+  }
+
+  return channel === "audio"
+    ? { watchAudioCueEnabled: enabled }
+    : { watchHapticCueEnabled: enabled };
+}
+
 function SimpleModeButton({
   active,
   label,
@@ -506,7 +541,7 @@ export function SettingsScreen() {
           title="Android phone mode"
         />
         <SettingsNavRow
-          detail="Apple Watch mode status and sensing assumptions."
+          detail="Watch setup, sync status, and sensing assumptions."
           icon={Watch}
           route="/settings/watch-mode"
           title="Watch mode"
@@ -652,7 +687,8 @@ export function AndroidPhoneModeSettingsScreen() {
 }
 
 export function WatchModeSettingsScreen() {
-  const { selectedMode, setSelectedMode } = useAppState();
+  const { selectedMode, setSelectedMode, tlrOptions, updateTlrOptions } =
+    useAppState();
   const [runtimeStatus, setRuntimeStatus] =
     React.useState<WatchRuntimeStatus | null>(null);
 
@@ -681,12 +717,12 @@ export function WatchModeSettingsScreen() {
           onPress={() => setSelectedMode("watch")}
         />
         <InfoRow
-          label="runtime"
+          label="setup/sync client"
           value={
             runtimeStatus?.available
               ? runtimeStatus.running
-                ? "running"
-                : "available"
+                ? "active"
+                : "ready"
               : runtimeStatus?.unavailableReason ?? "unknown"
           }
         />
@@ -701,8 +737,14 @@ export function WatchModeSettingsScreen() {
           }
         />
         <InfoRow
-          label="connection"
-          value={runtimeStatus?.connectivityState ?? "unknown"}
+          label="setup/sync status"
+          value={
+            runtimeStatus
+              ? runtimeStatus.watchReachable
+                ? "ready for setup/sync"
+                : runtimeStatus.connectivityState
+              : "unknown"
+          }
         />
         <InfoRow
           label="REM classifier"
@@ -714,12 +756,30 @@ export function WatchModeSettingsScreen() {
         />
         <InfoRow label="REM threshold" value="0.24" />
         <InfoRow label="epoch length" value="30 seconds" />
-        <InfoRow label="cue audio" value="iPhone" />
+        <InfoRow label="cue channel" value={watchCueChannelLabel(tlrOptions)} />
+        <SettingsToggleRow
+          label="Watch audio cue"
+          value={tlrOptions.watchAudioCueEnabled}
+          onValueChange={(watchAudioCueEnabled) => {
+            void updateTlrOptions(
+              watchCueTogglePatch("audio", watchAudioCueEnabled, tlrOptions),
+            );
+          }}
+        />
+        <SettingsToggleRow
+          label="Watch haptic cue"
+          value={tlrOptions.watchHapticCueEnabled}
+          onValueChange={(watchHapticCueEnabled) => {
+            void updateTlrOptions(
+              watchCueTogglePatch("haptic", watchHapticCueEnabled, tlrOptions),
+            );
+          }}
+        />
         <InfoRow label="battery start" value="warn below 60%" />
         <SettingsNote>
-          Watch Mode is the Apple Watch sensing path. The watch collects heart
-          rate, motion, and elapsed session time; the iPhone remains the sound
-          source for cue playback. Watch epoch summaries stay local by default.
+          Watch Mode is the watch-owned overnight path. Prepare the night on the
+          phone, start it in the Watch app, then sync epochs and events back for
+          review. Setup/sync reachability is not the overnight source of truth.
         </SettingsNote>
       </Card>
     </Screen>

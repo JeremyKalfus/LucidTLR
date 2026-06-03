@@ -12,13 +12,21 @@ This is not a medical device or treatment, and results are not guaranteed.
 
 ## Current Status
 
-- Phone Mode and Watch Mode are implemented for custom iOS development builds.
+- Phone Mode is implemented for custom iOS development builds and remains
+  iPhone-owned.
 - Domain/session/report/journal types are defined before UI work.
 - Onboarding is modeled as a single data-driven survey wizard.
 - Local SQLite and Supabase schemas are scaffolded.
 - Upload decisions are centralized and consent-gated.
-- Watch Mode is code-complete for simulator/dev-build testing, but physical
-  overnight reliability is not yet claimed.
+- Watch Mode v2 targets Watch-owned overnight operation: the iPhone syncs the
+  plan/assets/model before sleep and imports Watch logs after waking.
+- WatchConnectivity is for pre-sleep sync and morning log import, not live cue
+  timing.
+- Watch Mode uses experimental REM probability, not validated sleep staging. It
+  does not use GPS, SensorKit, live Apple sleep stages, wrist temperature,
+  respiratory rate, or SpO2.
+- The current phone-dependent Watch runtime is legacy; Watch-owned v2 is the
+  target, and physical overnight reliability is not yet claimed.
 
 ## Development Builds
 

@@ -107,6 +107,10 @@ export type WatchCuePolicyInput = {
     cueAssociatedMovementPauseSeconds: number;
     consecutiveLikelyRemSuppressionThreshold: number;
     maxCuesTonight: number;
+    earliestCueAt?: string;
+    stopAt?: string;
+    batteryPct?: number;
+    disableCueingBelowPct?: number;
   };
 };
 

@@ -17,6 +17,8 @@ export interface AlarmOptions {
 export interface TlrOptions {
   selectedCueId: string;
   backgroundNoise: BackgroundNoiseOption;
+  watchAudioCueEnabled: boolean;
+  watchHapticCueEnabled: boolean;
   skipGuidedTraining: boolean;
   requireAccelerometer: boolean;
   alarm: AlarmOptions;
@@ -194,7 +196,7 @@ export interface CueEvent {
   timestamp: string;
   cueId: string;
   volumeLevel: number;
-  deliveryDevice: "phone";
+  deliveryDevice: "phone" | "watch";
   played: boolean;
   suppressionReason: CueSuppressionReason;
 }

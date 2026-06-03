@@ -1,5 +1,6 @@
 import type { LocalDb } from "@/src/data/local/localDb";
 import {
+  saveWatchCueRecords,
   saveWatchEpochs,
   saveWatchRuntimeEvents,
 } from "@/src/data/local/repositories";
@@ -9,6 +10,12 @@ import type {
   WatchRuntimeEvent,
   WatchRuntimeStatus,
 } from "./WatchModeTypes";
+import type { WatchOwnedImportPayloadV2 } from "./WatchOwnedTypes";
+import {
+  mapWatchOwnedCueDeliveryToRecord,
+  mapWatchOwnedEpochLogToRecord,
+  mapWatchOwnedImportToRuntimeEvents,
+} from "./watchOwnedLogMapping";
 import {
   latestWatchRuntimeStopTimestamp,
   summarizeWatchRuntime,
@@ -50,6 +57,34 @@ export async function importWatchRuntimeDataToLocalRecords(input: {
     logs,
     summary: summarizeWatchRuntime(logs, epochs),
   };
+}
+
+export async function importWatchOwnedRuntimeDataToLocalRecords(input: {
+  db: LocalDb;
+  payload: WatchOwnedImportPayloadV2;
+}): Promise<{
+  epochs: WatchEpochRecordDraft[];
+  logs: WatchRuntimeEvent[];
+}> {
+  const epochs = input.payload.epochs.map(mapWatchOwnedEpochLogToRecord);
+  const cueRecords = input.payload.cueDeliveries.map(
+    mapWatchOwnedCueDeliveryToRecord,
+  );
+  const logs = mapWatchOwnedImportToRuntimeEvents(input.payload);
+
+  if (epochs.length > 0) {
+    await saveWatchEpochs({ db: input.db, records: epochs });
+  }
+
+  if (cueRecords.length > 0) {
+    await saveWatchCueRecords({ db: input.db, records: cueRecords });
+  }
+
+  if (logs.length > 0) {
+    await saveWatchRuntimeEvents({ db: input.db, events: logs });
+  }
+
+  return { epochs, logs };
 }
 
 export function isTerminalWatchRuntimeSummary(

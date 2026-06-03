@@ -8,7 +8,7 @@ import {
 describe("runtime start labels", () => {
   it("uses mode-specific loading copy", () => {
     expect(runtimeStartLoadingLabel("phone")).toBe("Starting Phone Runtime...");
-    expect(runtimeStartLoadingLabel("watch")).toBe("Starting Watch Runtime...");
+    expect(runtimeStartLoadingLabel("watch")).toBe("Preparing Watch Night...");
   });
 
   it("uses mode-specific native runtime button copy", () => {
@@ -17,9 +17,9 @@ describe("runtime start labels", () => {
     ).toBe("Start Native Phone Runtime");
     expect(
       nativeRuntimeStartButtonLabel({ mode: "watch", isStarting: false }),
-    ).toBe("Start Native Watch Runtime");
+    ).toBe("Prepare Watch Night");
     expect(
       nativeRuntimeStartButtonLabel({ mode: "watch", isStarting: true }),
-    ).toBe("Starting Watch Runtime...");
+    ).toBe("Preparing Watch Night...");
   });
 });

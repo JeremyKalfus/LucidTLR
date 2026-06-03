@@ -12,7 +12,7 @@ struct LucidCueWatchApp: App {
         .onAppear {
           manager.watchAppBecameActive()
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
           if phase == .active {
             manager.watchAppBecameActive()
           } else {

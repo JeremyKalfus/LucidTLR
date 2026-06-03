@@ -23,6 +23,8 @@ describe("TLR options", () => {
         autoShutoff: true,
         ringDurationMinutes: 5,
       },
+      watchAudioCueEnabled: true,
+      watchHapticCueEnabled: true,
     });
   });
 
@@ -53,6 +55,8 @@ describe("TLR options", () => {
         autoShutoff: false,
         ringDurationMinutes: 1,
       },
+      watchAudioCueEnabled: true,
+      watchHapticCueEnabled: true,
     });
   });
 

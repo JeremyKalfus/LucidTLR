@@ -44,8 +44,7 @@ import {
   phoneRuntime,
 } from "@/src/native/phoneRuntime";
 import {
-  buildNativeWatchSessionPlan,
-  watchTlrStartBlockReason,
+  buildWatchOwnedSessionPlan,
   watchRuntime,
   type WatchRuntimeStatus,
 } from "@/src/native/watch";
@@ -515,23 +514,6 @@ export function PresleepTrainingScreen() {
           throw new Error("Watch Mode requires completed presleep training.");
         }
 
-        let finalWatchStatus: WatchRuntimeStatus | null = null;
-
-        try {
-          finalWatchStatus = await watchRuntime.getWatchRuntimeStatus();
-        } finally {
-          setWatchRuntimeStatus(finalWatchStatus);
-        }
-
-        const watchStartBlockReason = watchTlrStartBlockReason(
-          finalWatchStatus,
-          { requireStrictReachability: true },
-        );
-
-        if (watchStartBlockReason) {
-          throw new Error(watchStartBlockReason);
-        }
-
         const sleepTiming = buildSleepTimingPrior({
           trainingEndedAt: runtimeSession.trainingEndedAt,
           settings: effectiveEngineSettings,
@@ -546,14 +528,14 @@ export function PresleepTrainingScreen() {
               ? phoneNightCalibration
               : undefined,
         });
-        const plan = buildNativeWatchSessionPlan({
+        const plan = buildWatchOwnedSessionPlan({
           session: runtimeSession,
           settings: effectiveEngineSettings,
           tlrOptions,
           sleepTiming,
         });
 
-        await watchRuntime.startWatchSession(plan);
+        await watchRuntime.prepareWatchOwnedSession(plan);
         setWatchRuntimeStatus(await watchRuntime.getWatchRuntimeStatus());
         router.push("/active-night-session");
         return;
@@ -767,8 +749,12 @@ export function PresleepTrainingScreen() {
           {watchRuntimeStatus ? (
             <Card compact>
               <InfoRow
-                label="watch runtime"
-                value={watchRuntimeStatus.running ? "running" : "idle"}
+                label="watch setup"
+                value={
+                  watchRuntimeStatus.watchReachable
+                    ? "ready for setup/sync"
+                    : watchRuntimeStatus.connectivityState
+                }
               />
               <InfoRow
                 label="classifier"

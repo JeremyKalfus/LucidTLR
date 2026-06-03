@@ -28,6 +28,17 @@
 		4AFEF0028B754B4A9CF00001 /* LucidCueWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0018B754B4A9CF00001 /* LucidCueWatchApp.swift */; };
 		4AFEF0048B754B4A9CF00001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0038B754B4A9CF00001 /* ContentView.swift */; };
 		4AFEF0068B754B4A9CF00001 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0058B754B4A9CF00001 /* WatchSessionManager.swift */; };
+		4AFF01018B754B4A9CF00001 /* WatchRuntimePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFF01008B754B4A9CF00001 /* WatchRuntimePlan.swift */; };
+		4AFF02018B754B4A9CF00001 /* WatchRuntimePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFF02008B754B4A9CF00001 /* WatchRuntimePolicy.swift */; };
+		4AFF03018B754B4A9CF00001 /* WatchCueDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFF03008B754B4A9CF00001 /* WatchCueDelivery.swift */; };
+		4AFF04018B754B4A9CF00001 /* WatchRuntimeLogging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFF04008B754B4A9CF00001 /* WatchRuntimeLogging.swift */; };
+		4AFF05018B754B4A9CF00001 /* WatchRuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFF05008B754B4A9CF00001 /* WatchRuntimeState.swift */; };
+		4AFF06018B754B4A9CF00001 /* clear_bell_chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0018B754B4A9CF00001 /* clear_bell_chime.mp3 */; };
+		4AFF06028B754B4A9CF00001 /* ui_success_chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0028B754B4A9CF00001 /* ui_success_chime.mp3 */; };
+		4AFF06038B754B4A9CF00001 /* sci_fi_confirmation.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */; };
+		4AFF06048B754B4A9CF00001 /* harp_flourish.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0048B754B4A9CF00001 /* harp_flourish.mp3 */; };
+		4AFF06058B754B4A9CF00001 /* dx_harp_c5.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0058B754B4A9CF00001 /* dx_harp_c5.mp3 */; };
+		4AFF06068B754B4A9CF00001 /* mallela_rf_v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEB00A8B754B4A9CF00001 /* mallela_rf_v1.json */; };
 		4AFEF0088B754B4A9CF00001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEF0078B754B4A9CF00001 /* Assets.xcassets */; };
 		4AFEF00A8B754B4A9CF00001 /* LucidCue Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4AFEF0098B754B4A9CF00001 /* LucidCue Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		594C5BE62EC14CE082E832DF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */; };
@@ -85,6 +96,11 @@
 		4AFEF0018B754B4A9CF00001 /* LucidCueWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LucidCueWatchApp.swift; sourceTree = "<group>"; };
 		4AFEF0038B754B4A9CF00001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4AFEF0058B754B4A9CF00001 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
+		4AFF01008B754B4A9CF00001 /* WatchRuntimePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePlan.swift; sourceTree = "<group>"; };
+		4AFF02008B754B4A9CF00001 /* WatchRuntimePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePolicy.swift; sourceTree = "<group>"; };
+		4AFF03008B754B4A9CF00001 /* WatchCueDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCueDelivery.swift; sourceTree = "<group>"; };
+		4AFF04008B754B4A9CF00001 /* WatchRuntimeLogging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeLogging.swift; sourceTree = "<group>"; };
+		4AFF05008B754B4A9CF00001 /* WatchRuntimeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeState.swift; sourceTree = "<group>"; };
 		4AFEF0078B754B4A9CF00001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4AFEF0098B754B4A9CF00001 /* LucidCue Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LucidCue Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4AFEF00B8B754B4A9CF00001 /* LucidCueWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LucidCueWatch.entitlements; sourceTree = "<group>"; };
@@ -188,6 +204,11 @@
 				4AFEF0018B754B4A9CF00001 /* LucidCueWatchApp.swift */,
 				4AFEF0038B754B4A9CF00001 /* ContentView.swift */,
 				4AFEF0058B754B4A9CF00001 /* WatchSessionManager.swift */,
+				4AFF01008B754B4A9CF00001 /* WatchRuntimePlan.swift */,
+				4AFF02008B754B4A9CF00001 /* WatchRuntimePolicy.swift */,
+				4AFF03008B754B4A9CF00001 /* WatchCueDelivery.swift */,
+				4AFF04008B754B4A9CF00001 /* WatchRuntimeLogging.swift */,
+				4AFF05008B754B4A9CF00001 /* WatchRuntimeState.swift */,
 				4AFEF0078B754B4A9CF00001 /* Assets.xcassets */,
 				4AFEF00B8B754B4A9CF00001 /* LucidCueWatch.entitlements */,
 			);
@@ -369,6 +390,12 @@
 			files = (
 				4AFEF0088B754B4A9CF00001 /* Assets.xcassets in Resources */,
 				594C5BE62EC14CE082E832DF /* PrivacyInfo.xcprivacy in Resources */,
+				4AFF06018B754B4A9CF00001 /* clear_bell_chime.mp3 in Resources */,
+				4AFF06028B754B4A9CF00001 /* ui_success_chime.mp3 in Resources */,
+				4AFF06038B754B4A9CF00001 /* sci_fi_confirmation.wav in Resources */,
+				4AFF06048B754B4A9CF00001 /* harp_flourish.mp3 in Resources */,
+				4AFF06058B754B4A9CF00001 /* dx_harp_c5.mp3 in Resources */,
+				4AFF06068B754B4A9CF00001 /* mallela_rf_v1.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -541,6 +568,11 @@
 				4AFEF0028B754B4A9CF00001 /* LucidCueWatchApp.swift in Sources */,
 				4AFEF0048B754B4A9CF00001 /* ContentView.swift in Sources */,
 				4AFEF0068B754B4A9CF00001 /* WatchSessionManager.swift in Sources */,
+				4AFF01018B754B4A9CF00001 /* WatchRuntimePlan.swift in Sources */,
+				4AFF02018B754B4A9CF00001 /* WatchRuntimePolicy.swift in Sources */,
+				4AFF03018B754B4A9CF00001 /* WatchCueDelivery.swift in Sources */,
+				4AFF04018B754B4A9CF00001 /* WatchRuntimeLogging.swift in Sources */,
+				4AFF05018B754B4A9CF00001 /* WatchRuntimeState.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

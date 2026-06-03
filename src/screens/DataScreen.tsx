@@ -572,9 +572,17 @@ function watchHealthStatusLabel(status: WatchRuntimeStatus | null): string {
   return status?.watchHealthAuthorizationStatus ?? "unknown";
 }
 
+function watchSetupSyncStatusLabel(status: WatchRuntimeStatus | null): string {
+  if (!status) {
+    return "unknown";
+  }
+
+  return status.watchReachable ? "ready for setup/sync" : status.connectivityState;
+}
+
 function watchHealthStatusAction(status: WatchRuntimeStatus | null): string | null {
   if (status?.watchHealthAuthorizationStatus === "denied") {
-    return "Enable HealthKit heart-rate access for LucidCue on Apple Watch before starting Watch Mode.";
+    return "Enable HealthKit heart-rate access for LucidCue on Apple Watch before preparing Watch Mode.";
   }
 
   if (status?.watchHealthAuthorizationStatus === "unavailable") {
@@ -1093,7 +1101,7 @@ export function DataScreen() {
           title="iPhone runtime timeline"
         />
         <DataNavRow
-          detail="Local Watch Mode epochs, features, classifier status, and gaps."
+          detail="Local Watch Mode epochs, cue events, classifier status, and sync gaps."
           icon={Watch}
           route="/data/watch-mode"
           title="Watch mode timeline"
@@ -1329,7 +1337,7 @@ export function TlrEngineDataScreen() {
           value={watch ? String(watch.consecutiveLikelyRemEpochs) : "not available yet"}
         />
         <InfoRow
-          label="connectivity"
+          label="setup/sync link"
           value={watch?.connectivityState ?? "not available yet"}
         />
         <InfoRow
@@ -1641,17 +1649,11 @@ export function WatchModeDataScreen() {
 
       <Card>
         <InfoRow
-          label="watch connection"
-          value={
-            watchRuntimeStatus
-              ? watchRuntimeStatus.watchReachable
-                ? "reachable"
-                : watchRuntimeStatus.connectivityState
-              : "unknown"
-          }
+          label="setup/sync status"
+          value={watchSetupSyncStatusLabel(watchRuntimeStatus)}
         />
         <InfoRow
-          label="latest epoch"
+          label="latest synced epoch"
           value={watchRuntimeStatus?.latestEpochAt ?? "none"}
         />
         <InfoRow
@@ -1687,7 +1689,7 @@ export function WatchModeDataScreen() {
           }
         />
         <InfoRow
-          label="session"
+          label="local session"
           value={latestWatchSession?.id ?? "no local watch session"}
         />
         {watchHealthAction ? (
@@ -1706,11 +1708,11 @@ export function WatchModeDataScreen() {
           value={summary ? String(summary.likelyRemEpochs) : "0"}
         />
         <InfoRow
-          label="connectivity gaps"
+          label="sync gaps"
           value={summary ? String(summary.connectivityGaps) : "0"}
         />
         <InfoRow
-          label="cues played"
+          label="cue deliveries"
           value={runtimeSummary ? String(runtimeSummary.cuesPlayed) : "0"}
         />
         <InfoRow
@@ -1747,8 +1749,8 @@ export function WatchModeDataScreen() {
 
       <Card>
         <DataNote>
-          Watch Mode is code-complete for simulator and development-build
-          testing. Physical overnight reliability is still not claimed.
+          Watch data here is the synced/local record from the watch-owned night.
+          Reachability only describes setup and post-night sync status.
         </DataNote>
       </Card>
 
@@ -1781,7 +1783,7 @@ export function WatchModeDataScreen() {
               textAlign: "center",
             }}
           >
-            No local watch epochs yet.
+            No synced watch epochs yet.
           </Text>
         </Card>
       ) : (
@@ -1840,7 +1842,7 @@ export function WatchModeDataScreen() {
                 }
               />
               <InfoRow
-                label="connectivity"
+                label="setup/sync link"
                 value={epoch.watchConnectivityState ?? "unknown"}
               />
               <InfoRow
@@ -2254,7 +2256,7 @@ export function SleepHistoryDataScreen() {
                   value={latestWatchEpoch?.sensorQuality ?? "unknown"}
                 />
                 <InfoRow
-                  label="connectivity"
+                  label="setup/sync link"
                   value={latestWatchEpoch?.watchConnectivityState ?? "unknown"}
                 />
                 <InfoRow
@@ -2268,7 +2270,7 @@ export function SleepHistoryDataScreen() {
                   }
                 />
                 <InfoRow
-                  label="cues played"
+                  label="cue deliveries"
                   value={
                     watchRuntimeSummary
                       ? String(watchRuntimeSummary.cuesPlayed)
