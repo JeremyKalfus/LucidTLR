@@ -122,15 +122,3 @@ compressed 45-minute test plan, an audible audio bed, motion summaries, native
 cue scheduling, a test-only predicted REM window, local native logs, and log
 sharing/import controls. It is for locked-device stress testing only and does
 not change the public Phone Mode protocol.
-
-## Watch Runtime Self-Test
-
-Development builds can run the DEBUG-only Watch runtime self-test by launching
-the iPhone app with:
-
-```text
---lucidcue-watch-runtime-self-test
-```
-
-The self-test injects one synthetic likely-REM epoch through the native Watch
-runtime and writes local runtime artifacts without persisting raw motion.

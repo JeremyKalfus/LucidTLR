@@ -3,6 +3,7 @@ import type { SessionStatus, SessionType } from "../../domain/types";
 export type SessionEvent =
   | "start_setup"
   | "start_training"
+  | "start_watch_night"
   | "skip_guided_training"
   | "finish_training"
   | "start_cueing"
@@ -17,6 +18,7 @@ const tlrTransitions: Record<SessionStatus, Partial<Record<SessionEvent, Session
   idle: { start_setup: "setup" },
   setup: {
     start_training: "training",
+    start_watch_night: "waiting_for_cue_window",
     skip_guided_training: "waiting_for_cue_window",
     end_session: "ended",
   },
@@ -48,7 +50,11 @@ const sleepLogTransitions: Record<
   Partial<Record<SessionEvent, SessionStatus>>
 > = {
   idle: { start_setup: "setup" },
-  setup: { start_cueing: "cueing_disabled_sleep_log", end_session: "ended" },
+  setup: {
+    start_cueing: "cueing_disabled_sleep_log",
+    start_watch_night: "cueing_disabled_sleep_log",
+    end_session: "ended",
+  },
   training: {},
   waiting_for_cue_window: {},
   cueing: {},

@@ -26,6 +26,7 @@ export type NativePhoneSessionPlan = {
   sessionId: string;
   protocolVersion: string;
   nativePolicyVersion: string;
+  speakerOnly?: boolean;
 
   mode: "phone";
   startedAt: string;

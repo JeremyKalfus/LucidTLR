@@ -345,6 +345,6 @@ final class WatchCuePolicy {
       return false
     }
 
-    return level * 100 < plan.batteryPolicy.disableCueingBelowPct
+    return level < plan.batteryPolicy.disableCueingBelowPct
   }
 }

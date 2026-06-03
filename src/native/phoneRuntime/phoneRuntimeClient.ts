@@ -19,6 +19,7 @@ export interface NativePhoneRuntimeModule {
   startPhoneTlrSessionAfterPresleepTraining: (
     plan: NativePhoneSessionPlan,
   ) => Promise<void>;
+  startPhoneWatchSpeakerSession?: (plan: NativePhoneSessionPlan) => Promise<void>;
   skipPhonePresleepTrainingAndStartRuntime: () => Promise<void>;
   pausePhonePresleepTraining: () => Promise<void>;
   resumePhonePresleepTraining: () => Promise<void>;
@@ -137,6 +138,16 @@ export function createPhoneRuntimeClient(options: PhoneRuntimeClientOptions) {
       return requireNativeMethod("startPhoneTlrSessionAfterPresleepTraining")(
         plan,
       );
+    },
+
+    startPhoneWatchSpeakerSession(plan: NativePhoneSessionPlan) {
+      const nativeModule = requireNativeModule();
+
+      if (typeof nativeModule.startPhoneWatchSpeakerSession !== "function") {
+        throw new Error(missingNativeMethodReason("startPhoneWatchSpeakerSession"));
+      }
+
+      return nativeModule.startPhoneWatchSpeakerSession(plan);
     },
 
     skipPhonePresleepTrainingAndStartRuntime() {

@@ -12,6 +12,66 @@ function readSource(path: string): string {
 }
 
 describe("Watch-owned v2 source of truth", () => {
+  it("documents the LLM orientation entrypoints and conditional handoff policy", () => {
+    const agents = readSource("AGENTS.md");
+    const gitignore = readSource(".gitignore");
+    const handoff = readSource(".agent_work/current.md.example");
+
+    expect(agents).toContain("docs/llm-orientation.md");
+    expect(agents).toContain("docs/decisions/001-watch-mode-is-watch-owned.md");
+    expect(agents).toContain("docs/decisions/002-phone-mode-is-phone-owned.md");
+    expect(agents).toContain("Ask Jeremy whenever you are uncertain");
+    expect(agents).toContain("npm run typecheck");
+    expect(agents).toContain("git diff --check");
+    expect(gitignore).toContain(".agent_work/*");
+    expect(gitignore).toContain("!.agent_work/current.md.example");
+    expect(handoff).toContain("Latest User Instruction");
+    expect(handoff).toContain("Verification Evidence");
+    expect(handoff).toContain("Handoff Status");
+  });
+
+  it("documents the current Watch workflow and LucidCue fundamentals for future workers", () => {
+    const orientation = readSource("docs/llm-orientation.md");
+    const watchAdr = readSource("docs/decisions/001-watch-mode-is-watch-owned.md");
+    const phoneAdr = readSource("docs/decisions/002-phone-mode-is-phone-owned.md");
+    const combined = `${orientation}\n${watchAdr}\n${phoneAdr}`;
+
+    expect(combined).toContain("Phone Mode is phone-owned");
+    expect(combined).toContain("Watch Mode is watch-owned");
+    expect(combined).toContain("Waiting for Watch Sync");
+    expect(combined).toContain("Sync Phone");
+    expect(combined).toContain("clock-only sleep-audio speaker");
+    expect(combined).toContain("Push Back 30m");
+    expect(combined).toContain("Pause/Play TLR");
+    expect(combined).toContain("Sync Watch");
+    expect(combined).toContain("v2 Watch logs are the source of truth");
+    expect(combined).toContain("Android Phone Mode is later only");
+    expect(combined).toContain("research-compatible data structures");
+    expect(combined).toContain("local and consent-gated by default");
+    expect(combined).toContain("engineering beta");
+    expect(combined).toContain("Do not claim validated");
+    expect(combined).toContain("REM staging");
+    expect(combined).toContain("Ask Jeremy");
+  });
+
+  it("keeps stale deleted Watch runtime docs out of worker-facing documentation", () => {
+    const docs = [
+      "README.md",
+      "TLR_App_Plan.md",
+      "docs/watch-mode-implementation.md",
+      "docs/dev-build.md",
+      "docs/llm-orientation.md",
+      "docs/decisions/001-watch-mode-is-watch-owned.md",
+      "docs/decisions/002-phone-mode-is-phone-owned.md",
+    ].map(readSource).join("\n");
+
+    expect(docs).not.toContain("--lucidcue-watch-runtime-self-test");
+    expect(docs).not.toContain("buildNativeWatchSessionPlan");
+    expect(docs).not.toContain("startWatchSession");
+    expect(docs).not.toContain("current phone-dependent Watch runtime is legacy");
+    expect(docs).not.toContain("Watch-owned Watch Mode v2 is the target");
+  });
+
   it("does not use legacy phone-owned Watch start builders in normal Watch Mode screens", () => {
     const normalWatchModeScreens = [
       "src/screens/HomeScreen.tsx",
@@ -28,15 +88,95 @@ describe("Watch-owned v2 source of truth", () => {
     }
   });
 
-  it("uses Watch-owned status before legacy status in Active Night", () => {
+  it("uses only Watch-owned v2 status in Active Night", () => {
     const source = readSource("src/screens/ActiveNightSessionScreen.tsx");
     const ownedStatusIndex = source.indexOf("getLatestWatchOwnedStatus()");
-    const legacyStatusIndex = source.indexOf("getWatchRuntimeStatus()");
 
     expect(ownedStatusIndex).toBeGreaterThan(-1);
-    expect(legacyStatusIndex).toBeGreaterThan(-1);
-    expect(ownedStatusIndex).toBeLessThan(legacyStatusIndex);
+    expect(source).not.toContain("getWatchRuntimeStatus");
     expect(source).not.toContain('reason: "orphaned"');
+  });
+
+  it("routes Watch Mode directly to Active Night instead of presleep training", () => {
+    const home = readSource("src/screens/HomeScreen.tsx");
+    const presleep = readSource("src/screens/PresleepTrainingScreen.tsx");
+
+    expect(home).toContain('if (selectedMode === "watch")');
+    expect(home).toContain('router.push("/active-night-session")');
+    expect(home).not.toContain("prepareWatchOwnedSession");
+    expect(presleep).toContain('activeSession?.mode === "watch"');
+    expect(presleep).toContain('router.replace("/active-night-session")');
+    expect(presleep).not.toContain("prepareWatchOwnedSession");
+    expect(presleep).not.toContain("requiresWatchPlanBeforeTraining");
+  });
+
+  it("builds the normal Watch start around the user-led Active Night sync gate", () => {
+    const source = readSource("src/screens/ActiveNightSessionScreen.tsx");
+
+    expect(source).toContain("buildWatchOwnedSessionPlan");
+    expect(source).toContain("beginWatchOwnedStartSync(plan)");
+    expect(source).toContain('title="Waiting for Watch Sync"');
+    expect(source).toContain("startPhoneWatchSpeakerSession(plan)");
+    expect(source).toContain('sendSessionEvent("start_watch_night"');
+    expect(source).toContain("<RunningSessionClock startedAt={activeSession.startedAt} />");
+    expect(source).not.toContain("prepareWatchOwnedSession");
+    expect(source).not.toContain("requestWatchOwnedStop");
+  });
+
+  it("locks Watch end and morning review behind explicit Sync Watch plus complete v2 log import", () => {
+    const activeNight = readSource("src/screens/ActiveNightSessionScreen.tsx");
+    const morningReview = readSource("src/screens/MorningReviewScreen.tsx");
+
+    expect(activeNight).toContain('title="Waiting for Phone Sync"');
+    expect(activeNight).toContain('label={isStopping ? "Syncing..." : "Sync Watch"}');
+    expect(activeNight).toContain("requestWatchOwnedLogSync({ sessionId })");
+    expect(activeNight).toContain("acknowledgeWatchOwnedLogSync({ sessionId })");
+    expect(activeNight).toContain("isCompleteWatchOwnedImportPayload(payload)");
+    expect(activeNight).toContain("WatchConnectionCheckpoint");
+    expect(activeNight).toContain("waitForCompleteWatchOwnedLogs");
+    expect(morningReview).toContain("isCompleteWatchOwnedImportPayload(payload)");
+    expect(morningReview).toContain("WatchConnectionCheckpoint");
+    expect(morningReview).not.toContain("getWatchEpochs(activeSession.id)");
+    expect(morningReview).not.toContain("getWatchRuntimeLogs(activeSession.id)");
+  });
+
+  it("exposes the matching Watch-side sync screens and overnight controls", () => {
+    const contentView = readSource("ios/LucidCue Watch App/ContentView.swift");
+    const manager = readSource("ios/LucidCue Watch App/WatchSessionManager.swift");
+
+    expect(contentView).toContain('Text("Sync phone")');
+    expect(contentView).toContain('Button("Sync Phone")');
+    expect(contentView).toContain("your watch will manage TLR through the night");
+    expect(contentView).toContain('Text("Waiting for Phone Sync")');
+    expect(contentView).toContain('Button("Push Back 30m")');
+    expect(contentView).toContain("manager.tlrPauseButtonTitle");
+    expect(contentView).toContain('Button("Wake")');
+    expect(manager).toContain('"schemaVersion": "watch-owned-sync-request-v2"');
+    expect(manager).toContain('"watch-owned-sync-state-v2"');
+    expect(manager).toContain('"sync_logs"');
+    expect(manager).toContain('"ack_logs_imported"');
+  });
+
+  it("only treats a Watch-owned import as complete when the summary counts are present", () => {
+    const source = readSource("src/native/watch/watchRuntimePersistence.ts");
+
+    expect(source).toContain("isCompleteWatchOwnedImportPayload");
+    expect(source).toContain("payload.summary.epochCount");
+    expect(source).toContain("payload.summary.cueCount");
+  });
+
+  it("does not report Watch-owned plan sync success before WatchConnectivity can queue it", () => {
+    const source = readSource("ios/LucidCue/LucidCueWatchRuntime.swift");
+    const notReadyIndex = source.indexOf("watch_connectivity_not_ready");
+    const transferIndex = source.indexOf("session.transferUserInfo(message)");
+    const resolveIndex = source.indexOf("resolve(nil)", transferIndex);
+
+    expect(source).toContain("watch_connectivity_unavailable");
+    expect(notReadyIndex).toBeGreaterThan(-1);
+    expect(transferIndex).toBeGreaterThan(-1);
+    expect(resolveIndex).toBeGreaterThan(-1);
+    expect(notReadyIndex).toBeLessThan(transferIndex);
+    expect(transferIndex).toBeLessThan(resolveIndex);
   });
 
   it("keeps legacy v1 Watch runtime code out of Watch-owned v2 log import", () => {
@@ -45,6 +185,21 @@ describe("Watch-owned v2 source of truth", () => {
     expect(source).toContain("importWatchOwnedRuntimeDataToLocalRecords");
     expect(source).not.toContain("startWatchSession(");
     expect(source).not.toContain("buildNativeWatchSessionPlan");
+  });
+
+  it("does not keep the legacy phone-owned Watch native protocol in the v2 runtime path", () => {
+    const nativeSources = [
+      "ios/LucidCue/LucidCueWatchRuntime.swift",
+      "ios/LucidCue/LucidCueWatchRuntimeBridge.m",
+      "ios/LucidCue Watch App/WatchSessionManager.swift",
+    ].map(readSource).join("\n");
+
+    expect(nativeSources).not.toContain("watch-command-v1");
+    expect(nativeSources).not.toContain("watch-status-v1");
+    expect(nativeSources).not.toContain("watch-status-ack-v1");
+    expect(nativeSources).not.toContain("watch-epoch-v1");
+    expect(nativeSources).not.toContain("startWatchSession");
+    expect(nativeSources).not.toContain("getWatchRuntimeStatus");
   });
 
   it("includes the Watch-owned model and short cue asset in the Watch target", () => {

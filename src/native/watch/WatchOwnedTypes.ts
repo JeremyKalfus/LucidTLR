@@ -158,12 +158,14 @@ export interface WatchOwnedStatusV2 {
   runtimeOwner: "watch";
   state:
     | "no_plan"
+    | "start_sync_waiting"
     | "ready"
     | "starting"
     | "running"
     | "cue_window_pending"
     | "cueing_enabled"
     | "cueing_disabled_low_battery"
+    | "waiting_for_phone_sync"
     | "sync_pending"
     | "completed"
     | "failed";

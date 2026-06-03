@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { AlarmClock, Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
 import React from "react";
-import { Alert, Switch, Text, View } from "react-native";
+import { Switch, Text, View } from "react-native";
 
 import {
   Card,
@@ -25,20 +25,11 @@ import {
   phoneRuntime,
   type NativePhoneRuntimeEvent,
 } from "@/src/native/phoneRuntime";
-import {
-  buildWatchOwnedSessionPlan,
-  watchRuntime,
-} from "@/src/native/watch";
-import { buildSleepTimingPrior } from "@/src/engine";
 import { useAppState } from "@/src/state/AppState";
 import { colors, spacing, typography } from "@/src/theme/tokens";
 
 const labelToCardGap = 6;
 const actionRowGap = 10;
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Watch Mode setup failed.";
-}
 
 function watchCueTogglePatch(
   channel: "audio" | "haptic",
@@ -129,11 +120,9 @@ export function HomeScreen() {
   } | null>(null);
   const {
     engineSettings,
-    phoneNightCalibration,
     selectedMode,
     sessionHistory,
     setSelectedMode,
-    sleepHistory,
     startSession,
     tlrOptions,
     updateTlrOptions,
@@ -155,87 +144,20 @@ export function HomeScreen() {
   const [lastSleepLogs, setLastSleepLogs] = React.useState<
     NativePhoneRuntimeEvent[]
   >([]);
-  const handleBeginTlr = React.useCallback(async () => {
+  const handleBeginTlr = React.useCallback(() => {
     if (selectedMode === "watch") {
-      try {
-        const status = await watchRuntime.getLatestWatchOwnedStatus();
-
-        if (!status.available) {
-          Alert.alert(
-            "Watch Mode setup needed",
-            status.reason ?? "Install a current iOS development build before preparing Watch Mode.",
-          );
-          return;
-        }
-      } catch (error) {
-        Alert.alert("Watch Mode setup needed", errorMessage(error));
-        return;
-      }
+      startSession("tlr");
+      router.push("/active-night-session");
+      return;
     }
 
     startSession("tlr");
     router.push("/presleep-training");
   }, [selectedMode, startSession]);
-  const handleNoTlr = React.useCallback(async () => {
-    if (selectedMode !== "watch") {
-      startSession("sleep_log");
-      router.push("/active-night-session");
-      return;
-    }
-
-    try {
-      const status = await watchRuntime.getLatestWatchOwnedStatus();
-
-      if (!status.available) {
-        Alert.alert(
-          "Watch Mode setup needed",
-          status.reason ?? "Install a current iOS development build before preparing Watch Mode.",
-        );
-        return;
-      }
-    } catch (error) {
-      Alert.alert("Watch Mode setup needed", errorMessage(error));
-      return;
-    }
-
-    const session = startSession("sleep_log");
-    const sleepTiming = buildSleepTimingPrior({
-      trainingEndedAt: session.startedAt,
-      settings: engineSettings,
-      historicalSleepPrior:
-        sleepHistory.enabled &&
-        sleepHistory.prior &&
-        sleepHistory.prior.confidence !== "none"
-          ? sleepHistory.prior
-          : undefined,
-      phoneNightPrior:
-        phoneNightCalibration.nightsIncluded > 0
-          ? phoneNightCalibration
-          : undefined,
-    });
-    const plan = buildWatchOwnedSessionPlan({
-      session,
-      settings: engineSettings,
-      tlrOptions,
-      sleepTiming,
-    });
-
-    try {
-      await watchRuntime.prepareWatchOwnedSession(plan);
-    } catch (error) {
-      Alert.alert("Watch Mode setup needed", errorMessage(error));
-      return;
-    }
-
+  const handleNoTlr = React.useCallback(() => {
+    startSession("sleep_log");
     router.push("/active-night-session");
-  }, [
-    engineSettings,
-    phoneNightCalibration,
-    selectedMode,
-    sleepHistory,
-    startSession,
-    tlrOptions,
-  ]);
+  }, [startSession]);
   const handleTlrOptionsChange = React.useCallback(
     (patch: TlrOptionsPatch) => {
       void updateTlrOptions(patch);
@@ -400,7 +322,7 @@ export function HomeScreen() {
           icon={Sparkles}
           label="Begin TLR"
           onPress={() => {
-            void handleBeginTlr();
+            handleBeginTlr();
           }}
         />
         <View style={{ flexDirection: "row", gap: actionRowGap }}>
@@ -415,7 +337,7 @@ export function HomeScreen() {
             icon={Moon}
             label="No TLR"
             onPress={() => {
-              void handleNoTlr();
+              handleNoTlr();
             }}
           />
           <PrimaryPillButton

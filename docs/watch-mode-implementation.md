@@ -3,13 +3,15 @@
 LucidCue Phone Mode remains unchanged: the iPhone owns its overnight audio bed,
 cue playback, native timing, and runtime logs.
 
-Watch Mode v2 is Watch-owned overnight. Before sleep, the iPhone prepares and
-syncs the session plan, cue assets, and bundled Watch REM model through
-WatchConnectivity. Overnight, the Apple Watch owns sensor collection,
-30-second epoch processing, experimental REM probability, cue timing, cue
-delivery, movement gates, and local runtime logs. After waking, the iPhone
-imports Watch epoch, cue, and movement logs. WatchConnectivity is for pre-sleep
-sync and morning log import, not live cue timing.
+Watch Mode v2 is Watch-owned overnight. The phone first locks on `Waiting for
+Watch Sync`; the Watch shows `Sync Phone`, and the user taps that Watch button
+to pull the plan/data and start the Watch-owned runtime. Overnight, the Apple
+Watch owns sensor collection, 30-second epoch processing, experimental REM
+probability, cue timing, cue delivery, movement gates, and local runtime logs.
+The iPhone is sleep audio plus sync/status UI only. After `Wake` on the Watch,
+the Watch waits for phone sync and the phone shows `Sync Watch` to import v2
+Watch logs. WatchConnectivity is for start sync, status, and morning log import,
+not live cue timing.
 
 For Log Sleep Only / No TLR nights, Watch Mode still uses the Watch-owned
 overnight runtime for sensing and logs, but the synced plan disables cue
@@ -29,27 +31,13 @@ Watch Mode uses Watch-accessible heart rate, triaxial motion, and elapsed time.
 It does not use GPS, SensorKit, live Apple sleep stages, wrist temperature,
 respiratory rate, or SpO2.
 
-Watch epoch and runtime data stay local by default. Raw motion debug payloads
-are not persisted by default and should not be uploaded without a separate
-explicit consent path.
+Watch epoch and runtime data stay local by default and should stay compatible
+with future consented research exports. Raw motion debug payloads are not
+persisted by default and should not be uploaded without a separate explicit
+consent path.
 
-Implementation status: the current phone-dependent Watch runtime is legacy.
-Watch-owned Watch Mode v2 is the target.
-
-Compatibility note: the v1 phone-owned Watch runtime and its
-`buildNativeWatchSessionPlan` / `startWatchSession` path remain only for
-legacy diagnostics and older development builds. Normal Watch Mode must prepare
-`watch-session-plan-v2`, start locally from the Watch app, and import v2 Watch
-logs later.
-
-Legacy simulator/dev-build validation can use the DEBUG-only iPhone launch
-argument `--lucidcue-watch-runtime-self-test`. It injects one synthetic
-likely-REM epoch through the native Watch runtime and writes local Watch runtime
-logs without persisting raw motion.
-
-The legacy phone-dependent Watch runtime has simulator and development-build
-validation coverage. Watch-owned v2 should be treated as experimental for
-physical overnight use until these checks pass:
+Watch-owned v2 is the current Watch Mode architecture. It should still be
+treated as engineering beta for physical overnight use until these checks pass:
 
 1. Watch app installs and receives the pre-sleep plan/assets/model sync.
 2. A 10-minute test produces reliable 30-second epochs in local storage.

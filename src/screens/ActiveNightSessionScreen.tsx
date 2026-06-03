@@ -8,9 +8,11 @@ import {
   RunningSessionClock,
   Screen,
 } from "@/src/components/ui";
+import { WatchConnectionCheckpoint } from "@/src/components/watch/WatchConnectionCheckpoint";
 import type { NightSession } from "@/src/domain/types";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
 import {
+  buildNativePhoneWatchSpeakerPlan,
   importPhoneRuntimeLogsToLocalRecords,
   latestPhoneRuntimeStopTimestamp,
   phoneRuntime,
@@ -18,16 +20,28 @@ import {
   type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
 import {
+  buildWatchOwnedSessionPlan,
   importWatchOwnedRuntimeDataToLocalRecords,
+  isCompleteWatchOwnedImportPayload,
   watchRuntime,
   type WatchOwnedStatusV2,
-  type WatchRuntimeStatus,
 } from "@/src/native/watch";
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
+import {
+  applyPhoneNightCalibrationToSettings,
+  buildSleepTimingPrior,
+} from "@/src/engine";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
 const TLR_PUSH_BACK_SECONDS = 30 * 60;
+const WATCH_SYNC_POLL_MS = 2000;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function nightSessionStartedAt(session: NightSession): string {
   if (session.sessionType === "tlr") {
@@ -51,45 +65,27 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Runtime action failed.";
 }
 
-function watchHealthStatusLabel(
-  ownedStatus: WatchOwnedStatusV2 | null,
-  legacyStatus: WatchRuntimeStatus | null,
-): string {
+function isWatchOwnedRuntimeStarted(status: WatchOwnedStatusV2): boolean {
   return (
-    ownedStatus?.healthAuthorizationStatus ??
-    legacyStatus?.watchHealthAuthorizationStatus ??
-    "unknown"
+    status.state === "running" ||
+    status.state === "cue_window_pending" ||
+    status.state === "cueing_enabled" ||
+    status.state === "cueing_disabled_low_battery" ||
+    status.isRunning === true
   );
-}
-
-function watchHealthStatusAction(
-  ownedStatus: WatchOwnedStatusV2 | null,
-  legacyStatus: WatchRuntimeStatus | null,
-): string | null {
-  const status =
-    ownedStatus?.healthAuthorizationStatus ??
-    legacyStatus?.watchHealthAuthorizationStatus;
-
-  if (status === "denied") {
-    return "Enable HealthKit heart-rate access for LucidCue before preparing Watch Mode.";
-  }
-
-  if (status === "unavailable") {
-    return "HealthKit heart-rate access is unavailable on this Apple Watch.";
-  }
-
-  return null;
 }
 
 export function ActiveNightSessionScreen() {
   const {
     activeSession,
+    engineSettings,
+    phoneNightCalibration,
     sendSessionEvent,
+    sleepHistory,
+    tlrOptions,
   } = useAppState();
   const [runtimeStatus, setRuntimeStatus] =
     React.useState<PhoneRuntimeStatus | null>(null);
-  const [watchRuntimeStatus, setWatchRuntimeStatus] =
-    React.useState<WatchRuntimeStatus | null>(null);
   const [watchOwnedStatus, setWatchOwnedStatus] =
     React.useState<WatchOwnedStatusV2 | null>(null);
   const [runtimeError, setRuntimeError] = React.useState<string | null>(null);
@@ -97,6 +93,9 @@ export function ActiveNightSessionScreen() {
   const [runtimeAction, setRuntimeAction] = React.useState<
     "defer" | "pause" | "resume" | null
   >(null);
+  const watchEndCheckpointInFlightRef = React.useRef(false);
+  const watchStartSyncInFlightRef = React.useRef(false);
+  const watchSpeakerStartedSessionRef = React.useRef<string | null>(null);
   const canEnd =
     activeSession &&
     canTransitionSession(
@@ -110,13 +109,188 @@ export function ActiveNightSessionScreen() {
     activeSession?.sessionType === "tlr" && activeSession.mode === "phone";
   const usesWatchRuntime =
     activeSession?.mode === "watch";
+  const effectiveEngineSettings = React.useMemo(
+    () =>
+      applyPhoneNightCalibrationToSettings(
+        engineSettings,
+        phoneNightCalibration.nightsIncluded > 0
+          ? phoneNightCalibration
+          : undefined,
+      ),
+    [engineSettings, phoneNightCalibration],
+  );
+  const historicalSleepPrior =
+    sleepHistory.enabled &&
+    sleepHistory.prior &&
+    sleepHistory.prior.confidence !== "none"
+      ? sleepHistory.prior
+      : undefined;
+  const phoneNightPrior =
+    phoneNightCalibration.nightsIncluded > 0
+      ? phoneNightCalibration
+      : undefined;
   const canControlTlrRuntime =
     usesPhoneRuntime && runtimeStatus?.available === true;
   const tlrPaused = usesPhoneRuntime && runtimeStatus?.tlrPaused === true;
   const runtimeControlsDisabled = isStopping || runtimeAction !== null;
-  const watchHealthAction = watchHealthStatusAction(
-    watchOwnedStatus,
-    watchRuntimeStatus,
+  const watchOwnedStatusMatchesActiveSession =
+    Boolean(
+      activeSession &&
+        (watchOwnedStatus?.sessionId === activeSession.id ||
+          watchOwnedStatus?.preparedSessionId === activeSession.id),
+    );
+  const isWatchStartSyncScreen =
+    usesWatchRuntime &&
+    activeSession?.status === "setup";
+  const isWatchWaitingForPhoneSyncScreen =
+    usesWatchRuntime &&
+    Boolean(canEnd) &&
+    activeSession?.status !== "setup" &&
+    watchOwnedStatusMatchesActiveSession &&
+    watchOwnedStatus?.state === "waiting_for_phone_sync";
+  const canSyncWatchLogs =
+    Boolean(activeSession && isWatchWaitingForPhoneSyncScreen && !isStopping);
+  const waitForCompleteWatchOwnedLogs = React.useCallback(
+    async (sessionId: string) => {
+      for (;;) {
+        try {
+          const db = await getLocalDb();
+          const payload = await watchRuntime.importWatchOwnedSessionLogs(sessionId);
+
+          if (isCompleteWatchOwnedImportPayload(payload)) {
+            await importWatchOwnedRuntimeDataToLocalRecords({ db, payload });
+            return payload;
+          }
+        } catch (error) {
+          setRuntimeError(errorMessage(error));
+        }
+
+        await wait(WATCH_SYNC_POLL_MS);
+      }
+    },
+    [],
+  );
+  const beginWatchStartSync = React.useCallback(async () => {
+    if (
+      !activeSession ||
+      !isWatchStartSyncScreen ||
+      watchStartSyncInFlightRef.current
+    ) {
+      return;
+    }
+
+    watchStartSyncInFlightRef.current = true;
+    setRuntimeError(null);
+
+    try {
+      const sleepTiming = buildSleepTimingPrior({
+        trainingEndedAt: activeSession.startedAt,
+        settings: effectiveEngineSettings,
+        historicalSleepPrior,
+        phoneNightPrior,
+      });
+      const plan = buildWatchOwnedSessionPlan({
+        session: activeSession,
+        settings: effectiveEngineSettings,
+        tlrOptions,
+        sleepTiming,
+      });
+
+      await watchRuntime.beginWatchOwnedStartSync(plan);
+    } catch (error) {
+      setRuntimeError(errorMessage(error));
+    } finally {
+      watchStartSyncInFlightRef.current = false;
+    }
+  }, [
+    activeSession,
+    effectiveEngineSettings,
+    historicalSleepPrior,
+    isWatchStartSyncScreen,
+    phoneNightPrior,
+    tlrOptions,
+  ]);
+  const startPhoneSpeakerForWatchNight = React.useCallback(
+    async (ownedStatus: WatchOwnedStatusV2) => {
+      if (
+        !activeSession ||
+        activeSession.status !== "setup" ||
+        activeSession.mode !== "watch" ||
+        (ownedStatus.sessionId !== activeSession.id &&
+          ownedStatus.preparedSessionId !== activeSession.id) ||
+        !isWatchOwnedRuntimeStarted(ownedStatus) ||
+        watchSpeakerStartedSessionRef.current === activeSession.id
+      ) {
+        return;
+      }
+
+      watchSpeakerStartedSessionRef.current = activeSession.id;
+      setRuntimeError(null);
+
+      try {
+        const sleepTiming = buildSleepTimingPrior({
+          trainingEndedAt: activeSession.startedAt,
+          settings: effectiveEngineSettings,
+          historicalSleepPrior,
+          phoneNightPrior,
+        });
+        const plan = buildNativePhoneWatchSpeakerPlan({
+          session: activeSession,
+          settings: effectiveEngineSettings,
+          tlrOptions,
+          sleepTiming,
+        });
+
+        await phoneRuntime.startPhoneWatchSpeakerSession(plan);
+      } catch (error) {
+        setRuntimeError(errorMessage(error));
+      } finally {
+        sendSessionEvent("start_watch_night", new Date().toISOString());
+      }
+    },
+    [
+      activeSession,
+      effectiveEngineSettings,
+      historicalSleepPrior,
+      phoneNightPrior,
+      sendSessionEvent,
+      tlrOptions,
+    ],
+  );
+  const syncWatchLogsToPhone = React.useCallback(
+    async (sessionId: string) => {
+      if (watchEndCheckpointInFlightRef.current) {
+        return;
+      }
+
+      watchEndCheckpointInFlightRef.current = true;
+      setIsStopping(true);
+      setRuntimeError(null);
+
+      try {
+        await watchRuntime.requestWatchOwnedLogSync({ sessionId });
+        const payload = await waitForCompleteWatchOwnedLogs(sessionId);
+
+        try {
+          await phoneRuntime.stopPhoneTlrSession({ reason: "user_stopped" });
+        } catch {
+          // Watch log import is the source of truth; the phone speaker bed may
+          // already be stopped or unavailable in older dev builds.
+        }
+
+        await watchRuntime.acknowledgeWatchOwnedLogSync({ sessionId });
+        sendSessionEvent(
+          "end_session",
+          payload.summary?.stoppedAt ?? new Date().toISOString(),
+        );
+      } catch (error) {
+        setRuntimeError(errorMessage(error));
+      } finally {
+        setIsStopping(false);
+        watchEndCheckpointInFlightRef.current = false;
+      }
+    },
+    [sendSessionEvent, waitForCompleteWatchOwnedLogs],
   );
   const refreshRuntimeStatus = React.useCallback(async () => {
     if (!usesPhoneRuntime) {
@@ -149,7 +323,7 @@ export function ActiveNightSessionScreen() {
     }
   }, [activeSession, canEnd, sendSessionEvent, usesPhoneRuntime]);
 
-  const refreshWatchRuntimeStatus = React.useCallback(async () => {
+  const refreshWatchOwnedStatus = React.useCallback(async () => {
     if (!usesWatchRuntime) {
       return;
     }
@@ -160,43 +334,26 @@ export function ActiveNightSessionScreen() {
       setWatchOwnedStatus(ownedStatus);
 
       if (!ownedStatus.available) {
-        setWatchRuntimeStatus(await watchRuntime.getWatchRuntimeStatus());
         return;
       }
 
-      setWatchRuntimeStatus(null);
-
-      if (!activeSession || !canEnd) {
+      if (!activeSession) {
         return;
       }
 
-      if (
-        ownedStatus.sessionId !== activeSession.id ||
-        (ownedStatus.state !== "completed" && ownedStatus.state !== "sync_pending")
-      ) {
-        return;
-      }
-
-      const db = await getLocalDb();
-      const payload = await watchRuntime.importWatchOwnedSessionLogs(activeSession.id);
-      await importWatchOwnedRuntimeDataToLocalRecords({ db, payload });
-      sendSessionEvent(
-        "end_session",
-        payload.summary?.stoppedAt ?? new Date().toISOString(),
-      );
+      await startPhoneSpeakerForWatchNight(ownedStatus);
     } catch (error) {
       setRuntimeError(errorMessage(error));
     }
   }, [
     activeSession,
-    canEnd,
-    sendSessionEvent,
+    startPhoneSpeakerForWatchNight,
     usesWatchRuntime,
   ]);
 
   React.useEffect(() => {
     void refreshRuntimeStatus();
-    void refreshWatchRuntimeStatus();
+    void refreshWatchOwnedStatus();
 
     if ((!usesPhoneRuntime && !usesWatchRuntime) || !canEnd) {
       return undefined;
@@ -204,17 +361,31 @@ export function ActiveNightSessionScreen() {
 
     const intervalId = setInterval(() => {
       void refreshRuntimeStatus();
-      void refreshWatchRuntimeStatus();
+      void refreshWatchOwnedStatus();
     }, 5000);
 
     return () => clearInterval(intervalId);
   }, [
     canEnd,
     refreshRuntimeStatus,
-    refreshWatchRuntimeStatus,
+    refreshWatchOwnedStatus,
     usesPhoneRuntime,
     usesWatchRuntime,
   ]);
+
+  React.useEffect(() => {
+    if (!isWatchStartSyncScreen) {
+      return undefined;
+    }
+
+    void beginWatchStartSync();
+
+    const intervalId = setInterval(() => {
+      void beginWatchStartSync();
+    }, WATCH_SYNC_POLL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [beginWatchStartSync, isWatchStartSyncScreen]);
 
   React.useEffect(() => {
     if ((!usesPhoneRuntime && !usesWatchRuntime) || !canEnd) {
@@ -224,7 +395,7 @@ export function ActiveNightSessionScreen() {
     const subscription = NativeAppState.addEventListener("change", (state) => {
       if (state === "active") {
         void refreshRuntimeStatus();
-        void refreshWatchRuntimeStatus();
+        void refreshWatchOwnedStatus();
       }
     });
 
@@ -232,13 +403,17 @@ export function ActiveNightSessionScreen() {
   }, [
     canEnd,
     refreshRuntimeStatus,
-    refreshWatchRuntimeStatus,
+    refreshWatchOwnedStatus,
     usesPhoneRuntime,
     usesWatchRuntime,
   ]);
 
   async function stopSession() {
     if (!activeSession) {
+      return;
+    }
+
+    if (usesWatchRuntime) {
       return;
     }
 
@@ -250,20 +425,6 @@ export function ActiveNightSessionScreen() {
         await phoneRuntime.stopPhoneTlrSession({ reason: "user_stopped" });
         const logs = await phoneRuntime.getPhoneRuntimeLogs(activeSession.id);
         await importPhoneRuntimeLogsToLocalRecords(logs);
-      }
-
-      if (usesWatchRuntime) {
-        await watchRuntime.requestWatchOwnedStop({
-          reason: "user_stopped",
-          sessionId: activeSession.id,
-        });
-        const db = await getLocalDb();
-        const payload = await watchRuntime.importWatchOwnedSessionLogs(activeSession.id);
-
-        await importWatchOwnedRuntimeDataToLocalRecords({
-          db,
-          payload,
-        });
       }
 
       sendSessionEvent("end_session");
@@ -333,6 +494,41 @@ export function ActiveNightSessionScreen() {
     }
   }
 
+  if (usesWatchRuntime && isWatchStartSyncScreen) {
+    return (
+      <WatchConnectionCheckpoint
+        detail={runtimeError}
+        title="Waiting for Watch Sync"
+      />
+    );
+  }
+
+  if (usesWatchRuntime && isWatchWaitingForPhoneSyncScreen && activeSession) {
+    return (
+      <WatchConnectionCheckpoint
+        detail={runtimeError}
+        title="Waiting for Phone Sync"
+      >
+        <PrimaryPillButton
+          disabled={!canSyncWatchLogs}
+          icon={Sun}
+          label={isStopping ? "Syncing..." : "Sync Watch"}
+          onPress={() => {
+            void syncWatchLogsToPhone(activeSession.id);
+          }}
+        />
+      </WatchConnectionCheckpoint>
+    );
+  }
+
+  if (activeSession && usesWatchRuntime && canEnd) {
+    return (
+      <Screen bottomNav={false} centered>
+        <RunningSessionClock startedAt={activeSession.startedAt} />
+      </Screen>
+    );
+  }
+
   if (activeSession && canEnd) {
     return (
       <Screen bottomNav={false} centered>
@@ -353,35 +549,6 @@ export function ActiveNightSessionScreen() {
           <RunningSessionClock
             startedAt={nightSessionStartedAt(activeSession)}
           />
-          {usesWatchRuntime ? (
-            <Text
-              selectable
-              style={{
-                color: colors.textSecondary,
-                fontSize: typography.body.fontSize,
-                lineHeight: typography.body.lineHeight,
-                textAlign: "center",
-              }}
-            >
-              {`Watch setup: HealthKit heart rate ${watchHealthStatusLabel(
-                watchOwnedStatus,
-                watchRuntimeStatus,
-              )}`}
-            </Text>
-          ) : null}
-          {usesWatchRuntime && watchHealthAction ? (
-            <Text
-              selectable
-              style={{
-                color: colors.textSecondary,
-                fontSize: typography.body.fontSize,
-                lineHeight: typography.body.lineHeight,
-                textAlign: "center",
-              }}
-            >
-              {watchHealthAction}
-            </Text>
-          ) : null}
           <View
             style={{
               flexDirection: "row",
@@ -416,15 +583,7 @@ export function ActiveNightSessionScreen() {
               disabled={isStopping}
               flex={1}
               icon={Sun}
-              label={
-                isStopping
-                  ? usesWatchRuntime
-                    ? "Syncing..."
-                    : "Waking Up..."
-                  : usesWatchRuntime
-                    ? "Stop + Sync"
-                    : "Wake Up"
-              }
+              label={isStopping ? "Waking Up..." : "Wake Up"}
               onPress={() => {
                 void stopSession();
               }}

@@ -11,11 +11,10 @@ import {
   SectionTitle,
   TextField,
 } from "@/src/components/ui";
+import { WatchConnectionCheckpoint } from "@/src/components/watch/WatchConnectionCheckpoint";
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import {
   saveMorningReport,
-  saveWatchEpochs,
-  saveWatchRuntimeEvents,
   updatePhoneNightCalibrationFeedback,
 } from "@/src/data/local/repositories";
 import type { MorningReport } from "@/src/domain/types";
@@ -34,8 +33,8 @@ import {
   type PhoneRuntimeLogSummary,
 } from "@/src/native/phoneRuntime";
 import {
-  latestWatchRuntimeStopTimestamp,
   importWatchOwnedRuntimeDataToLocalRecords,
+  isCompleteWatchOwnedImportPayload,
   summarizeWatchRuntime,
   watchRuntime,
   type WatchRuntimeLogSummary,
@@ -44,6 +43,13 @@ import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
 type FieldValue = boolean | number | null;
+const WATCH_SYNC_POLL_MS = 2000;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -241,59 +247,63 @@ export function MorningReviewScreen() {
         return;
       }
 
-      try {
-        const db = await getLocalDb();
-        let stopTimestamp: string | null = null;
-        let summary: WatchRuntimeLogSummary;
-
+      for (;;) {
         try {
+          const db = await getLocalDb();
           const payload = await watchRuntime.importWatchOwnedSessionLogs(
             activeSession.id,
           );
+
+          if (!isCompleteWatchOwnedImportPayload(payload)) {
+            await wait(WATCH_SYNC_POLL_MS);
+
+            if (cancelled) {
+              return;
+            }
+
+            continue;
+          }
+
           const imported = await importWatchOwnedRuntimeDataToLocalRecords({
             db,
             payload,
           });
+          const summary = summarizeWatchRuntime(imported.logs, imported.epochs);
 
-          summary = summarizeWatchRuntime(imported.logs, imported.epochs);
-          stopTimestamp = payload.summary?.stoppedAt ?? null;
-        } catch {
-          const [epochs, logs] = await Promise.all([
-            watchRuntime.getWatchEpochs(activeSession.id),
-            watchRuntime.getWatchRuntimeLogs(activeSession.id),
-          ]);
+          if (
+            (summary.stopped || summary.completed || summary.errored) &&
+            canTransitionSession(
+              activeSession.sessionType,
+              activeSession.status,
+              "end_session",
+            )
+          ) {
+            sendSessionEvent(
+              "end_session",
+              payload.summary?.stoppedAt ?? new Date().toISOString(),
+            );
+          }
 
-          summary = summarizeWatchRuntime(logs, epochs);
-          stopTimestamp = latestWatchRuntimeStopTimestamp(logs);
-          await saveWatchEpochs({ db, records: epochs });
-          await saveWatchRuntimeEvents({ db, events: logs });
-        }
+          if (!cancelled) {
+            setWatchRuntimeSummary(summary);
+            setWatchRuntimeSummaryError(null);
+          }
 
-        if (
-          (summary.stopped || summary.completed || summary.errored) &&
-          canTransitionSession(
-            activeSession.sessionType,
-            activeSession.status,
-            "end_session",
-          )
-        ) {
-          sendSessionEvent(
-            "end_session",
-            stopTimestamp ?? new Date().toISOString(),
-          );
-        }
+          return;
+        } catch (error) {
+          if (!cancelled) {
+            setWatchRuntimeSummaryError(
+              error instanceof Error
+                ? error.message
+                : "Could not sync watch night logs.",
+            );
+          }
 
-        if (!cancelled) {
-          setWatchRuntimeSummary(summary);
-          setWatchRuntimeSummaryError(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setWatchRuntimeSummaryError(
-            error instanceof Error
-              ? error.message
-              : "Could not sync watch night logs.",
-          );
+          await wait(WATCH_SYNC_POLL_MS);
+
+          if (cancelled) {
+            return;
+          }
         }
       }
     }
@@ -304,6 +314,10 @@ export function MorningReviewScreen() {
       cancelled = true;
     };
   }, [activeSession, sendSessionEvent, usesWatchRuntime]);
+
+  if (usesWatchRuntime && !watchRuntimeSummary) {
+    return <WatchConnectionCheckpoint detail={watchRuntimeSummaryError} />;
+  }
 
   return (
     <Screen>

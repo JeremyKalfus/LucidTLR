@@ -7,3 +7,6 @@ dist/
 build/
 build-artifacts/
 coverage/
+.agent_work/*
+!.agent_work/
+!.agent_work/current.md.example

@@ -1,0 +1,34 @@
+# Current Task Handoff
+
+## Latest User Instruction
+
+Summarize the newest user request here.
+
+## Goal
+
+State the concrete outcome the next worker should preserve or finish.
+
+## Non-Goals
+
+List adjacent work that should not be done.
+
+## Files/Areas Owned
+
+List files or subsystems touched by this task.
+
+## Decisions Made
+
+Record decisions that matter for continuation. Durable architecture decisions
+belong in `docs/decisions/`.
+
+## Verification Evidence
+
+List commands run and outcomes, or explain why verification has not run yet.
+
+## Handoff Status
+
+Use one: `continue`, `blocked`, or `complete`.
+
+## Remaining Risks
+
+List known risks, uncertainties, or follow-up checks.

@@ -20,9 +20,28 @@ final class WatchSessionManager: NSObject, ObservableObject {
   @Published private(set) var latestCueDecisionReason = "no_plan"
   @Published private(set) var latestRemProbabilityText = "unknown"
   @Published private(set) var syncPendingCount = 0
+  @Published private(set) var phoneStartSyncSessionId = ""
+  @Published private(set) var waitingForPhoneSync = false
+  @Published private(set) var tlrPaused = false
 
-  var canStartFromWatch: Bool {
-    activePlan != nil && !isRunning && !isStarting
+  var shouldShowSyncPhoneScreen: Bool {
+    !phoneStartSyncSessionId.isEmpty && !isRunning && !isStarting
+  }
+
+  var canSyncPhoneFromWatch: Bool {
+    shouldShowSyncPhoneScreen && WCSession.default.activationState == .activated && WCSession.default.isReachable
+  }
+
+  var shouldShowWaitingForPhoneSyncScreen: Bool {
+    waitingForPhoneSync
+  }
+
+  var canControlTlrFromWatch: Bool {
+    isRunning && activePlan?.cueMode != "none"
+  }
+
+  var tlrPauseButtonTitle: String {
+    tlrPaused ? "Play TLR" : "Pause TLR"
   }
 
   private let healthStore = HKHealthStore()
@@ -61,13 +80,16 @@ final class WatchSessionManager: NSObject, ObservableObject {
   private var isStarting = false
   private var hasCompletedSession = false
   private var failedReason: String?
+  private var tlrDeferredUntil: Date?
   private let hrAlpha = 0.95
   private let motionAlpha = 0.90
+  private let epochIntervalSeconds = 30.0
 
   override init() {
     isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     activePlan = planStore.load()
     super.init()
+    WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
     activateConnectivity()
     batteryText = formatBattery()
     refreshPlanText()
@@ -87,96 +109,70 @@ final class WatchSessionManager: NSObject, ObservableObject {
     presenceTimer = nil
   }
 
-  func startFromWatch() {
-    guard let plan = activePlan else {
-      markFailed("no_plan")
+  func syncPhoneFromWatch() {
+    let targetSessionId = phoneStartSyncSessionId
+    guard canSyncPhoneFromWatch, !targetSessionId.isEmpty else {
       return
     }
 
-    let commandId = "watch-local-\(UUID().uuidString)"
+    let message: [String: Any] = [
+      "schemaVersion": "watch-owned-sync-request-v2",
+      "phase": "start",
+      "sessionId": targetSessionId,
+      "createdAt": isoFormatter.string(from: Date()),
+    ]
+
     isStarting = true
     failedReason = nil
-    statusText = "starting"
     refreshDisplayState()
-    sendStatus(reason: "health_preflight")
 
-    preflightHealthAuthorization { [weak self] blockReason in
-      guard let self, self.isStarting else {
-        return
+    WCSession.default.sendMessage(message) { [weak self] reply in
+      DispatchQueue.main.async {
+        self?.handleStartSyncReply(reply)
       }
-
-      if let blockReason {
-        self.isStarting = false
-        self.markFailed(blockReason)
-        self.sendStatus(reason: blockReason)
-        return
-      }
-
-      let reply = self.startStoredPlan(
-        plan,
-        commandId: commandId,
-        source: "watch_ui",
-        healthPreflightCompleted: true
-      )
-
-      if reply["schemaVersion"] as? String == "watch-start-rejected-v1" {
-        self.isStarting = false
-        self.markFailed(reply["reason"] as? String ?? "watch_start_rejected")
-        self.sendStatus(reason: reply["reason"] as? String ?? "watch_start_rejected")
+    } errorHandler: { [weak self] error in
+      DispatchQueue.main.async {
+        self?.isStarting = false
+        self?.markFailed(error.localizedDescription)
       }
     }
   }
 
-  func stopFromWatch() {
+  func pushBackTlrFromWatch() {
+    guard canControlTlrFromWatch else {
+      return
+    }
+
+    tlrDeferredUntil = Date().addingTimeInterval(30 * 60)
+    tlrPaused = false
+    latestCueDecisionReason = "user_deferred_tlr"
+    logEvent("watch_tlr_deferred", payload: [
+      "durationSeconds": 30 * 60,
+      "deferredUntil": tlrDeferredUntil.map { isoFormatter.string(from: $0) } ?? "",
+    ])
+    sendStatus(reason: "user_deferred_tlr")
+    refreshDisplayState()
+  }
+
+  func toggleTlrPauseFromWatch() {
+    guard canControlTlrFromWatch else {
+      return
+    }
+
+    tlrPaused.toggle()
+    if !tlrPaused {
+      tlrDeferredUntil = nil
+    }
+    latestCueDecisionReason = tlrPaused ? "user_paused_tlr" : "user_resumed_tlr"
+    logEvent(tlrPaused ? "watch_tlr_paused" : "watch_tlr_resumed", payload: [
+      "userPaused": tlrPaused,
+    ])
+    sendStatus(reason: latestCueDecisionReason)
+    refreshDisplayState()
+  }
+
+  func wakeFromWatch() {
     stopSession(reason: "watch_ui")
-  }
-
-  func startSession(
-    sessionId commandSessionId: String?,
-    commandId: String,
-    expiresAt: Date?,
-    plan rawPlan: [String: Any]
-  ) -> [String: Any] {
-    guard let commandSessionId, !commandSessionId.isEmpty else {
-      statusText = "No Watch plan"
-      refreshDisplayState()
-      return startRejectedReply(
-        commandId: commandId,
-        sessionId: "",
-        reason: "missing_session_id"
-      )
-    }
-
-    let now = Date()
-    if let expiresAt, now >= expiresAt {
-      return startRejectedReply(
-        commandId: commandId,
-        sessionId: commandSessionId,
-        reason: "start_command_expired"
-      )
-    }
-
-    let decodedPlan: WatchRuntimePlan
-    do {
-      decodedPlan = try WatchRuntimePlan.fromDictionary(
-        rawPlan,
-        fallbackSessionId: commandSessionId,
-        receivedAt: now,
-        formatter: isoFormatter
-      )
-      try planStore.save(decodedPlan)
-      activePlan = decodedPlan
-      refreshPlanText()
-    } catch {
-      markFailed("invalid_watch_plan")
-      return startRejectedReply(
-        commandId: commandId,
-        sessionId: commandSessionId,
-        reason: "invalid_watch_plan"
-      )
-    }
-
-    return startStoredPlan(decodedPlan, commandId: commandId, source: "iphone_command")
   }
 
   func stopSession(reason: String) {
@@ -184,7 +180,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
       return
     }
 
-    if isRunning && reason != "planned_stop_at" {
+    if isRunning && reason != "planned_stop_at" && shouldEmitFinalEpoch() {
       emitEpoch(connectivityState: connectivityState())
     }
 
@@ -195,6 +191,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
     isRunning = false
     isStarting = false
     hasCompletedSession = failedReason == nil
+    waitingForPhoneSync = failedReason == nil
     statusText = hasCompletedSession ? "completed" : "failed"
     logEvent("watch_runtime_stopped", payload: [
       "reason": reason,
@@ -209,6 +206,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
     lastEpochAt = nil
     cueingEnabled = false
     latestRemProbabilityText = "unknown"
+    tlrPaused = false
+    tlrDeferredUntil = nil
     refreshDisplayState()
   }
 
@@ -290,6 +289,10 @@ final class WatchSessionManager: NSObject, ObservableObject {
     ownedEpochLogs = []
     ownedCueDeliveryLogs = []
     cueingEnabled = false
+    waitingForPhoneSync = false
+    phoneStartSyncSessionId = ""
+    tlrPaused = false
+    tlrDeferredUntil = nil
     latestCueDecisionReason = remModel.modelAvailable ? "waiting_for_epoch" : "model_asset_missing"
     latestRemProbabilityText = "unknown"
     statusText = "starting"
@@ -321,7 +324,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
     isStarting = false
     statusText = "running"
     epochTimer?.invalidate()
-    epochTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+    epochTimer = Timer.scheduledTimer(withTimeInterval: epochIntervalSeconds, repeats: true) { [weak self] _ in
       self?.handleEpochTimer()
     }
     sendStatus(reason: "started")
@@ -494,6 +497,10 @@ final class WatchSessionManager: NSObject, ObservableObject {
     emitEpoch(connectivityState: connectivityState())
   }
 
+  private func shouldEmitFinalEpoch() -> Bool {
+    Date().timeIntervalSince(lastEpochAt ?? sessionStartedAt) >= epochIntervalSeconds
+  }
+
   private func emitEpoch(connectivityState: String) {
     guard isRunning, !sessionId.isEmpty, let activePlan else {
       return
@@ -510,7 +517,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
 
     let now = Date()
-    let epochStart = now.addingTimeInterval(-30)
+    let epochStart = now.addingTimeInterval(-epochIntervalSeconds)
     let hrSamples = heartRates
     let motion = motionSamples
     heartRates = []
@@ -565,7 +572,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
       watchBatteryLevel: Double(WKInterfaceDevice.current().batteryLevel)
     )
     let prediction = remModel.predict(features: features, plan: activePlan)
-    let decision = cuePolicy.decide(
+    var decision = cuePolicy.decide(
       now: now,
       plan: activePlan,
       features: features,
@@ -575,12 +582,32 @@ final class WatchSessionManager: NSObject, ObservableObject {
       lastCueAt: lastCueAt,
       formatter: isoFormatter
     )
+
+    if activePlan.cueMode != "none" && tlrPaused {
+      decision = WatchCueDecision(
+        shouldPlayCue: false,
+        reason: "user_paused_tlr",
+        cueingEnabled: false,
+        consecutiveLikelyRemEpochs: decision.consecutiveLikelyRemEpochs
+      )
+    } else if activePlan.cueMode != "none",
+      let tlrDeferredUntil,
+      now < tlrDeferredUntil
+    {
+      decision = WatchCueDecision(
+        shouldPlayCue: false,
+        reason: "user_deferred_tlr",
+        cueingEnabled: false,
+        consecutiveLikelyRemEpochs: decision.consecutiveLikelyRemEpochs
+      )
+    } else if let tlrDeferredUntil, now >= tlrDeferredUntil {
+      self.tlrDeferredUntil = nil
+    }
     consecutiveLikelyRemEpochs = decision.consecutiveLikelyRemEpochs
     cueingEnabled = decision.cueingEnabled
     latestCueDecisionReason = decision.reason
     latestRemProbabilityText = prediction.remProbability.map { String(format: "%.2f", $0) } ?? "unknown"
 
-    var deliveryPayload: [String: Any] = [:]
     if decision.shouldPlayCue {
       let result = cueDelivery.deliverCue(plan: activePlan)
       let deliveredCue = result.deliveredHaptic || result.deliveredAudio
@@ -595,7 +622,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
         result: result
       )
       ownedCueDeliveryLogs.append(deliveryLog)
-      deliveryPayload = [
+      let deliveryPayload: [String: Any] = [
         "cueMode": activePlan.cueMode,
         "deliveredHaptic": result.deliveredHaptic,
         "deliveredAudio": result.deliveredAudio,
@@ -604,24 +631,6 @@ final class WatchSessionManager: NSObject, ObservableObject {
       logEvent(deliveredCue ? "watch_cue_played" : "watch_cue_failed", payload: deliveryPayload)
     }
 
-    let epochMessage = epochPayload(
-      now: now,
-      epochStart: epochStart,
-      elapsed: elapsed,
-      hrSamples: hrSamples,
-      avgHr: avgHr,
-      motion: motion,
-      motionSum: motionSum,
-      magnitudes: magnitudes,
-      hrFeature: hrFeature,
-      motionFeature: motionFeature,
-      quality: quality,
-      roughIntensity: roughIntensity,
-      connectivityState: connectivityState,
-      prediction: prediction,
-      decision: decision,
-      deliveryPayload: deliveryPayload
-    )
     let ownedEpochLog = ownedEpochLog(
       now: now,
       epochStart: epochStart,
@@ -636,9 +645,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
       decision: decision
     )
     ownedEpochLogs.append(ownedEpochLog)
-    logWriter.appendJSONObject(epochMessage)
     logWriter.appendJSONObject(ownedEpochLog)
-    sendEpoch(epochMessage)
+    sendStatus(reason: "epoch_closed")
     refreshDisplayState()
   }
 
@@ -739,145 +747,6 @@ final class WatchSessionManager: NSObject, ObservableObject {
     return log
   }
 
-  private func epochPayload(
-    now: Date,
-    epochStart: Date,
-    elapsed: Double,
-    hrSamples: [Double],
-    avgHr: Double?,
-    motion: [(t: Double, x: Double, y: Double, z: Double)],
-    motionSum: Double,
-    magnitudes: [Double],
-    hrFeature: Double?,
-    motionFeature: Double?,
-    quality: String,
-    roughIntensity: String,
-    connectivityState: String,
-    prediction: WatchRemPrediction,
-    decision: WatchCueDecision,
-    deliveryPayload: [String: Any]
-  ) -> [String: Any] {
-    var heartRatePayload: [String: Any] = [
-      "sampleCount": hrSamples.count,
-    ]
-    var missingReasons: [String] = []
-    if let avgHr {
-      heartRatePayload["meanBpm"] = avgHr
-    } else if healthAuthorizationStatus == "denied" || healthAuthorizationStatus == "unavailable" {
-      missingReasons.append("heart_rate_\(healthAuthorizationStatus)")
-    }
-    if let minBpm = hrSamples.min() {
-      heartRatePayload["minBpm"] = minBpm
-    }
-    if let maxBpm = hrSamples.max() {
-      heartRatePayload["maxBpm"] = maxBpm
-    }
-    if let lastBpm = hrSamples.last {
-      heartRatePayload["lastBpm"] = lastBpm
-    }
-    if let hrEma {
-      heartRatePayload["hrEma"] = hrEma
-    }
-    if let hrFeature {
-      heartRatePayload["hrFeature"] = hrFeature
-    }
-
-    var motionPayload: [String: Any] = [
-      "sampleCount": motion.count,
-      "activityCountMagnitudeSum": motionSum,
-      "stableLowMovementSeconds": stableLowMovementSeconds,
-      "roughMovementIntensity": roughIntensity,
-    ]
-    if !magnitudes.isEmpty {
-      motionPayload["meanMagnitude"] = motionSum / Double(magnitudes.count)
-    }
-    if let maxMagnitude = magnitudes.max() {
-      motionPayload["maxMagnitude"] = maxMagnitude
-    }
-    if let motionEma {
-      motionPayload["motionEma"] = motionEma
-    }
-    if let motionFeature {
-      motionPayload["motionFeature"] = motionFeature
-    }
-
-    var modelFeatures: [String: Any] = [
-      "timeFeatureHours": elapsed / 3600,
-    ]
-    if let hrFeature {
-      modelFeatures["hrFeature"] = hrFeature
-    }
-    if let motionFeature {
-      modelFeatures["motionFeature"] = motionFeature
-    }
-
-    var predictionPayload: [String: Any] = [
-      "classifierVersion": prediction.classifierVersion,
-      "modelAvailable": prediction.modelAvailable,
-      "remLabel": prediction.remLabel,
-      "reason": prediction.reason,
-    ]
-    predictionPayload["remProbability"] = prediction.remProbability ?? NSNull()
-
-    var message: [String: Any] = [
-      "schemaVersion": "watch-epoch-v1",
-      "sessionId": sessionId,
-      "watchSessionId": watchSessionId,
-      "epochIndex": epochCount,
-      "epochStart": isoFormatter.string(from: epochStart),
-      "epochEnd": isoFormatter.string(from: now),
-      "elapsedSessionSeconds": elapsed,
-      "heartRate": heartRatePayload,
-      "motion": motionPayload,
-      "modelFeatures": modelFeatures,
-      "battery": [
-        "level": WKInterfaceDevice.current().batteryLevel,
-        "state": "watch",
-      ],
-      "sensorQuality": quality,
-      "connectivityState": connectivityState,
-      "prediction": predictionPayload,
-      "cueDecision": [
-        "shouldPlayCue": decision.shouldPlayCue,
-        "reason": decision.reason,
-        "cueingEnabled": decision.cueingEnabled,
-        "consecutiveLikelyRemEpochs": decision.consecutiveLikelyRemEpochs,
-      ],
-    ]
-    if !missingReasons.isEmpty {
-      message["missingReasons"] = missingReasons
-    }
-    if !deliveryPayload.isEmpty {
-      message["cueDelivery"] = deliveryPayload
-    }
-
-    return message
-  }
-
-  private func sendEpoch(_ message: [String: Any]) {
-    guard WCSession.default.activationState == .activated else {
-      syncQueue.transferUserInfo(message)
-      refreshDisplayState()
-      return
-    }
-
-    if WCSession.default.isReachable {
-      WCSession.default.sendMessage(message) { [weak self] reply in
-        DispatchQueue.main.async {
-          self?.handleWatchCommand(reply)
-        }
-      } errorHandler: { [weak self] _ in
-        self?.syncQueue.transferUserInfo(message)
-        DispatchQueue.main.async {
-          self?.refreshDisplayState()
-        }
-      }
-    } else {
-      syncQueue.transferUserInfo(message)
-      refreshDisplayState()
-    }
-  }
-
   private func sendStatus(reason: String) {
     guard WCSession.default.activationState == .activated else {
       return
@@ -926,6 +795,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
       "latestCueDecisionReason": latestCueDecisionReason,
       "syncPendingCount": syncPendingCount,
       "syncPending": syncPendingCount > 0,
+      "tlrPaused": tlrPaused,
+      "tlrDeferredUntil": tlrDeferredUntil.map { isoFormatter.string(from: $0) } ?? "",
       "modelAvailable": remModel.modelAvailable,
       "lowPowerModeEnabled": ProcessInfo.processInfo.isLowPowerModeEnabled,
       "watchReachable": WCSession.default.isReachable,
@@ -959,7 +830,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
 
   private func startedReply(commandId: String) -> [String: Any] {
     [
-      "schemaVersion": "watch-started-v1",
+      "schemaVersion": "watch-owned-started-v2",
       "commandId": commandId,
       "sessionId": sessionId,
       "watchSessionId": watchSessionId,
@@ -976,7 +847,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
     reason: String
   ) -> [String: Any] {
     [
-      "schemaVersion": "watch-start-rejected-v1",
+      "schemaVersion": "watch-owned-start-rejected-v2",
       "commandId": commandId,
       "sessionId": sessionId,
       "reason": reason,
@@ -984,10 +855,6 @@ final class WatchSessionManager: NSObject, ObservableObject {
       "watchSessionId": watchSessionId,
       "healthAuthorizationStatus": healthAuthorizationStatus
     ]
-  }
-
-  private func parseDate(_ value: String) -> Date? {
-    isoFormatter.date(from: value)
   }
 
   private func sensorQualityFor(hrCount: Int, motionCount: Int) -> String {
@@ -1093,6 +960,10 @@ final class WatchSessionManager: NSObject, ObservableObject {
 
     if let failedReason {
       displayState = .failed(failedReason)
+    } else if waitingForPhoneSync {
+      displayState = .waitingForPhoneSync
+    } else if shouldShowSyncPhoneScreen {
+      displayState = .startSyncWaiting
     } else if isStarting {
       displayState = .starting
     } else if isRunning {
@@ -1155,6 +1026,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
       "reason": reason,
     ])
     transferOwnedLogPackage(reason: reason)
+    waitingForPhoneSync = true
     refreshDisplayState()
   }
 
@@ -1251,7 +1123,7 @@ extension WatchSessionManager: WCSessionDelegate {
 
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
     DispatchQueue.main.async {
-      _ = self.handleWatchCommand(message, allowsStart: false)
+      _ = self.handleWatchCommand(message)
     }
   }
 
@@ -1261,111 +1133,35 @@ extension WatchSessionManager: WCSessionDelegate {
     replyHandler: @escaping ([String: Any]) -> Void
   ) {
     DispatchQueue.main.async {
-      replyHandler(self.handleWatchCommand(message, allowsStart: true))
+      replyHandler(self.handleWatchCommand(message))
     }
   }
 
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
     DispatchQueue.main.async {
-      _ = self.handleWatchCommand(userInfo, allowsStart: false)
+      _ = self.handleWatchCommand(userInfo)
     }
   }
 
   func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
     DispatchQueue.main.async {
-      _ = self.handleWatchCommand(applicationContext, allowsStart: false)
+      _ = self.handleWatchCommand(applicationContext)
     }
   }
 
   @discardableResult
-  private func handleWatchCommand(
-    _ message: [String: Any],
-    allowsStart: Bool = false
-  ) -> [String: Any] {
+  private func handleWatchCommand(_ message: [String: Any]) -> [String: Any] {
     let schemaVersion = message["schemaVersion"] as? String
-
-    if schemaVersion == "watch-owned-plan-v2" {
-      return handleWatchOwnedPlan(message)
-    }
 
     if schemaVersion == "watch-owned-command-v2" {
       return handleWatchOwnedCommand(message)
     }
 
-    guard schemaVersion == "watch-command-v1" else {
-      return ["schemaVersion": "watch-status-ack-v1"]
+    if schemaVersion == "watch-owned-sync-state-v2" {
+      return handleWatchOwnedSyncState(message)
     }
 
-    let commandSessionId = message["sessionId"] as? String
-    let command = message["command"] as? String
-    let commandId = message["commandId"] as? String ?? ""
-
-    if command == "start" {
-      guard allowsStart else {
-        return startRejectedReply(
-          commandId: commandId,
-          sessionId: commandSessionId ?? "",
-          reason: "start_requires_live_reply"
-        )
-      }
-
-      return startSession(
-        sessionId: commandSessionId,
-        commandId: commandId,
-        expiresAt: (message["expiresAt"] as? String).flatMap(parseDate),
-        plan: message["plan"] as? [String: Any] ?? [:]
-      )
-    }
-
-    if command == "stop" {
-      let reason = message["reason"] as? String ?? "iphone_command"
-      if commandSessionId?.isEmpty != false || commandSessionId == sessionId {
-        stopSession(reason: reason)
-      }
-      return ["schemaVersion": "watch-status-ack-v1"]
-    }
-
-    if command == "status" {
-      return statusPayload(reason: "query")
-    }
-
-    return ["schemaVersion": "watch-status-ack-v1"]
-  }
-
-  private func handleWatchOwnedPlan(_ message: [String: Any]) -> [String: Any] {
-    guard let rawPlan = message["plan"] as? [String: Any] else {
-      markFailed("missing_watch_owned_plan")
-      return [
-        "schemaVersion": "watch-owned-ack-v2",
-        "accepted": false,
-        "reason": "missing_watch_owned_plan",
-      ]
-    }
-
-    do {
-      let plan = try WatchRuntimePlan.fromDictionary(
-        rawPlan,
-        fallbackSessionId: rawPlan["sessionId"] as? String ?? "",
-        receivedAt: Date(),
-        formatter: isoFormatter
-      )
-      try planStore.save(plan)
-      activePlan = plan
-      failedReason = nil
-      hasCompletedSession = false
-      latestCueDecisionReason = remModel.modelAvailable ? "waiting_for_watch_start" : "model_asset_missing"
-      refreshPlanText()
-      refreshDisplayState()
-      sendStatus(reason: "plan_received")
-      return statusPayload(reason: "plan_received")
-    } catch {
-      markFailed("invalid_watch_owned_plan")
-      return [
-        "schemaVersion": "watch-owned-ack-v2",
-        "accepted": false,
-        "reason": "invalid_watch_owned_plan",
-      ]
-    }
+    return ["schemaVersion": "watch-owned-ack-v2"]
   }
 
   private func handleWatchOwnedCommand(_ message: [String: Any]) -> [String: Any] {
@@ -1386,6 +1182,25 @@ extension WatchSessionManager: WCSessionDelegate {
       return statusPayload(reason: "stop_command")
     }
 
+    if command == "sync_logs" {
+      transferOwnedLogPackage(reason: "phone_sync_button")
+      sendStatus(reason: "phone_sync_button")
+      return statusPayload(reason: "phone_sync_button")
+    }
+
+    if command == "ack_logs_imported" {
+      if commandSessionId?.isEmpty != false
+        || commandSessionId == activePlan?.sessionId
+        || commandSessionId == sessionId
+      {
+        waitingForPhoneSync = false
+        hasCompletedSession = true
+        refreshDisplayState()
+        sendStatus(reason: "logs_imported_on_phone")
+      }
+      return statusPayload(reason: "logs_imported_on_phone")
+    }
+
     if command == "start" {
       return [
         "schemaVersion": "watch-owned-ack-v2",
@@ -1399,6 +1214,79 @@ extension WatchSessionManager: WCSessionDelegate {
       "accepted": true,
       "reason": "command_ignored",
     ]
+  }
+
+  private func handleWatchOwnedSyncState(_ message: [String: Any]) -> [String: Any] {
+    let phase = message["phase"] as? String ?? ""
+    let state = message["state"] as? String ?? ""
+    let syncSessionId = message["sessionId"] as? String ?? ""
+
+    if phase == "start" && state == "waiting_for_watch_sync" && !syncSessionId.isEmpty {
+      phoneStartSyncSessionId = syncSessionId
+      waitingForPhoneSync = false
+      failedReason = nil
+      refreshDisplayState()
+      sendStatus(reason: "phone_waiting_for_watch_sync")
+      return statusPayload(reason: "phone_waiting_for_watch_sync")
+    }
+
+    return ["schemaVersion": "watch-owned-ack-v2"]
+  }
+
+  private func handleStartSyncReply(_ reply: [String: Any]) {
+    guard reply["schemaVersion"] as? String == "watch-owned-start-sync-v2",
+      reply["accepted"] as? Bool == true,
+      let rawPlan = reply["plan"] as? [String: Any]
+    else {
+      isStarting = false
+      markFailed(reply["reason"] as? String ?? "watch_sync_rejected")
+      return
+    }
+
+    let commandId = "watch-sync-\(UUID().uuidString)"
+    let plan: WatchRuntimePlan
+    do {
+      plan = try WatchRuntimePlan.fromDictionary(
+        rawPlan,
+        fallbackSessionId: reply["sessionId"] as? String ?? phoneStartSyncSessionId,
+        receivedAt: Date(),
+        formatter: isoFormatter
+      )
+      try planStore.save(plan)
+      activePlan = plan
+      phoneStartSyncSessionId = ""
+      refreshPlanText()
+    } catch {
+      isStarting = false
+      markFailed("invalid_watch_sync_plan")
+      return
+    }
+
+    preflightHealthAuthorization { [weak self] blockReason in
+      guard let self, self.isStarting else {
+        return
+      }
+
+      if let blockReason {
+        self.isStarting = false
+        self.markFailed(blockReason)
+        self.sendStatus(reason: blockReason)
+        return
+      }
+
+      let startReply = self.startStoredPlan(
+        plan,
+        commandId: commandId,
+        source: "watch_sync_phone",
+        healthPreflightCompleted: true
+      )
+
+      if startReply["schemaVersion"] as? String == "watch-owned-start-rejected-v2" {
+        self.isStarting = false
+        self.markFailed(startReply["reason"] as? String ?? "watch_start_rejected")
+        self.sendStatus(reason: startReply["reason"] as? String ?? "watch_start_rejected")
+      }
+    }
   }
 }
 

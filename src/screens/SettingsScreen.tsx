@@ -44,7 +44,7 @@ import {
 } from "@/src/native/phoneRuntime";
 import {
   watchRuntime,
-  type WatchRuntimeStatus,
+  type WatchOwnedStatusV2,
 } from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
@@ -690,12 +690,12 @@ export function WatchModeSettingsScreen() {
   const { selectedMode, setSelectedMode, tlrOptions, updateTlrOptions } =
     useAppState();
   const [runtimeStatus, setRuntimeStatus] =
-    React.useState<WatchRuntimeStatus | null>(null);
+    React.useState<WatchOwnedStatusV2 | null>(null);
 
   React.useEffect(() => {
     let mounted = true;
 
-    void watchRuntime.getWatchRuntimeStatus().then((status) => {
+    void watchRuntime.getLatestWatchOwnedStatus().then((status) => {
       if (mounted) {
         setRuntimeStatus(status);
       }
@@ -720,20 +720,8 @@ export function WatchModeSettingsScreen() {
           label="setup/sync client"
           value={
             runtimeStatus?.available
-              ? runtimeStatus.running
-                ? "active"
-                : "ready"
-              : runtimeStatus?.unavailableReason ?? "unknown"
-          }
-        />
-        <InfoRow
-          label="watch app"
-          value={
-            runtimeStatus?.watchAppInstalled === undefined
-              ? "unknown"
-              : runtimeStatus.watchAppInstalled
-                ? "installed"
-                : "not detected"
+              ? runtimeStatus.state
+              : runtimeStatus?.reason ?? "unknown"
           }
         />
         <InfoRow
@@ -742,7 +730,7 @@ export function WatchModeSettingsScreen() {
             runtimeStatus
               ? runtimeStatus.watchReachable
                 ? "ready for setup/sync"
-                : runtimeStatus.connectivityState
+                : runtimeStatus.connectivityState ?? "unknown"
               : "unknown"
           }
         />
@@ -750,7 +738,7 @@ export function WatchModeSettingsScreen() {
           label="REM classifier"
           value={
             runtimeStatus?.modelAvailable
-              ? runtimeStatus.classifierVersion
+              ? runtimeStatus.classifierVersion ?? "lucidcue-watch-rem-v1"
               : "mallela-rf boundary; cueing disabled until exact features verified"
           }
         />
@@ -777,9 +765,10 @@ export function WatchModeSettingsScreen() {
         />
         <InfoRow label="battery start" value="warn below 60%" />
         <SettingsNote>
-          Watch Mode is the watch-owned overnight path. Prepare the night on the
-          phone, start it in the Watch app, then sync epochs and events back for
-          review. Setup/sync reachability is not the overnight source of truth.
+          Watch Mode is the watch-owned overnight path. Begin the night on the
+          phone, sync from the Watch, then sync epochs and events back for
+          review after waking. Setup/sync reachability is not the overnight
+          source of truth.
         </SettingsNote>
       </Card>
     </Screen>

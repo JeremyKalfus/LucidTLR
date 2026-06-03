@@ -1,119 +1,80 @@
 # AGENTS.md
 
-You are working on LucidCue, an iOS/android/apple watch app that uses TLR for
-lucid dreaming. Always refer to the full "TLR_App_Plan.md" for this project
-unless otherwise stated. Keep code clean and simple. Break up tasks into
-micro-steps and test each step before continuing. If something fails tests, find
-the reason--do not do workarounds.
+You are working on LucidCue, a React Native + native iOS/watchOS app for
+targeted lucidity reactivation (TLR). Keep work small, truthful, and grounded in
+the current repo.
 
-For UI work, use UI skills and always ask Jeremy. ALWAYS be incredibly internally consistent with UI. Don't double-nest cards or use 100 different fonts or font sizes. Try to stick to 2 different fonts, 2-3 font sizes. You may refer to the Figma MCP connection documented in `docs/figma/FIGMA_MCP.md`, but we don't use it much anymore.
+## Read First
 
-Liberally ask for clarification and user input on UI, functionality-based, or
-science informed app decisions. You are not the decider of these things, Jeremy
-is. His input is needed, so you should not make decisions about these behind his
-back. However, for anything code-related or technical related, try to do it
-entirely yourself. If you can do something on your own, do not ask him to do it
-for you. For example, if you are doing something with Supabase and think you
-need him to login to his account, try first to see if you can do it via CLI or
-computer use. The goal should be technical automation.
+- `TLR_App_Plan.md` is the product/science contract.
+- `docs/llm-orientation.md` is the current implementation briefing.
+- `docs/decisions/001-watch-mode-is-watch-owned.md` locks Watch Mode ownership.
+- `docs/decisions/002-phone-mode-is-phone-owned.md` locks Phone Mode ownership.
 
-Refer to the study PDFs in the repo for technical info, Jeremy's emails with the Paller lab, or ask Jeremy. [Karen R. Konkoly et al 2024.pdf](<Karen R. Konkoly et al 2024.pdf>) used phones for TLR, [Mallela et al 2024.pdf](<Mallela et al 2024.pdf>) used apple watches.
+For Watch Mode work, read the orientation and Watch ADR before coding. For Phone
+Mode work, read the orientation and Phone ADR before coding.
 
-Always practice context hygiene, especially when working on longer tasks. Use
-subagents liberally.
+## Non-Negotiable Invariants
 
-Tradeoff: These guidelines bias toward caution over speed. For trivial tasks,
-use judgment.
+- Phone Mode is phone-owned.
+- Watch Mode is watch-owned.
+- In Watch Mode, the iPhone is sleep audio plus sync/status UI only.
+- Do not implement live iPhone-driven Watch cue timing.
+- Do not add research-control, no-cue, untrained-cue, sham, or placebo nights.
+- Do not make therapeutic, diagnostic, medical-efficacy, or guaranteed-induction
+  claims.
+- Do not upload dream journal text/audio by default.
+- Do not create Supabase auth or user-facing research upload unless Jeremy
+  explicitly asks.
+- Do not add Android watch support.
+- Do not rename TLR to TMR.
 
-## 1. Think Before Coding
+## Jeremy Decision Boundary
 
-Don't assume. Don't hide confusion. Surface tradeoffs.
+Ask Jeremy whenever you are uncertain about anything nontechnical: UI flow,
+copy intent, product behavior, science/protocol, consent/privacy, research
+posture, claims, or user-facing defaults.
 
-Before implementing:
+For technical tradeoffs, try to solve them yourself. If you need Jeremy, explain
+the high-level tradeoff and the practical consequence of each option.
 
-- State assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them; do not pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what is confusing. Ask.
+## Engineering Rules
 
-## 2. Simplicity First
+- Prefer repo patterns over new abstractions.
+- Keep edits surgical; every changed line should trace to the request.
+- Do not refactor unrelated code.
+- Remove imports, variables, and files made unused by your own changes.
+- Do not revert user changes unless explicitly asked.
+- Do not improvise protocol constants inside UI components.
+- For UI work, preserve the existing visual system and ask before changing flows,
+  wording intent, or design direction.
 
-Minimum code that solves the problem. Nothing speculative.
+## Handoff Rule
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No flexibility or configurability that was not requested.
-- No error handling for impossible scenarios.
-- If 200 lines could be 50, rewrite it.
+Use `.agent_work/current.md` for native iOS/watch work, multi-agent work,
+protocol/science/session behavior changes, tasks crossing more than three major
+areas, interrupted long-running work, or work that cannot be finished in one
+clean pass. Keep it concise and update it before stopping.
 
-Ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+Durable architectural decisions belong in `docs/decisions/`, not in the handoff
+file.
 
-## 3. Surgical Changes
+## Definition Of Done
 
-Touch only what you must. Clean up only your own mess.
+- JS/docs-only changes: run `npm run typecheck`, `npm test`, and
+  `git diff --check`.
+- Native iOS/watch changes: also run the relevant iPhone and Watch simulator
+  builds when available.
+- Watch Mode changes: run the Watch source-of-truth/legacy-string tests and
+  scan for old phone-owned Watch runtime strings.
+- Final responses must mention verification run, verification not run with
+  reason, remaining risks, and the main files changed.
 
-When editing existing code:
+## Science/Data Guardrails
 
-- Do not improve adjacent code, comments, or formatting.
-- Do not refactor things that are not broken.
-- Match existing style, even if you would do it differently.
-- If you notice unrelated dead code, mention it; do not delete it.
+Phone Mode follows Konkoly et al. 2024. Watch Mode follows Mallela/Mallett 2024.
+Carr et al. 2023 is the presleep TLR/lucid-mindset anchor. Tan & Fan 2023 is
+evidence context only. Peters et al. is background only for expectation effects,
+dream journaling, association training, and lucidity measures.
 
-When your changes create orphans:
-
-- Remove imports, variables, and functions that your changes made unused.
-- Do not remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-Define success criteria. Loop until verified.
-
-Transform tasks into verifiable goals:
-
-- "Add validation" -> "Write tests for invalid inputs, then make them pass."
-- "Fix the bug" -> "Write a test that reproduces it, then make it pass."
-- "Refactor X" -> "Ensure tests pass before and after."
-
-For multi-step tasks, state a brief plan:
-
-```text
-1. [Step] -> verify: [check]
-2. [Step] -> verify: [check]
-3. [Step] -> verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria such as
-"make it work" require constant clarification.
-
-These guidelines are working if there are fewer unnecessary changes in diffs,
-fewer rewrites due to overcomplication, and clarifying questions come before
-implementation rather than after mistakes.
-
-## Science/data guardrails
-
-Do not improvise the TLR protocol.
-
-Phone Mode follows Konkoly et al. 2024.
-Watch Mode follows Mallela/Mallett 2024.
-Carr et al. 2023 is the presleep TLR/lucid-mindset anchor.
-Tan & Fan 2023 is evidence-context only: lucid-dream induction remains mixed
-and should not be overclaimed.
-Peters et al. is background only for expectation effects, dream journaling,
-association training, and lucidity measures. Do not add EMS/GVS.
-
-Do not:
-
-- add research-control nights
-- add no-cue nights
-- add untrained-cue nights
-- add sham/placebo language
-- add EMS/GVS
-- add galantamine or substance suggestions
-- make therapeutic claims
-- rename TLR to TMR
-- upload dream journal text/audio by default
-- create Supabase auth before upload consent
-- treat Log Sleep Only as a research control
-- put protocol constants inside UI components
+When uncertain, preserve the current plan and ask Jeremy.

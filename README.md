@@ -18,8 +18,9 @@ This is not a medical device or treatment, and results are not guaranteed.
 - Onboarding is modeled as a single data-driven survey wizard.
 - Local SQLite and Supabase schemas are scaffolded.
 - Upload decisions are centralized and consent-gated.
-- Watch Mode v2 targets Watch-owned overnight operation: the iPhone syncs the
-  plan/assets/model before sleep and imports Watch logs after waking.
+- Watch Mode uses Watch-owned overnight operation: the iPhone syncs the
+  plan/assets/model before sleep, acts as sleep audio/status UI during the
+  night, and imports Watch logs after waking.
 - Log Sleep Only / No TLR can use Watch Mode for Watch-owned sensing and log
   sync with cue delivery disabled.
 - WatchConnectivity is for pre-sleep sync and morning log import, not live cue
@@ -27,8 +28,8 @@ This is not a medical device or treatment, and results are not guaranteed.
 - Watch Mode uses experimental REM probability, not validated sleep staging. It
   does not use GPS, SensorKit, live Apple sleep stages, wrist temperature,
   respiratory rate, or SpO2.
-- The current phone-dependent Watch runtime is legacy; Watch-owned v2 is the
-  target, and physical overnight reliability is not yet claimed.
+- Watch Mode is engineering beta: the architecture is current, but physical
+  overnight reliability is not yet claimed.
 
 ## Development Builds
 

@@ -45,8 +45,6 @@ import {
   loadWatchEpochsForSession,
   loadWatchRuntimeEventsForSession,
   summarizeWatchSession,
-  saveWatchEpochs,
-  saveWatchRuntimeEvents,
 } from "@/src/data/local/repositories";
 import type {
   ExternalSleepSource,
@@ -59,12 +57,9 @@ import type {
 import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import {
-  collectWatchRuntimeDataForLocalSessions,
   summarizeWatchRuntime,
-  watchRuntime,
   type WatchRuntimeEvent,
   type WatchRuntimeLogSummary,
-  type WatchRuntimeStatus,
 } from "@/src/native/watch";
 import {
   phoneRuntime,
@@ -568,30 +563,6 @@ function DataNote({ children }: { children: string }) {
   );
 }
 
-function watchHealthStatusLabel(status: WatchRuntimeStatus | null): string {
-  return status?.watchHealthAuthorizationStatus ?? "unknown";
-}
-
-function watchSetupSyncStatusLabel(status: WatchRuntimeStatus | null): string {
-  if (!status) {
-    return "unknown";
-  }
-
-  return status.watchReachable ? "ready for setup/sync" : status.connectivityState;
-}
-
-function watchHealthStatusAction(status: WatchRuntimeStatus | null): string | null {
-  if (status?.watchHealthAuthorizationStatus === "denied") {
-    return "Enable HealthKit heart-rate access for LucidCue on Apple Watch before preparing Watch Mode.";
-  }
-
-  if (status?.watchHealthAuthorizationStatus === "unavailable") {
-    return "HealthKit heart-rate access is unavailable on this Apple Watch.";
-  }
-
-  return null;
-}
-
 function useRuntimeTimeline() {
   const [runtimeLogs, setRuntimeLogs] = React.useState<NativePhoneRuntimeEvent[]>(
     [],
@@ -744,27 +715,6 @@ function useSleepNightRecords() {
 
               watchEpochs = storedEpochs;
               watchRuntimeEvents = storedEvents;
-
-              if (watchRuntime.isAvailable()) {
-                try {
-                  const [nativeEpochs, nativeEvents] = await Promise.all([
-                    watchRuntime.getWatchEpochs(id),
-                    watchRuntime.getWatchRuntimeLogs(id),
-                  ]);
-
-                  if (nativeEpochs.length > 0) {
-                    await saveWatchEpochs({ db, records: nativeEpochs });
-                    watchEpochs = nativeEpochs;
-                  }
-
-                  if (nativeEvents.length > 0) {
-                    await saveWatchRuntimeEvents({ db, events: nativeEvents });
-                    watchRuntimeEvents = nativeEvents;
-                  }
-                } catch {
-                  // SQLite watch data remains available after the native runtime is closed.
-                }
-              }
             }
 
             return {
@@ -881,12 +831,6 @@ order by started_at desc`,
   }
 
   return nativeLogs;
-}
-
-async function collectWatchRuntimeDataForExport(
-  db: Awaited<ReturnType<typeof getLocalDb>>,
-): Promise<void> {
-  await collectWatchRuntimeDataForLocalSessions({ db, runtime: watchRuntime });
 }
 
 function confirmFullDataImport(): Promise<boolean> {
@@ -1006,7 +950,6 @@ export function DataScreen() {
     try {
       const db = await getLocalDb();
       const nativePhoneRuntimeLogs = await collectPhoneRuntimeLogsForExport(db);
-      await collectWatchRuntimeDataForExport(db);
       await saveArchivedPhoneRuntimeLogs({
         db,
         logs: nativePhoneRuntimeLogs,
@@ -1514,8 +1457,6 @@ export function IphoneRuntimeDataScreen() {
 
 export function WatchModeDataScreen() {
   const { activeSession, sessionHistory } = useAppState();
-  const [watchRuntimeStatus, setWatchRuntimeStatus] =
-    React.useState<WatchRuntimeStatus | null>(null);
   const [epochs, setEpochs] = React.useState<WatchEpoch[]>([]);
   const [runtimeEvents, setRuntimeEvents] = React.useState<WatchRuntimeEvent[]>([]);
   const [summary, setSummary] = React.useState<{
@@ -1540,31 +1481,6 @@ export function WatchModeDataScreen() {
         event.eventType === "watch_cue_suppressed" ||
         event.eventType === "watch_cue_failed",
     );
-  const watchHealthAction = watchHealthStatusAction(watchRuntimeStatus);
-
-  React.useEffect(() => {
-    let mounted = true;
-
-    async function loadWatchStatus() {
-      try {
-        const status = await watchRuntime.getWatchRuntimeStatus();
-
-        if (mounted) {
-          setWatchRuntimeStatus(status);
-        }
-      } catch {
-        if (mounted) {
-          setWatchRuntimeStatus(null);
-        }
-      }
-    }
-
-    void loadWatchStatus();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   React.useEffect(() => {
     let mounted = true;
@@ -1580,7 +1496,7 @@ export function WatchModeDataScreen() {
 
       try {
         const db = await getLocalDb();
-        let [nextEpochs, nextSummary, nextEvents] = await Promise.all([
+        const [nextEpochs, nextSummary, nextEvents] = await Promise.all([
           loadWatchEpochsForSession({
             db,
             sessionId: latestWatchSession.id,
@@ -1594,29 +1510,6 @@ export function WatchModeDataScreen() {
             sessionId: latestWatchSession.id,
           }),
         ]);
-
-        try {
-          const [nativeEpochs, nativeEvents] = await Promise.all([
-            watchRuntime.getWatchEpochs(latestWatchSession.id),
-            watchRuntime.getWatchRuntimeLogs(latestWatchSession.id),
-          ]);
-
-          if (nativeEpochs.length > 0) {
-            await saveWatchEpochs({ db, records: nativeEpochs });
-            nextEpochs = nativeEpochs;
-            nextSummary = await summarizeWatchSession({
-              db,
-              sessionId: latestWatchSession.id,
-            });
-          }
-
-          if (nativeEvents.length > 0) {
-            await saveWatchRuntimeEvents({ db, events: nativeEvents });
-            nextEvents = nativeEvents;
-          }
-        } catch {
-          // Local SQLite data remains the source of truth when native runtime is unavailable.
-        }
 
         if (mounted) {
           setEpochs(nextEpochs);
@@ -1649,52 +1542,40 @@ export function WatchModeDataScreen() {
 
       <Card>
         <InfoRow
-          label="setup/sync status"
-          value={watchSetupSyncStatusLabel(watchRuntimeStatus)}
-        />
-        <InfoRow
           label="latest synced epoch"
-          value={watchRuntimeStatus?.latestEpochAt ?? "none"}
+          value={epochs[epochs.length - 1]?.epochEnd ?? "none"}
         />
         <InfoRow
           label="REM probability"
           value={
-            typeof watchRuntimeStatus?.latestRemProbability === "number"
-              ? watchRuntimeStatus.latestRemProbability.toFixed(2)
+            typeof epochs[epochs.length - 1]?.remProbability === "number"
+              ? epochs[epochs.length - 1]?.remProbability?.toFixed(2) ?? "unavailable"
               : "unavailable"
           }
         />
         <InfoRow
           label="sensor quality"
-          value={watchRuntimeStatus?.latestSensorQuality ?? "unknown"}
-        />
-        <InfoRow
-          label="HealthKit heart rate"
-          value={watchHealthStatusLabel(watchRuntimeStatus)}
+          value={epochs[epochs.length - 1]?.sensorQuality ?? "unknown"}
         />
         <InfoRow
           label="watch battery"
           value={
-            typeof watchRuntimeStatus?.watchBatteryLevel === "number"
-              ? `${Math.round(watchRuntimeStatus.watchBatteryLevel * 100)}%`
+            typeof epochs[epochs.length - 1]?.watchBatteryLevel === "number"
+              ? `${Math.round((epochs[epochs.length - 1]?.watchBatteryLevel ?? 0) * 100)}%`
               : "unknown"
           }
         />
         <InfoRow
           label="classifier"
           value={
-            watchRuntimeStatus?.modelAvailable
-              ? watchRuntimeStatus.classifierVersion
-              : "disabled until verified"
+            epochs[epochs.length - 1]?.classifierVersion ??
+            "classifier unavailable"
           }
         />
         <InfoRow
           label="local session"
           value={latestWatchSession?.id ?? "no local watch session"}
         />
-        {watchHealthAction ? (
-          <DataNote>{watchHealthAction}</DataNote>
-        ) : null}
         <InfoRow
           label="epochs"
           value={summary ? String(summary.epochsReceived) : "0"}
@@ -1934,13 +1815,6 @@ export function SleepHistoryDataScreen() {
           }
         }
 
-        if (session?.mode === "watch" && watchRuntime.isAvailable()) {
-          try {
-            await watchRuntime.stopWatchSession({ reason: "user_stopped" });
-          } catch {
-            // Local deletion should still work if native runtime cleanup already happened.
-          }
-        }
       }
 
       const db = await getLocalDb();
@@ -1964,12 +1838,6 @@ export function SleepHistoryDataScreen() {
         await phoneRuntime.clearPhoneRuntimeLogs(selectedRecord.id);
       } catch {
         // A non-phone or older native-only record may not have a native log file.
-      }
-
-      try {
-        await watchRuntime.clearWatchRuntimeLogs(selectedRecord.id);
-      } catch {
-        // A non-watch record may not have watch runtime logs.
       }
 
       setSelectedIndex((index) => Math.min(index, Math.max(0, records.length - 2)));

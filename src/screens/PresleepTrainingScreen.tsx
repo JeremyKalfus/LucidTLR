@@ -8,7 +8,6 @@ import {
   Play,
   Plus,
   Smartphone,
-  Watch,
 } from "lucide-react-native";
 import React from "react";
 import { Alert, Text, View } from "react-native";
@@ -35,7 +34,6 @@ import {
 } from "@/src/features/sessions/runtimeStartLabels";
 import {
   applyPhoneNightCalibrationToSettings,
-  buildSleepTimingPrior,
 } from "@/src/engine";
 import {
   buildNativePhoneSessionPlanForLockedTraining,
@@ -43,16 +41,11 @@ import {
   latestPhoneTrainingCompletedTimestamp,
   phoneRuntime,
 } from "@/src/native/phoneRuntime";
-import {
-  buildWatchOwnedSessionPlan,
-  watchRuntime,
-  type WatchOwnedStatusV2,
-} from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Phone runtime failed.";
+function errorMessage(error: unknown, fallback = "Runtime failed."): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function formatPlaybackTime(seconds: number): string {
@@ -121,8 +114,6 @@ export function PresleepTrainingScreen() {
   const [playedCueCount, setPlayedCueCount] = React.useState(0);
   const [isStartingRuntime, setIsStartingRuntime] = React.useState(false);
   const [isTrainingPaused, setIsTrainingPaused] = React.useState(false);
-  const [watchOwnedStatus, setWatchOwnedStatus] =
-    React.useState<WatchOwnedStatusV2 | null>(null);
   const nextTrainingCueIndexRef = React.useRef(0);
   const finishingTrainingRef = React.useRef(false);
   const canStart =
@@ -140,6 +131,13 @@ export function PresleepTrainingScreen() {
     session?.mode === "phone" && phoneRuntime.isAvailable();
   const isTrainingAudioReady =
     usesNativeLockedTraining || (trainingStatus.isLoaded && cueStatus.isLoaded);
+  const canStartTrainingNow = isTrainingAudioReady;
+  let startTrainingLabel = "Start Training";
+  if (!isTrainingAudioReady) {
+    startTrainingLabel = "Loading Training Audio...";
+  }
+  const trainingActionDisabled =
+    !isTrainingAudioReady;
 
   const appendTrainingDebugEvent = React.useCallback(
     (eventType: string, payload: Record<string, unknown>) => {
@@ -147,6 +145,12 @@ export function PresleepTrainingScreen() {
     },
     [],
   );
+
+  React.useEffect(() => {
+    if (activeSession?.mode === "watch") {
+      router.replace("/active-night-session");
+    }
+  }, [activeSession]);
 
   const completeTrainingFromAudio = React.useCallback(
     (reason: string) => {
@@ -269,7 +273,7 @@ export function PresleepTrainingScreen() {
   }, [session?.id, session?.status]);
 
   async function startTrainingPlayback() {
-    if (!canStart || !isTrainingAudioReady) {
+    if (!canStart || !canStartTrainingNow) {
       return;
     }
 
@@ -510,34 +514,7 @@ export function PresleepTrainingScreen() {
 
     try {
       if (runtimeSession.mode === "watch") {
-        if (!runtimeSession.trainingEndedAt) {
-          throw new Error("Watch Mode requires completed presleep training.");
-        }
-
-        const sleepTiming = buildSleepTimingPrior({
-          trainingEndedAt: runtimeSession.trainingEndedAt,
-          settings: effectiveEngineSettings,
-          historicalSleepPrior:
-            sleepHistory.enabled &&
-            sleepHistory.prior &&
-            sleepHistory.prior.confidence !== "none"
-              ? sleepHistory.prior
-              : undefined,
-          phoneNightPrior:
-            phoneNightCalibration.nightsIncluded > 0
-              ? phoneNightCalibration
-              : undefined,
-        });
-        const plan = buildWatchOwnedSessionPlan({
-          session: runtimeSession,
-          settings: effectiveEngineSettings,
-          tlrOptions,
-          sleepTiming,
-        });
-
-        await watchRuntime.prepareWatchOwnedSession(plan);
-        setWatchOwnedStatus(await watchRuntime.getLatestWatchOwnedStatus());
-        router.push("/active-night-session");
+        router.replace("/active-night-session");
         return;
       }
 
@@ -708,9 +685,9 @@ export function PresleepTrainingScreen() {
 
       {canStart && !tlrOptions.skipGuidedTraining ? (
         <PrimaryPillButton
-          disabled={!isTrainingAudioReady}
+          disabled={trainingActionDisabled}
           icon={Play}
-          label={isTrainingAudioReady ? "Start Training" : "Loading Training Audio..."}
+          label={startTrainingLabel}
           onPress={() => {
             void startTrainingPlayback();
           }}
@@ -736,7 +713,7 @@ export function PresleepTrainingScreen() {
           {canStartRuntime ? (
             <PrimaryPillButton
               disabled={isStartingRuntime}
-              icon={session.mode === "watch" ? Watch : Smartphone}
+              icon={Smartphone}
               label={nativeRuntimeStartButtonLabel({
                 mode: session.mode === "watch" ? "watch" : "phone",
                 isStarting: isStartingRuntime,
@@ -745,26 +722,6 @@ export function PresleepTrainingScreen() {
                 void startNightSession();
               }}
             />
-          ) : null}
-          {watchOwnedStatus ? (
-            <Card compact>
-              <InfoRow
-                label="watch setup"
-                value={
-                  watchOwnedStatus.watchReachable
-                    ? "ready for setup/sync"
-                    : watchOwnedStatus.connectivityState ?? "delayed"
-                }
-              />
-              <InfoRow
-                label="classifier"
-                value={
-                  watchOwnedStatus.modelAvailable
-                    ? watchOwnedStatus.classifierVersion ?? "lucidcue-watch-rem-v1"
-                    : "unavailable; cueing disabled"
-                }
-              />
-            </Card>
           ) : null}
           <PrimaryPillButton
             icon={Moon}

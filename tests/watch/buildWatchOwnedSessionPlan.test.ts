@@ -109,6 +109,31 @@ describe("buildWatchOwnedSessionPlan", () => {
     expect(plan.cueMode).toBe("haptic_only");
   });
 
+  it("does not require presleep training timestamps for Watch Mode TLR", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const session = {
+      ...watchSession(),
+      status: "setup" as const,
+      trainingStartedAt: undefined,
+      trainingEndedAt: undefined,
+    };
+    const sleepTiming = buildSleepTimingPrior({
+      trainingEndedAt: session.startedAt,
+      settings,
+    });
+
+    const plan = buildWatchOwnedSessionPlan({
+      session,
+      settings,
+      sleepTiming,
+      createdAt: "2026-01-01T03:56:00.000Z",
+    });
+
+    expect(plan.validAfter).toBe(session.startedAt);
+    expect(plan.trainingCompletedAt).toBeUndefined();
+    expect(plan.earliestCueAt).toBe(sleepTiming.likelyPhoneCueWindowStart);
+  });
+
   it("builds a Watch-owned no-cue plan for Watch Mode sleep logs", () => {
     const settings = createDefaultEngineSettings("standard");
     const sleepTiming = buildSleepTimingPrior({

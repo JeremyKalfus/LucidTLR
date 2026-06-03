@@ -115,10 +115,15 @@ treatment.
 
 - iPhone nearby before sleep for WatchConnectivity sync, then charging near bed.
 - Apple Watch charged and worn.
-- iPhone syncs the session plan, cue assets, and Watch REM model before sleep.
+- Phone shows `Waiting for Watch Sync`; Watch shows `Sync Phone`, and the user
+  starts Watch Mode from the Watch.
+- iPhone syncs the session plan, cue assets, and Watch REM model at that
+  user-led start checkpoint.
 - Watch app owns overnight sensor collection, experimental REM probability, cue timing, cue delivery, movement gates, and local logs.
+- During the night, iPhone is sleep audio plus clock/status UI only.
 - Watch Mode does not depend on live iPhone messages for cue timing.
-- iPhone imports Watch epoch, cue, and movement logs after waking.
+- After `Wake` on Watch, Watch waits for phone sync and iPhone shows `Sync
+  Watch` to import Watch epoch, cue, and movement logs.
 - Watch-detected movement pauses cueing to reduce arousal/awakening risk.
 - If movement occurs shortly after a cue, cueing is suppressed for a pause window before resuming.
 
@@ -272,7 +277,8 @@ Aligned with Mallela/Mallett 2024, with LucidCue product safety gates:
   REM-informed cueing, not validated sleep staging or exact Mallela feature
   parity.
 - If likely REM is detected, Watch delivers the cue.
-- iPhone involvement is pre-sleep plan/assets/model sync and morning log import.
+- iPhone involvement is user-led start sync, sleep audio/status UI, and morning
+  log import.
 - WatchConnectivity is not used for live cue timing.
 - Beginning with the fifth consecutive likely-REM epoch, suppress additional cues until the REM period ends to reduce awakenings.
 - Watch movement data is also used for arousal gating:
@@ -280,13 +286,17 @@ Aligned with Mallela/Mallett 2024, with LucidCue product safety gates:
   - movement shortly after a cue triggers a longer pause,
   - cueing resumes only after a stable low-movement period.
 
-Implementation status: the current phone-dependent Watch runtime is legacy.
-Watch-owned Watch Mode v2 is the target.
+Implementation status: Watch-owned Watch Mode v2 is the current architecture
+and remains engineering beta for physical overnight reliability.
 
 ## Research / Data Posture
 
 - Public app first.
 - Strong optional research element.
+- Keep data structures research-ready where it is simple and does not change
+  user-facing behavior.
+- Do not build user-facing auth, upload, or research flows unless Jeremy
+  explicitly asks.
 - No research-control nights for now.
 - Everyone gets the same active TLR protocol.
 - No no-cue or untrained-cue conditions.
@@ -621,7 +631,8 @@ Use the Karpathy-style `AGENTS.md` ruleset from `multica-ai/andrej-karpathy-skil
 - Do not add research controls.
 - Do not add no-cue nights.
 - Do not add untrained-cue nights.
-- Do not add backend/auth unless explicitly requested.
+- Keep data structures research-ready, but do not add user-facing backend/auth
+  or upload flows unless explicitly requested.
 - Do not replace or overclaim the Watch REM classifier without explicit Jeremy
   approval.
 - Do not make therapeutic claims.

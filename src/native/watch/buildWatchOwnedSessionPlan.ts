@@ -59,15 +59,13 @@ export function buildWatchOwnedSessionPlan(
     throw new Error("Watch-owned Mode requires a watch session.");
   }
 
-  if (isTlrSession && !session.trainingEndedAt) {
-    throw new Error("Watch-owned Mode requires completed presleep training.");
-  }
+  const watchModeAnchorAt = session.trainingEndedAt ?? session.startedAt;
 
   return {
     protocol: WATCH_OWNED_SESSION_PLAN_PROTOCOL,
     sessionId: session.id,
     createdAt: input.createdAt ?? new Date().toISOString(),
-    validAfter: session.trainingEndedAt ?? session.startedAt,
+    validAfter: watchModeAnchorAt,
     expiresAt: sleepTiming.expectedWakeAt,
     trainingCompletedAt: session.trainingEndedAt,
     estimatedSleepStartAt: sleepTiming.estimatedSleepOnsetAt,
