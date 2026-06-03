@@ -26,8 +26,10 @@ import {
   type NativePhoneRuntimeEvent,
 } from "@/src/native/phoneRuntime";
 import {
+  buildWatchOwnedSessionPlan,
   watchRuntime,
 } from "@/src/native/watch";
+import { buildSleepTimingPrior } from "@/src/engine";
 import { useAppState } from "@/src/state/AppState";
 import { colors, spacing, typography } from "@/src/theme/tokens";
 
@@ -127,9 +129,11 @@ export function HomeScreen() {
   } | null>(null);
   const {
     engineSettings,
+    phoneNightCalibration,
     selectedMode,
     sessionHistory,
     setSelectedMode,
+    sleepHistory,
     startSession,
     tlrOptions,
     updateTlrOptions,
@@ -172,6 +176,66 @@ export function HomeScreen() {
     startSession("tlr");
     router.push("/presleep-training");
   }, [selectedMode, startSession]);
+  const handleNoTlr = React.useCallback(async () => {
+    if (selectedMode !== "watch") {
+      startSession("sleep_log");
+      router.push("/active-night-session");
+      return;
+    }
+
+    try {
+      const status = await watchRuntime.getLatestWatchOwnedStatus();
+
+      if (!status.available) {
+        Alert.alert(
+          "Watch Mode setup needed",
+          status.reason ?? "Install a current iOS development build before preparing Watch Mode.",
+        );
+        return;
+      }
+    } catch (error) {
+      Alert.alert("Watch Mode setup needed", errorMessage(error));
+      return;
+    }
+
+    const session = startSession("sleep_log");
+    const sleepTiming = buildSleepTimingPrior({
+      trainingEndedAt: session.startedAt,
+      settings: engineSettings,
+      historicalSleepPrior:
+        sleepHistory.enabled &&
+        sleepHistory.prior &&
+        sleepHistory.prior.confidence !== "none"
+          ? sleepHistory.prior
+          : undefined,
+      phoneNightPrior:
+        phoneNightCalibration.nightsIncluded > 0
+          ? phoneNightCalibration
+          : undefined,
+    });
+    const plan = buildWatchOwnedSessionPlan({
+      session,
+      settings: engineSettings,
+      tlrOptions,
+      sleepTiming,
+    });
+
+    try {
+      await watchRuntime.prepareWatchOwnedSession(plan);
+    } catch (error) {
+      Alert.alert("Watch Mode setup needed", errorMessage(error));
+      return;
+    }
+
+    router.push("/active-night-session");
+  }, [
+    engineSettings,
+    phoneNightCalibration,
+    selectedMode,
+    sleepHistory,
+    startSession,
+    tlrOptions,
+  ]);
   const handleTlrOptionsChange = React.useCallback(
     (patch: TlrOptionsPatch) => {
       void updateTlrOptions(patch);
@@ -351,8 +415,7 @@ export function HomeScreen() {
             icon={Moon}
             label="No TLR"
             onPress={() => {
-              startSession("sleep_log");
-              router.push("/active-night-session");
+              void handleNoTlr();
             }}
           />
           <PrimaryPillButton

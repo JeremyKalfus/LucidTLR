@@ -136,8 +136,7 @@ export async function collectWatchRuntimeDataForLocalSessions(input: {
 }> {
   const sessions = await input.db.query<{ id: string }>(
     `select id from sessions
-where session_type = 'tlr'
-  and mode = 'watch'
+where mode = 'watch'
 order by started_at desc`,
   );
   let importedSessionCount = 0;

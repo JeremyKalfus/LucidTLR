@@ -20,6 +20,8 @@ This is not a medical device or treatment, and results are not guaranteed.
 - Upload decisions are centralized and consent-gated.
 - Watch Mode v2 targets Watch-owned overnight operation: the iPhone syncs the
   plan/assets/model before sleep and imports Watch logs after waking.
+- Log Sleep Only / No TLR can use Watch Mode for Watch-owned sensing and log
+  sync with cue delivery disabled.
 - WatchConnectivity is for pre-sleep sync and morning log import, not live cue
   timing.
 - Watch Mode uses experimental REM probability, not validated sleep staging. It

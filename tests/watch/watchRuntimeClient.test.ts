@@ -34,7 +34,6 @@ function nativeRuntimeModule(
     getWatchRuntimeLogs: vi.fn(() => Promise.resolve([])),
     clearWatchRuntimeLogs: vi.fn(() => Promise.resolve()),
     prepareWatchOwnedSession: vi.fn(() => Promise.resolve()),
-    requestWatchOwnedStart: vi.fn(() => Promise.resolve()),
     requestWatchOwnedStop: vi.fn(() => Promise.resolve()),
     getLatestWatchOwnedStatus: vi.fn(() =>
       Promise.resolve({
@@ -140,7 +139,7 @@ describe("watch runtime client", () => {
     });
   });
 
-  it("exposes optional Watch-owned v2 methods without requiring them for availability", async () => {
+  it("exposes optional Watch-owned v2 prepare/import/stop without requiring them for legacy availability", async () => {
     const nativeModule = nativeRuntimeModule();
     const plan = {
       protocol: "watch-session-plan-v2" as const,
@@ -184,7 +183,6 @@ describe("watch runtime client", () => {
     });
 
     await client.prepareWatchOwnedSession(plan);
-    await client.requestWatchOwnedStart("session-1");
     await client.requestWatchOwnedStop({ sessionId: "session-1" });
 
     await expect(client.getLatestWatchOwnedStatus()).resolves.toMatchObject({
@@ -197,9 +195,72 @@ describe("watch runtime client", () => {
       cueDeliveries: [],
     });
     expect(nativeModule.prepareWatchOwnedSession).toHaveBeenCalledWith(plan);
-    expect(nativeModule.requestWatchOwnedStart).toHaveBeenCalledWith({
-      sessionId: "session-1",
+    expect("requestWatchOwnedStart" in client).toBe(false);
+  });
+
+  it("does not require live reachability to prepare a Watch-owned v2 plan", async () => {
+    const nativeModule = nativeRuntimeModule({
+      getLatestWatchOwnedStatus: vi.fn(() =>
+        Promise.resolve({
+          protocol: "watch-owned-status-v2" as const,
+          available: true,
+          runtimeOwner: "watch" as const,
+          state: "ready" as const,
+          watchReachable: false,
+          connectivityState: "delayed" as const,
+        }),
+      ),
     });
+    const client = createWatchRuntimeClient({
+      platform: "ios",
+      nativeModule,
+    });
+    const plan = {
+      protocol: "watch-session-plan-v2" as const,
+      sessionId: "session-delayed",
+      createdAt: "2026-01-01T04:00:00.000Z",
+      expiresAt: "2026-01-01T12:00:00.000Z",
+      earliestCueAt: "2026-01-01T08:00:00.000Z",
+      stopAt: "2026-01-01T12:00:00.000Z",
+      runtimeOwner: "watch" as const,
+      cueMode: "haptic_only" as const,
+      cueBudget: 60,
+      minInterCueIntervalSec: 20,
+      suppressCueFromConsecutiveLikelyRemEpoch: 5,
+      epochDurationSec: 30,
+      accelerometerHz: 30,
+      movementGateConfig: {
+        stableLowMovementRequiredSeconds: 60,
+        cueAssociatedMovementWindowSeconds: 30,
+        cueAssociatedMovementPauseSeconds: 180,
+      },
+      batteryPolicy: {
+        recommendedStartBatteryPct: 90,
+        allowStartBelowPct: 70,
+        requireOverrideBelowPct: 60,
+        disableCueingBelowPct: 25,
+        stopRuntimeBelowPct: 20,
+        hardStopBelowPct: 12,
+      },
+      lowPowerModePolicy: "warn_degraded" as const,
+      remModelManifest: {
+        modelId: "mallela_rf_v1",
+        version: "lucidcue-watch-rem-v1",
+        threshold: 0.24,
+        featureConfigVersion: "mallela-approx-feature-dev",
+      },
+      privacyLoggingMode: "summary_only" as const,
+    };
+
+    await client.prepareWatchOwnedSession(plan);
+
+    await expect(client.getLatestWatchOwnedStatus()).resolves.toMatchObject({
+      state: "ready",
+      watchReachable: false,
+      connectivityState: "delayed",
+    });
+    expect(nativeModule.prepareWatchOwnedSession).toHaveBeenCalledWith(plan);
+    expect(nativeModule.getWatchRuntimeStatus).not.toHaveBeenCalled();
   });
 
   it("does not require optional Watch-owned methods for legacy runtime availability", async () => {

@@ -93,11 +93,38 @@ final class WatchSessionManager: NSObject, ObservableObject {
       return
     }
 
-    _ = startStoredPlan(
-      plan,
-      commandId: "watch-local-\(UUID().uuidString)",
-      source: "watch_ui"
-    )
+    let commandId = "watch-local-\(UUID().uuidString)"
+    isStarting = true
+    failedReason = nil
+    statusText = "starting"
+    refreshDisplayState()
+    sendStatus(reason: "health_preflight")
+
+    preflightHealthAuthorization { [weak self] blockReason in
+      guard let self, self.isStarting else {
+        return
+      }
+
+      if let blockReason {
+        self.isStarting = false
+        self.markFailed(blockReason)
+        self.sendStatus(reason: blockReason)
+        return
+      }
+
+      let reply = self.startStoredPlan(
+        plan,
+        commandId: commandId,
+        source: "watch_ui",
+        healthPreflightCompleted: true
+      )
+
+      if reply["schemaVersion"] as? String == "watch-start-rejected-v1" {
+        self.isStarting = false
+        self.markFailed(reply["reason"] as? String ?? "watch_start_rejected")
+        self.sendStatus(reason: reply["reason"] as? String ?? "watch_start_rejected")
+      }
+    }
   }
 
   func stopFromWatch() {
@@ -188,7 +215,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
   private func startStoredPlan(
     _ plan: WatchRuntimePlan,
     commandId: String,
-    source: String
+    source: String,
+    healthPreflightCompleted: Bool = false
   ) -> [String: Any] {
     let now = Date()
     if let stopAt = plan.stopAtDate(formatter: isoFormatter), now >= stopAt {
@@ -200,6 +228,14 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
 
     if let reason = batteryStopReason(for: plan) {
+      return startRejectedReply(
+        commandId: commandId,
+        sessionId: plan.sessionId,
+        reason: reason
+      )
+    }
+
+    if let reason = cueAssetStartBlockReason(for: plan) {
       return startRejectedReply(
         commandId: commandId,
         sessionId: plan.sessionId,
@@ -275,7 +311,9 @@ final class WatchSessionManager: NSObject, ObservableObject {
       "modelAvailable": remModel.modelAvailable,
       "classifierVersion": plan.classifier.classifierVersion,
     ])
-    requestHealthAuthorization()
+    if !healthPreflightCompleted {
+      requestHealthAuthorization()
+    }
     startWorkout()
     startMotion()
     WKInterfaceDevice.current().enableWaterLock()
@@ -304,27 +342,49 @@ final class WatchSessionManager: NSObject, ObservableObject {
   }
 
   private func requestHealthAuthorization() {
+    preflightHealthAuthorization { _ in }
+  }
+
+  private func preflightHealthAuthorization(completion: @escaping (String?) -> Void) {
     guard HKHealthStore.isHealthDataAvailable() else {
       updateHealthAuthorizationStatus("unavailable", reason: "health_unavailable")
+      completion("health_unavailable")
       return
     }
 
     guard let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
       updateHealthAuthorizationStatus("unavailable", reason: "heart_rate_unavailable")
+      completion("heart_rate_unavailable")
+      return
+    }
+
+    let workoutType = HKQuantityType.workoutType()
+    if healthStore.authorizationStatus(for: workoutType) == .sharingDenied {
+      updateHealthAuthorizationStatus("denied", reason: "health_authorization_denied")
+      completion("health_authorization_denied")
       return
     }
 
     healthStore.requestAuthorization(
-      toShare: [HKQuantityType.workoutType()],
+      toShare: [workoutType],
       read: [heartRateType]
     ) { success, error in
       DispatchQueue.main.async {
         if let status = self.healthAuthorizationStatus(for: error) {
           self.updateHealthAuthorizationStatus(status, reason: "health_authorization_error")
+          completion("health_authorization_\(status)")
+        } else if !success {
+          self.updateHealthAuthorizationStatus("denied", reason: "health_authorization_denied")
+          completion("health_authorization_denied")
+        } else if self.healthStore.authorizationStatus(for: workoutType) == .sharingDenied {
+          self.updateHealthAuthorizationStatus("denied", reason: "health_authorization_denied")
+          completion("health_authorization_denied")
         } else if success {
-          self.sendStatus(reason: "health_authorization_requested")
+          self.updateHealthAuthorizationStatus("authorized", reason: "health_authorization_authorized")
+          completion(nil)
         } else {
           self.sendStatus(reason: "health_authorization_unknown")
+          completion("health_authorization_unknown")
         }
       }
     }
@@ -523,8 +583,11 @@ final class WatchSessionManager: NSObject, ObservableObject {
     var deliveryPayload: [String: Any] = [:]
     if decision.shouldPlayCue {
       let result = cueDelivery.deliverCue(plan: activePlan)
-      cueCountTonight += 1
-      lastCueAt = now
+      let deliveredCue = result.deliveredHaptic || result.deliveredAudio
+      if deliveredCue {
+        cueCountTonight += 1
+        lastCueAt = now
+      }
       let deliveryLog = ownedCueDeliveryLog(
         now: now,
         plan: activePlan,
@@ -538,7 +601,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
         "deliveredAudio": result.deliveredAudio,
         "reason": result.reason,
       ]
-      logEvent("watch_cue_played", payload: deliveryPayload)
+      logEvent(deliveredCue ? "watch_cue_played" : "watch_cue_failed", payload: deliveryPayload)
     }
 
     let epochMessage = epochPayload(
@@ -995,6 +1058,25 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
 
     return nil
+  }
+
+  private func cueAssetStartBlockReason(for plan: WatchRuntimePlan) -> String? {
+    guard plan.cueMode == "audio_only" else {
+      return nil
+    }
+
+    return localAudioAssetURL(for: plan) == nil ? "watch_audio_asset_missing" : nil
+  }
+
+  private func localAudioAssetURL(for plan: WatchRuntimePlan) -> URL? {
+    guard !plan.iPhoneAudio.cueResourceName.isEmpty else {
+      return nil
+    }
+
+    return Bundle.main.url(
+      forResource: plan.iPhoneAudio.cueResourceName,
+      withExtension: plan.iPhoneAudio.cueResourceExtension
+    )
   }
 
   private func refreshPlanText() {

@@ -20,6 +20,7 @@ import {
 import {
   importWatchOwnedRuntimeDataToLocalRecords,
   watchRuntime,
+  type WatchOwnedStatusV2,
   type WatchRuntimeStatus,
 } from "@/src/native/watch";
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
@@ -37,7 +38,7 @@ function nightSessionStartedAt(session: NightSession): string {
 }
 
 function runningSessionLabel(session: NightSession): string {
-  if (session.sessionType === "tlr" && session.mode === "watch") {
+  if (session.mode === "watch") {
     return "Watch Mode night active";
   }
 
@@ -50,16 +51,30 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Runtime action failed.";
 }
 
-function watchHealthStatusLabel(status: WatchRuntimeStatus | null): string {
-  return status?.watchHealthAuthorizationStatus ?? "unknown";
+function watchHealthStatusLabel(
+  ownedStatus: WatchOwnedStatusV2 | null,
+  legacyStatus: WatchRuntimeStatus | null,
+): string {
+  return (
+    ownedStatus?.healthAuthorizationStatus ??
+    legacyStatus?.watchHealthAuthorizationStatus ??
+    "unknown"
+  );
 }
 
-function watchHealthStatusAction(status: WatchRuntimeStatus | null): string | null {
-  if (status?.watchHealthAuthorizationStatus === "denied") {
+function watchHealthStatusAction(
+  ownedStatus: WatchOwnedStatusV2 | null,
+  legacyStatus: WatchRuntimeStatus | null,
+): string | null {
+  const status =
+    ownedStatus?.healthAuthorizationStatus ??
+    legacyStatus?.watchHealthAuthorizationStatus;
+
+  if (status === "denied") {
     return "Enable HealthKit heart-rate access for LucidCue before preparing Watch Mode.";
   }
 
-  if (status?.watchHealthAuthorizationStatus === "unavailable") {
+  if (status === "unavailable") {
     return "HealthKit heart-rate access is unavailable on this Apple Watch.";
   }
 
@@ -75,6 +90,8 @@ export function ActiveNightSessionScreen() {
     React.useState<PhoneRuntimeStatus | null>(null);
   const [watchRuntimeStatus, setWatchRuntimeStatus] =
     React.useState<WatchRuntimeStatus | null>(null);
+  const [watchOwnedStatus, setWatchOwnedStatus] =
+    React.useState<WatchOwnedStatusV2 | null>(null);
   const [runtimeError, setRuntimeError] = React.useState<string | null>(null);
   const [isStopping, setIsStopping] = React.useState(false);
   const [runtimeAction, setRuntimeAction] = React.useState<
@@ -92,14 +109,15 @@ export function ActiveNightSessionScreen() {
   const usesPhoneRuntime =
     activeSession?.sessionType === "tlr" && activeSession.mode === "phone";
   const usesWatchRuntime =
-    activeSession?.sessionType === "tlr" && activeSession.mode === "watch";
+    activeSession?.mode === "watch";
   const canControlTlrRuntime =
     usesPhoneRuntime && runtimeStatus?.available === true;
-  const tlrPaused =
-    (usesPhoneRuntime && runtimeStatus?.tlrPaused === true) ||
-    (usesWatchRuntime && watchRuntimeStatus?.tlrPaused === true);
+  const tlrPaused = usesPhoneRuntime && runtimeStatus?.tlrPaused === true;
   const runtimeControlsDisabled = isStopping || runtimeAction !== null;
-  const watchHealthAction = watchHealthStatusAction(watchRuntimeStatus);
+  const watchHealthAction = watchHealthStatusAction(
+    watchOwnedStatus,
+    watchRuntimeStatus,
+  );
   const refreshRuntimeStatus = React.useCallback(async () => {
     if (!usesPhoneRuntime) {
       return;
@@ -137,30 +155,20 @@ export function ActiveNightSessionScreen() {
     }
 
     try {
-      const status = await watchRuntime.getWatchRuntimeStatus();
+      const ownedStatus = await watchRuntime.getLatestWatchOwnedStatus();
 
-      setWatchRuntimeStatus(status);
+      setWatchOwnedStatus(ownedStatus);
 
-      if (
-        activeSession?.sessionType === "tlr" &&
-        activeSession.mode === "watch" &&
-        status.watchSessionRunning &&
-        status.sessionId &&
-        status.sessionId !== activeSession.id
-      ) {
-        await watchRuntime.stopWatchSession({
-          reason: "orphaned",
-          sessionId: status.sessionId,
-        });
+      if (!ownedStatus.available) {
         setWatchRuntimeStatus(await watchRuntime.getWatchRuntimeStatus());
         return;
       }
 
+      setWatchRuntimeStatus(null);
+
       if (!activeSession || !canEnd) {
         return;
       }
-
-      const ownedStatus = await watchRuntime.getLatestWatchOwnedStatus();
 
       if (
         ownedStatus.sessionId !== activeSession.id ||
@@ -283,13 +291,6 @@ export function ActiveNightSessionScreen() {
         });
         await refreshRuntimeStatus();
       }
-
-      if (usesWatchRuntime) {
-        await watchRuntime.deferWatchTlrCueing({
-          durationSeconds: TLR_PUSH_BACK_SECONDS,
-        });
-        await refreshWatchRuntimeStatus();
-      }
     } catch (error) {
       const message = errorMessage(error);
 
@@ -318,16 +319,6 @@ export function ActiveNightSessionScreen() {
         }
 
         await refreshRuntimeStatus();
-      }
-
-      if (usesWatchRuntime) {
-        if (tlrPaused) {
-          await watchRuntime.resumeWatchTlrCueing();
-        } else {
-          await watchRuntime.pauseWatchTlrCueing();
-        }
-
-        await refreshWatchRuntimeStatus();
       }
     } catch (error) {
       const message = errorMessage(error);
@@ -372,7 +363,10 @@ export function ActiveNightSessionScreen() {
                 textAlign: "center",
               }}
             >
-              {`Watch setup: HealthKit heart rate ${watchHealthStatusLabel(watchRuntimeStatus)}`}
+              {`Watch setup: HealthKit heart rate ${watchHealthStatusLabel(
+                watchOwnedStatus,
+                watchRuntimeStatus,
+              )}`}
             </Text>
           ) : null}
           {usesWatchRuntime && watchHealthAction ? (

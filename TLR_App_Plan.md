@@ -23,6 +23,7 @@ These papers are included as full PDFs in the repo. You may also refer to Jeremy
 - Apple Watch owns the overnight Watch Mode runtime: sensor collection, experimental REM probability, cue timing, cue delivery, movement gates, and local logs.
 - iPhone prepares and syncs the pre-sleep session plan, cue assets, and bundled Watch REM model before sleep, then imports Watch logs after waking.
 - WatchConnectivity is for pre-sleep plan/assets/model sync and morning log sync, not live cue timing.
+- Watch Mode also supports Log Sleep Only / No TLR nights: the Watch still owns overnight sensing and local log sync, but cue delivery is disabled.
 - Watch uses heart rate, motion, and elapsed session time for REM-informed cueing.
 - Watch Mode does not use GPS, SensorKit, live Apple sleep stages, wrist temperature, respiratory rate, or SpO2.
 - Android watch support is excluded for now.

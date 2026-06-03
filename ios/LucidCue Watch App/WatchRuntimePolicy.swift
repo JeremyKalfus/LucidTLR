@@ -239,6 +239,15 @@ final class WatchCuePolicy {
       )
     }
 
+    if plan.cueMode == "none" {
+      return WatchCueDecision(
+        shouldPlayCue: false,
+        reason: "cueing_disabled_sleep_log",
+        cueingEnabled: false,
+        consecutiveLikelyRemEpochs: consecutiveLikelyRemEpochs
+      )
+    }
+
     if let cueWindowStart = plan.cueWindowStartDate(formatter: formatter), now < cueWindowStart {
       return WatchCueDecision(
         shouldPlayCue: false,

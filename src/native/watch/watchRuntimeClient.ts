@@ -30,7 +30,6 @@ export type WatchRuntimeDeferOptions = {
 export interface NativeWatchRuntimeModule {
   startWatchSession: (plan: NativeWatchSessionPlan) => Promise<void>;
   prepareWatchOwnedSession?: (plan: WatchOwnedSessionPlanV2) => Promise<void>;
-  requestWatchOwnedStart?: (options: { sessionId: string }) => Promise<void>;
   requestWatchOwnedStop?: (options: WatchRuntimeStopOptions) => Promise<void>;
   getLatestWatchOwnedStatus?: () => Promise<WatchOwnedStatusV2>;
   importWatchOwnedSessionLogs?: (
@@ -166,16 +165,6 @@ export function createWatchRuntimeClient(options: WatchRuntimeClientOptions) {
       }
 
       return nativeModule.prepareWatchOwnedSession(plan);
-    },
-
-    requestWatchOwnedStart(sessionId: string) {
-      const nativeModule = requireNativeModule();
-
-      if (typeof nativeModule.requestWatchOwnedStart !== "function") {
-        throw new Error(missingNativeMethodReason("requestWatchOwnedStart"));
-      }
-
-      return nativeModule.requestWatchOwnedStart({ sessionId });
     },
 
     requestWatchOwnedStop(stopOptions?: WatchRuntimeStopOptions) {

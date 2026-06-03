@@ -175,7 +175,7 @@ export function MorningReviewScreen() {
   const usesPhoneRuntime =
     activeSession?.sessionType === "tlr" && activeSession.mode === "phone";
   const usesWatchRuntime =
-    activeSession?.sessionType === "tlr" && activeSession.mode === "watch";
+    activeSession?.mode === "watch";
 
   React.useEffect(() => {
     let cancelled = false;

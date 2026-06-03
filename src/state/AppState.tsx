@@ -1093,7 +1093,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const reconcileNativeWatchRuntimeCompletion = React.useCallback(async () => {
     if (
       !activeSession ||
-      activeSession.sessionType !== "tlr" ||
       activeSession.mode !== "watch" ||
       !canTransitionSession(
         activeSession.sessionType,

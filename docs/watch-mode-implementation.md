@@ -11,6 +11,10 @@ delivery, movement gates, and local runtime logs. After waking, the iPhone
 imports Watch epoch, cue, and movement logs. WatchConnectivity is for pre-sleep
 sync and morning log import, not live cue timing.
 
+For Log Sleep Only / No TLR nights, Watch Mode still uses the Watch-owned
+overnight runtime for sensing and logs, but the synced plan disables cue
+delivery.
+
 The Mallela random-forest model asset is exported from the public
 `rmallela26/TLR` training CSVs and source at commit
 `9cc30e7157696331dbb79e0cf43f164cfc9685c2`. The native Watch runtime loads the
@@ -31,6 +35,12 @@ explicit consent path.
 
 Implementation status: the current phone-dependent Watch runtime is legacy.
 Watch-owned Watch Mode v2 is the target.
+
+Compatibility note: the v1 phone-owned Watch runtime and its
+`buildNativeWatchSessionPlan` / `startWatchSession` path remain only for
+legacy diagnostics and older development builds. Normal Watch Mode must prepare
+`watch-session-plan-v2`, start locally from the Watch app, and import v2 Watch
+logs later.
 
 Legacy simulator/dev-build validation can use the DEBUG-only iPhone launch
 argument `--lucidcue-watch-runtime-self-test`. It injects one synthetic

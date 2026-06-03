@@ -46,7 +46,7 @@ import {
 import {
   buildWatchOwnedSessionPlan,
   watchRuntime,
-  type WatchRuntimeStatus,
+  type WatchOwnedStatusV2,
 } from "@/src/native/watch";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
@@ -121,8 +121,8 @@ export function PresleepTrainingScreen() {
   const [playedCueCount, setPlayedCueCount] = React.useState(0);
   const [isStartingRuntime, setIsStartingRuntime] = React.useState(false);
   const [isTrainingPaused, setIsTrainingPaused] = React.useState(false);
-  const [watchRuntimeStatus, setWatchRuntimeStatus] =
-    React.useState<WatchRuntimeStatus | null>(null);
+  const [watchOwnedStatus, setWatchOwnedStatus] =
+    React.useState<WatchOwnedStatusV2 | null>(null);
   const nextTrainingCueIndexRef = React.useRef(0);
   const finishingTrainingRef = React.useRef(false);
   const canStart =
@@ -536,7 +536,7 @@ export function PresleepTrainingScreen() {
         });
 
         await watchRuntime.prepareWatchOwnedSession(plan);
-        setWatchRuntimeStatus(await watchRuntime.getWatchRuntimeStatus());
+        setWatchOwnedStatus(await watchRuntime.getLatestWatchOwnedStatus());
         router.push("/active-night-session");
         return;
       }
@@ -746,21 +746,21 @@ export function PresleepTrainingScreen() {
               }}
             />
           ) : null}
-          {watchRuntimeStatus ? (
+          {watchOwnedStatus ? (
             <Card compact>
               <InfoRow
                 label="watch setup"
                 value={
-                  watchRuntimeStatus.watchReachable
+                  watchOwnedStatus.watchReachable
                     ? "ready for setup/sync"
-                    : watchRuntimeStatus.connectivityState
+                    : watchOwnedStatus.connectivityState ?? "delayed"
                 }
               />
               <InfoRow
                 label="classifier"
                 value={
-                  watchRuntimeStatus.modelAvailable
-                    ? watchRuntimeStatus.classifierVersion
+                  watchOwnedStatus.modelAvailable
+                    ? watchOwnedStatus.classifierVersion ?? "lucidcue-watch-rem-v1"
                     : "unavailable; cueing disabled"
                 }
               />

@@ -54,6 +54,7 @@ export type CueDecisionReason =
   | "watch_likely_rem"
   | "rem_persistent_suppression"
   | "sensor_quality_bad"
+  | "cueing_disabled_sleep_log"
   | "session_not_active";
 
 export type SessionType = "tlr" | "sleep_log";

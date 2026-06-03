@@ -736,7 +736,7 @@ function useSleepNightRecords() {
               }
             }
 
-            if (session?.sessionType === "tlr" && session.mode === "watch") {
+            if (session?.mode === "watch") {
               const [storedEpochs, storedEvents] = await Promise.all([
                 loadWatchEpochsForSession({ db, sessionId: id }),
                 loadWatchRuntimeEventsForSession({ db, sessionId: id }),

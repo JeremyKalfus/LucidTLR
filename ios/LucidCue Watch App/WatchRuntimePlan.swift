@@ -1,6 +1,9 @@
 import Foundation
 
 struct WatchRuntimePlan: Codable, Equatable {
+  // Legacy-compatible local cue asset fields. Older phone-owned Watch plans
+  // called this payload iPhoneAudio; Watch-owned v2 reads cueAssetManifest and
+  // uses these values only for bundled Watch-local cue delivery.
   struct IPhoneAudio: Codable, Equatable {
     var cueId: String
     var cueResourceName: String

@@ -449,6 +449,8 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
         "reason": "prepared_on_phone",
         "stopAt": plan["stopAt"] as? String ?? "",
         "cueMode": plan["cueMode"] as? String ?? "",
+        "modelAvailable": plan["remModelManifest"] is [String: Any],
+        "classifierVersion": (plan["remModelManifest"] as? [String: Any])?["version"] as? String ?? "",
         "watchReachable": WCSession.isSupported() ? WCSession.default.isReachable : false,
         "connectivityState": WCSession.isSupported() && WCSession.default.isReachable
           ? "connected"
@@ -493,20 +495,6 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
         }
       }
 
-      resolve(nil)
-    }
-  }
-
-  @objc(requestWatchOwnedStart:resolver:rejecter:)
-  func requestWatchOwnedStart(
-    _ options: NSDictionary,
-    resolver resolve: @escaping RCTPromiseResolveBlock,
-    rejecter reject: @escaping RCTPromiseRejectBlock
-  ) {
-    let sessionId = options["sessionId"] as? String ?? ""
-
-    queue.async {
-      self.sendWatchOwnedCommand(command: "start", sessionId: sessionId, reason: "phone_request")
       resolve(nil)
     }
   }
@@ -938,6 +926,20 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
       return ["schemaVersion": "watch-status-ack-v1"]
     }
 
+    if isWatchOwnedSession(sessionId) {
+      latestWatchReportedSessionId = sessionId
+      latestWatchSessionId = rawMessage["watchSessionId"] as? String ?? latestWatchSessionId
+      latestWatchIsRunning = true
+      latestConnectivityState = delayed ? "delayed" : "connected"
+      appendDetachedEvent(sessionId: sessionId, eventType: "watch_epoch_v1_telemetry", payload: [
+        "reason": "watch_owned_v2_telemetry_only",
+        "watchSessionId": latestWatchSessionId,
+        "epochIndex": rawMessage["epochIndex"] ?? "",
+        "delayed": delayed
+      ])
+      return ["schemaVersion": "watch-status-ack-v1"]
+    }
+
     let activeSessionId = activePlan?["sessionId"] as? String
     guard sessionId == activeSessionId else {
       recordOrphanedWatchSession(
@@ -1042,6 +1044,23 @@ class LucidCueWatchRuntime: NSObject, WCSessionDelegate {
     }
 
     return ["schemaVersion": "watch-status-ack-v1"]
+  }
+
+  private func isWatchOwnedSession(_ sessionId: String) -> Bool {
+    guard !sessionId.isEmpty else {
+      return false
+    }
+
+    if latestWatchOwnedPlan?["sessionId"] as? String == sessionId {
+      return true
+    }
+
+    if latestWatchOwnedStatus?["sessionId"] as? String == sessionId ||
+      latestWatchOwnedStatus?["preparedSessionId"] as? String == sessionId {
+      return true
+    }
+
+    return watchOwnedLogPackages[sessionId] != nil
   }
 
   private func handleIncomingWatchStatus(_ rawMessage: [String: Any], delayed: Bool) {

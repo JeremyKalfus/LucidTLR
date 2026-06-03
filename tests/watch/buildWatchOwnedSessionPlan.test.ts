@@ -22,6 +22,18 @@ function watchSession(): NightSession {
   };
 }
 
+function watchSleepLogSession(): NightSession {
+  return {
+    id: "session-watch-sleep-log",
+    participantId: "participant-1",
+    sessionType: "sleep_log",
+    mode: "watch",
+    status: "cueing_disabled_sleep_log",
+    protocolVersion: "tlr-2026-001",
+    startedAt: "2026-01-01T04:15:00.000Z",
+  };
+}
+
 describe("buildWatchOwnedSessionPlan", () => {
   it("builds a Watch-owned v2 plan with local runtime, cue, model, and battery policy", () => {
     const settings = createDefaultEngineSettings("standard");
@@ -95,5 +107,34 @@ describe("buildWatchOwnedSessionPlan", () => {
     });
 
     expect(plan.cueMode).toBe("haptic_only");
+  });
+
+  it("builds a Watch-owned no-cue plan for Watch Mode sleep logs", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const sleepTiming = buildSleepTimingPrior({
+      trainingEndedAt: "2026-01-01T04:15:00.000Z",
+      settings,
+    });
+
+    const plan = buildWatchOwnedSessionPlan({
+      session: watchSleepLogSession(),
+      settings,
+      sleepTiming,
+      createdAt: "2026-01-01T04:16:00.000Z",
+    });
+
+    expect(plan).toMatchObject({
+      protocol: "watch-session-plan-v2",
+      sessionId: "session-watch-sleep-log",
+      runtimeOwner: "watch",
+      cueMode: "none",
+      cueBudget: 0,
+      validAfter: "2026-01-01T04:15:00.000Z",
+      earliestCueAt: "2026-01-01T04:15:00.000Z",
+      remModelManifest: {
+        modelId: "mallela_rf_v1",
+      },
+    });
+    expect(plan.cueAssetManifest).toBeUndefined();
   });
 });

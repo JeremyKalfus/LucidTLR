@@ -6,7 +6,11 @@ import type {
 
 import type { WatchRemLabel } from "@/src/engine/watchRem";
 
-export type WatchCueMode = "haptic_only" | "audio_only" | "audio_haptic";
+export type WatchCueMode =
+  | "none"
+  | "haptic_only"
+  | "audio_only"
+  | "audio_haptic";
 
 export type WatchCueDeliveryDevice = "phone" | "watch";
 
@@ -168,6 +172,10 @@ export interface WatchOwnedStatusV2 {
   connectivityState?: WatchConnectivityState;
   batteryPct?: number;
   lowPowerModeEnabled?: boolean;
+  healthAuthorizationStatus?: "unknown" | "authorized" | "denied" | "unavailable";
+  isRunning?: boolean;
+  modelAvailable?: boolean;
+  classifierVersion?: string;
   stopAt?: string;
   cueMode?: WatchCueMode;
   latestEpochAt?: string;

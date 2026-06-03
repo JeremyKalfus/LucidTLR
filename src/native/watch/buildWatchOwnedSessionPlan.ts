@@ -49,19 +49,17 @@ export function buildWatchOwnedSessionPlan(
     input.tlrOptions,
     settings.typicalWakeTime,
   );
-  const selectedCue = getBuiltInCue(
-    session.selectedCueId ?? tlrOptions.selectedCueId,
-  );
 
-  if (session.sessionType !== "tlr") {
-    throw new Error("Watch-owned Mode can only prepare a TLR session.");
-  }
+  const isTlrSession = session.sessionType === "tlr";
+  const selectedCue = isTlrSession
+    ? getBuiltInCue(session.selectedCueId ?? tlrOptions.selectedCueId)
+    : null;
 
   if (session.mode !== "watch") {
     throw new Error("Watch-owned Mode requires a watch session.");
   }
 
-  if (!session.trainingEndedAt) {
+  if (isTlrSession && !session.trainingEndedAt) {
     throw new Error("Watch-owned Mode requires completed presleep training.");
   }
 
@@ -69,15 +67,17 @@ export function buildWatchOwnedSessionPlan(
     protocol: WATCH_OWNED_SESSION_PLAN_PROTOCOL,
     sessionId: session.id,
     createdAt: input.createdAt ?? new Date().toISOString(),
-    validAfter: session.trainingEndedAt,
+    validAfter: session.trainingEndedAt ?? session.startedAt,
     expiresAt: sleepTiming.expectedWakeAt,
     trainingCompletedAt: session.trainingEndedAt,
     estimatedSleepStartAt: sleepTiming.estimatedSleepOnsetAt,
-    earliestCueAt: sleepTiming.likelyPhoneCueWindowStart,
+    earliestCueAt: isTlrSession
+      ? sleepTiming.likelyPhoneCueWindowStart
+      : session.startedAt,
     stopAt: sleepTiming.expectedWakeAt,
     runtimeOwner: "watch",
-    cueMode: watchCueModeFromTlrOptions(tlrOptions),
-    cueBudget: settings.maxCuesPerNight,
+    cueMode: isTlrSession ? watchCueModeFromTlrOptions(tlrOptions) : "none",
+    cueBudget: isTlrSession ? settings.maxCuesPerNight : 0,
     minInterCueIntervalSec: settings.minimumSecondsSinceLastCue,
     suppressCueFromConsecutiveLikelyRemEpoch:
       settings.watchLikelyRemSuppressionEpochs ||
@@ -94,12 +94,14 @@ export function buildWatchOwnedSessionPlan(
     },
     batteryPolicy: DEFAULT_WATCH_BATTERY_POLICY,
     lowPowerModePolicy: "warn_degraded",
-    cueAssetManifest: {
-      cueAssetId: selectedCue.id,
-      fileName: `${selectedCue.nativeResourceName}.${selectedCue.nativeResourceExtension}`,
-      durationMs: Math.round(selectedCue.durationSeconds * 1000),
-      volumeHint: settings.volumeStartLevel,
-    },
+    cueAssetManifest: selectedCue
+      ? {
+          cueAssetId: selectedCue.id,
+          fileName: `${selectedCue.nativeResourceName}.${selectedCue.nativeResourceExtension}`,
+          durationMs: Math.round(selectedCue.durationSeconds * 1000),
+          volumeHint: settings.volumeStartLevel,
+        }
+      : undefined,
     remModelManifest: {
       modelId: WATCH_OWNED_MODEL_ID,
       version: input.classifierVersion ?? LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
