@@ -1,0 +1,31 @@
+# Keep Graphify focused on LucidCue source, tests, and docs.
+
+# Dependencies, generated output, and native build products.
+node_modules/
+.expo/
+build/
+dist/
+build-artifacts/
+coverage/
+graphify-out/
+ios/Pods/
+
+# Local agent handoff/history should not become graph input.
+.agent_work/
+
+# Binary/media and paper assets need semantic extraction to be useful. Keep them
+# out of the default local AST graph so a future full run cannot upload them by
+# accident.
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.mp4
+*.mov

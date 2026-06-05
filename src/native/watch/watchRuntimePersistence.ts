@@ -1,9 +1,12 @@
 import type { LocalDb } from "@/src/data/local/localDb";
 import {
+  loadWatchEpochsForSession,
+  loadWatchRuntimeEventsForSession,
   saveWatchCueRecords,
   saveWatchEpochs,
   saveWatchRuntimeEvents,
 } from "@/src/data/local/repositories";
+import type { WatchEpoch } from "@/src/domain/types";
 
 import type {
   WatchEpochRecordDraft,
@@ -45,6 +48,27 @@ export async function importWatchOwnedRuntimeDataToLocalRecords(input: {
   }
 
   return { epochs, logs };
+}
+
+export async function loadImportedWatchOwnedRuntimeSummary(input: {
+  db: LocalDb;
+  sessionId: string;
+}): Promise<{
+  epochs: WatchEpoch[];
+  logs: WatchRuntimeEvent[];
+  summary: ReturnType<typeof summarizeWatchRuntime>;
+} | null> {
+  const [epochs, logs] = await Promise.all([
+    loadWatchEpochsForSession(input),
+    loadWatchRuntimeEventsForSession(input),
+  ]);
+  const summary = summarizeWatchRuntime(logs, epochs);
+
+  if (!isTerminalWatchRuntimeSummary(summary)) {
+    return null;
+  }
+
+  return { epochs, logs, summary };
 }
 
 export function isCompleteWatchOwnedImportPayload(

@@ -1,4 +1,5 @@
 import CoreMotion
+import AVFoundation
 import Foundation
 import HealthKit
 import WatchConnectivity
@@ -23,13 +24,22 @@ final class WatchSessionManager: NSObject, ObservableObject {
   @Published private(set) var phoneStartSyncSessionId = ""
   @Published private(set) var waitingForPhoneSync = false
   @Published private(set) var tlrPaused = false
+  @Published private(set) var isTraining = false
 
   var shouldShowSyncPhoneScreen: Bool {
-    !phoneStartSyncSessionId.isEmpty && !isRunning && !isStarting
+    hasPendingPhoneStartSync || shouldShowIdleSyncPhoneScreen
   }
 
   var canSyncPhoneFromWatch: Bool {
-    shouldShowSyncPhoneScreen && WCSession.default.activationState == .activated && WCSession.default.isReachable
+    hasPendingPhoneStartSync && WCSession.default.activationState == .activated && WCSession.default.isReachable
+  }
+
+  var syncPhoneScreenDetail: String {
+    if hasPendingPhoneStartSync {
+      return "Your watch will manage TLR through the night, then will send the data to your phone when you wake up."
+    }
+
+    return "Start Watch Mode on your iPhone, then sync here."
   }
 
   var shouldShowWaitingForPhoneSyncScreen: Bool {
@@ -37,11 +47,19 @@ final class WatchSessionManager: NSObject, ObservableObject {
   }
 
   var canControlTlrFromWatch: Bool {
-    isRunning && activePlan?.cueMode != "none"
+    isRunning && !isTraining && activePlan?.cueMode != "none"
   }
 
   var tlrPauseButtonTitle: String {
     tlrPaused ? "Play TLR" : "Pause TLR"
+  }
+
+  private var hasPendingPhoneStartSync: Bool {
+    !phoneStartSyncSessionId.isEmpty && !isRunning && !isStarting
+  }
+
+  private var shouldShowIdleSyncPhoneScreen: Bool {
+    !isRunning && !isStarting && !waitingForPhoneSync && failedReason == nil
   }
 
   private let healthStore = HKHealthStore()
@@ -55,6 +73,10 @@ final class WatchSessionManager: NSObject, ObservableObject {
   private let logWriter = WatchRuntimeLogWriter()
   private let syncQueue = WatchRuntimeSyncQueue()
 
+  private var trainingAudioPlayer: AVAudioPlayer?
+  private var trainingCueAudioPlayer: AVAudioPlayer?
+  private var trainingCueTimers: [Timer] = []
+  private var trainingCompletionTimer: Timer?
   private var workoutSession: HKWorkoutSession?
   private var workoutBuilder: HKLiveWorkoutBuilder?
   private var epochTimer: Timer?
@@ -75,9 +97,13 @@ final class WatchSessionManager: NSObject, ObservableObject {
   private var cueCountTonight = 0
   private var lastCueAt: Date?
   private var batteryStartPct: Double?
+  private var trainingStartedAt: Date?
+  private var trainingCompletedAt: Date?
   private var ownedEpochLogs: [[String: Any]] = []
   private var ownedCueDeliveryLogs: [[String: Any]] = []
+  private var ownedRuntimeEventLogs: [[String: Any]] = []
   private var isStarting = false
+  private var isStopping = false
   private var hasCompletedSession = false
   private var failedReason: String?
   private var tlrDeferredUntil: Date?
@@ -176,19 +202,30 @@ final class WatchSessionManager: NSObject, ObservableObject {
   }
 
   func stopSession(reason: String) {
-    guard isRunning || isStarting else {
+    guard (isRunning || isStarting) && !isStopping else {
       return
     }
 
+    isStopping = true
+    defer {
+      isStopping = false
+    }
+
     if isRunning && reason != "planned_stop_at" && shouldEmitFinalEpoch() {
-      emitEpoch(connectivityState: connectivityState())
+      emitEpoch(connectivityState: connectivityState(), enforceTerminalChecks: false)
     }
 
     epochTimer?.invalidate()
     epochTimer = nil
+    cancelWatchTrainingTimers()
+    trainingAudioPlayer?.stop()
+    trainingCueAudioPlayer?.stop()
+    trainingAudioPlayer = nil
+    trainingCueAudioPlayer = nil
     motionManager.stopAccelerometerUpdates()
     finishWorkout()
     isRunning = false
+    isTraining = false
     isStarting = false
     hasCompletedSession = failedReason == nil
     waitingForPhoneSync = failedReason == nil
@@ -206,6 +243,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
     lastEpochAt = nil
     cueingEnabled = false
     latestRemProbabilityText = "unknown"
+    trainingStartedAt = nil
+    trainingCompletedAt = nil
     tlrPaused = false
     tlrDeferredUntil = nil
     refreshDisplayState()
@@ -235,6 +274,14 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
 
     if let reason = cueAssetStartBlockReason(for: plan) {
+      return startRejectedReply(
+        commandId: commandId,
+        sessionId: plan.sessionId,
+        reason: reason
+      )
+    }
+
+    if let reason = trainingAssetStartBlockReason(for: plan) {
       return startRejectedReply(
         commandId: commandId,
         sessionId: plan.sessionId,
@@ -286,8 +333,11 @@ final class WatchSessionManager: NSObject, ObservableObject {
     cueCountTonight = 0
     lastCueAt = nil
     batteryStartPct = currentBatteryPct()
+    trainingStartedAt = nil
+    trainingCompletedAt = nil
     ownedEpochLogs = []
     ownedCueDeliveryLogs = []
+    ownedRuntimeEventLogs = []
     cueingEnabled = false
     waitingForPhoneSync = false
     phoneStartSyncSessionId = ""
@@ -327,6 +377,24 @@ final class WatchSessionManager: NSObject, ObservableObject {
     epochTimer = Timer.scheduledTimer(withTimeInterval: epochIntervalSeconds, repeats: true) { [weak self] _ in
       self?.handleEpochTimer()
     }
+
+    do {
+      if plan.training.enabled {
+        try startWatchTraining(plan: plan)
+      } else {
+        startTlrInterval(plan: plan, reason: plan.tlrInterval.enabled ? "training_skipped" : "cueing_disabled_sleep_log")
+      }
+    } catch {
+      logTrainingFailure(plan: plan, reason: error.localizedDescription)
+      markFailed("watch_training_failed")
+      stopSession(reason: "watch_training_failed")
+      return startRejectedReply(
+        commandId: commandId,
+        sessionId: plan.sessionId,
+        reason: "watch_training_failed"
+      )
+    }
+
     sendStatus(reason: "started")
     refreshDisplayState()
 
@@ -483,6 +551,228 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
   }
 
+  private func startWatchTraining(plan: WatchRuntimePlan) throws {
+    guard let url = localTrainingAssetURL(for: plan) else {
+      throw runtimeError("Missing bundled Watch training asset \(plan.training.resourceName).\(plan.training.resourceExtension).")
+    }
+
+    let now = Date()
+    let player = try AVAudioPlayer(contentsOf: url)
+    player.numberOfLoops = 0
+    player.volume = 1
+    player.prepareToPlay()
+    trainingAudioPlayer = player
+    trainingStartedAt = now
+    isTraining = true
+    latestCueDecisionReason = "before_training_finished"
+    cueingEnabled = false
+
+    guard player.play() else {
+      throw runtimeError("Could not start Watch training audio.")
+    }
+
+    logEvent("watch_training_started", payload: [
+      "trainingAssetId": plan.training.trainingAssetId,
+      "resourceName": plan.training.resourceName,
+      "resourceExtension": plan.training.resourceExtension,
+      "trainingStartedAt": isoFormatter.string(from: now),
+      "expectedTrainingCompletedAt": plan.training.expectedCompletedAt ?? "",
+      "durationSec": plan.training.durationSec,
+      "fileDurationSec": player.duration,
+      "cueScheduleCount": plan.training.cueSchedule.count,
+      "cueId": plan.iPhoneAudio.cueId,
+      "cueResourceName": plan.iPhoneAudio.cueResourceName,
+      "cueResourceExtension": plan.iPhoneAudio.cueResourceExtension,
+    ])
+
+    scheduleWatchTrainingTimers(plan: plan)
+    refreshDisplayState()
+  }
+
+  private func scheduleWatchTrainingTimers(plan: WatchRuntimePlan) {
+    cancelWatchTrainingTimers()
+
+    let elapsedSec = trainingAudioPlayer?.currentTime ?? 0
+
+    for entry in plan.training.cueSchedule where entry.cueStartSec >= elapsedSec {
+      let delay = max(0, entry.cueStartSec - elapsedSec)
+      let timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+        self?.playWatchTrainingCue(plan: plan, entry: entry)
+      }
+
+      trainingCueTimers.append(timer)
+    }
+
+    let remainingSec = max(0, plan.training.durationSec - elapsedSec)
+    trainingCompletionTimer = Timer.scheduledTimer(withTimeInterval: remainingSec, repeats: false) { [weak self] _ in
+      self?.completeWatchTraining(plan: plan, reason: "training_audio_finished")
+    }
+  }
+
+  private func cancelWatchTrainingTimers() {
+    trainingCompletionTimer?.invalidate()
+    trainingCompletionTimer = nil
+
+    for timer in trainingCueTimers {
+      timer.invalidate()
+    }
+
+    trainingCueTimers = []
+  }
+
+  private func playWatchTrainingCue(
+    plan: WatchRuntimePlan,
+    entry: WatchRuntimePlan.Training.CueScheduleEntry
+  ) {
+    guard isRunning, isTraining else {
+      return
+    }
+
+    let plannedTrainingStart = trainingStartedAt ?? sessionStartedAt
+    let plannedAt = plannedTrainingStart.addingTimeInterval(entry.cueStartSec)
+    let attemptAt = Date()
+    let driftMs = Int(attemptAt.timeIntervalSince(plannedAt) * 1000)
+    let cueAsset = "\(plan.iPhoneAudio.cueResourceName).\(plan.iPhoneAudio.cueResourceExtension)"
+
+    logEvent("watch_training_cue_marker_reached", payload: [
+      "markerIndex": entry.markerIndex,
+      "markerMidpointSec": entry.markerMidpointSec,
+      "cueStartSec": entry.cueStartSec,
+      "plannedCueAt": isoFormatter.string(from: plannedAt),
+      "actualCueAttemptAt": isoFormatter.string(from: attemptAt),
+      "driftMs": driftMs,
+      "cueId": plan.iPhoneAudio.cueId,
+    ])
+
+    do {
+      guard let url = localAudioAssetURL(for: plan) else {
+        throw runtimeError("Missing bundled Watch cue asset \(cueAsset).")
+      }
+
+      let player = try AVAudioPlayer(contentsOf: url)
+      player.numberOfLoops = 0
+      player.volume = 1
+      player.prepareToPlay()
+      trainingCueAudioPlayer = player
+
+      guard player.play() else {
+        throw runtimeError("Could not play Watch training cue.")
+      }
+
+      logEvent("watch_training_cue_played", payload: [
+        "markerIndex": entry.markerIndex,
+        "cueId": plan.iPhoneAudio.cueId,
+        "cueAsset": cueAsset,
+        "cueResourceName": plan.iPhoneAudio.cueResourceName,
+        "cueResourceExtension": plan.iPhoneAudio.cueResourceExtension,
+        "plannedCueAt": isoFormatter.string(from: plannedAt),
+        "actualCueAttemptAt": isoFormatter.string(from: attemptAt),
+        "durationSec": player.duration,
+        "volume": 1,
+        "driftMs": driftMs,
+        "success": true,
+      ])
+    } catch {
+      logEvent("watch_training_cue_failed", payload: [
+        "markerIndex": entry.markerIndex,
+        "cueId": plan.iPhoneAudio.cueId,
+        "cueAsset": cueAsset,
+        "plannedCueAt": isoFormatter.string(from: plannedAt),
+        "actualCueAttemptAt": isoFormatter.string(from: attemptAt),
+        "driftMs": driftMs,
+        "success": false,
+        "error": error.localizedDescription,
+      ])
+    }
+  }
+
+  private func completeWatchTraining(plan: WatchRuntimePlan, reason: String) {
+    guard isRunning, isTraining else {
+      return
+    }
+
+    cancelWatchTrainingTimers()
+    trainingAudioPlayer?.stop()
+    trainingCueAudioPlayer?.stop()
+    trainingAudioPlayer = nil
+    trainingCueAudioPlayer = nil
+
+    let now = Date()
+    trainingCompletedAt = now
+    isTraining = false
+    latestCueDecisionReason = "training_completed"
+
+    let expectedCompletedAt = plan.training.expectedCompletedAt.flatMap {
+      isoFormatter.date(from: $0)
+    }
+    let driftMs = expectedCompletedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? 0
+
+    logEvent("watch_training_completed", payload: [
+      "reason": reason,
+      "expectedTrainingCompletedAt": plan.training.expectedCompletedAt ?? "",
+      "actualTrainingCompletedAt": isoFormatter.string(from: now),
+      "driftMs": driftMs,
+    ])
+
+    startTlrInterval(plan: plan, reason: "training_completed")
+    sendStatus(reason: "training_completed")
+    refreshDisplayState()
+  }
+
+  private func startTlrInterval(plan: WatchRuntimePlan, reason: String) {
+    guard plan.tlrInterval.enabled else {
+      latestCueDecisionReason = "cueing_disabled_sleep_log"
+      cueingEnabled = false
+      refreshDisplayState()
+      return
+    }
+
+    shiftCueWindowAfterActualTrainingCompletion(plan: plan)
+    latestCueDecisionReason = "waiting_for_epoch"
+    cueingEnabled = false
+
+    logEvent("watch_tlr_interval_started", payload: [
+      "reason": reason,
+      "derivedFrom": plan.tlrInterval.derivedFrom,
+      "tlrIntervalStartedAt": isoFormatter.string(from: Date()),
+      "earliestCueAt": activePlan?.safety.cueWindowStartAt ?? plan.tlrInterval.earliestCueAt,
+      "stopAt": plan.tlrInterval.stopAt,
+      "cueMode": plan.cueMode,
+      "cueBudget": plan.cuePolicy.maxCuesTonight,
+    ])
+  }
+
+  private func shiftCueWindowAfterActualTrainingCompletion(plan: WatchRuntimePlan) {
+    guard plan.training.enabled,
+      let actualCompletedAt = trainingCompletedAt,
+      let expectedCompletedAt = plan.trainingExpectedCompletedDate(formatter: isoFormatter),
+      let expectedCueWindowStart = plan.cueWindowStartDate(formatter: isoFormatter)
+    else {
+      return
+    }
+
+    let offset = expectedCueWindowStart.timeIntervalSince(expectedCompletedAt)
+    let adjustedCueWindowStart = isoFormatter.string(
+      from: actualCompletedAt.addingTimeInterval(offset)
+    )
+
+    if var adjustedPlan = activePlan {
+      adjustedPlan.safety.cueWindowStartAt = adjustedCueWindowStart
+      adjustedPlan.tlrInterval.earliestCueAt = adjustedCueWindowStart
+      activePlan = adjustedPlan
+      try? planStore.save(adjustedPlan)
+    }
+  }
+
+  private func logTrainingFailure(plan: WatchRuntimePlan, reason: String) {
+    logEvent("watch_training_failed", payload: [
+      "reason": reason,
+      "trainingAssetId": plan.training.trainingAssetId,
+      "resourceName": plan.training.resourceName,
+      "resourceExtension": plan.training.resourceExtension,
+    ])
+  }
+
   private func handleEpochTimer() {
     if let plannedStopAt, Date() >= plannedStopAt {
       stopSession(reason: "planned_stop_at")
@@ -501,17 +791,17 @@ final class WatchSessionManager: NSObject, ObservableObject {
     Date().timeIntervalSince(lastEpochAt ?? sessionStartedAt) >= epochIntervalSeconds
   }
 
-  private func emitEpoch(connectivityState: String) {
+  private func emitEpoch(connectivityState: String, enforceTerminalChecks: Bool = true) {
     guard isRunning, !sessionId.isEmpty, let activePlan else {
       return
     }
 
-    if let plannedStopAt, Date() >= plannedStopAt {
+    if enforceTerminalChecks, let plannedStopAt, Date() >= plannedStopAt {
       stopSession(reason: "planned_stop_at")
       return
     }
 
-    if let reason = batteryStopReason(for: activePlan) {
+    if enforceTerminalChecks, let reason = batteryStopReason(for: activePlan) {
       stopSession(reason: reason)
       return
     }
@@ -572,25 +862,36 @@ final class WatchSessionManager: NSObject, ObservableObject {
       watchBatteryLevel: Double(WKInterfaceDevice.current().batteryLevel)
     )
     let prediction = remModel.predict(features: features, plan: activePlan)
-    var decision = cuePolicy.decide(
-      now: now,
-      plan: activePlan,
-      features: features,
-      prediction: prediction,
-      consecutiveLikelyRemEpochs: consecutiveLikelyRemEpochs,
-      cueCountTonight: cueCountTonight,
-      lastCueAt: lastCueAt,
-      formatter: isoFormatter
-    )
+    var decision: WatchCueDecision
+    if isTraining {
+      decision = WatchCueDecision(
+        shouldPlayCue: false,
+        reason: "before_training_finished",
+        cueingEnabled: false,
+        consecutiveLikelyRemEpochs: 0
+      )
+    } else {
+      decision = cuePolicy.decide(
+        now: now,
+        plan: activePlan,
+        features: features,
+        prediction: prediction,
+        consecutiveLikelyRemEpochs: consecutiveLikelyRemEpochs,
+        cueCountTonight: cueCountTonight,
+        lastCueAt: lastCueAt,
+        formatter: isoFormatter
+      )
+    }
 
-    if activePlan.cueMode != "none" && tlrPaused {
+    if !isTraining && activePlan.cueMode != "none" && tlrPaused {
       decision = WatchCueDecision(
         shouldPlayCue: false,
         reason: "user_paused_tlr",
         cueingEnabled: false,
         consecutiveLikelyRemEpochs: decision.consecutiveLikelyRemEpochs
       )
-    } else if activePlan.cueMode != "none",
+    } else if !isTraining,
+      activePlan.cueMode != "none",
       let tlrDeferredUntil,
       now < tlrDeferredUntil
     {
@@ -787,6 +1088,9 @@ final class WatchSessionManager: NSObject, ObservableObject {
       "displayState": displayState.title,
       "sentAt": isoFormatter.string(from: Date()),
       "startedAt": isRunning ? isoFormatter.string(from: sessionStartedAt) : "",
+      "isTraining": isTraining,
+      "trainingStartedAt": trainingStartedAt.map { isoFormatter.string(from: $0) } ?? "",
+      "trainingCompletedAt": trainingCompletedAt.map { isoFormatter.string(from: $0) } ?? "",
       "stopAt": plannedStopAt.map { isoFormatter.string(from: $0) } ?? "",
       "epochCount": epochCount,
       "lastEpochAt": lastEpochAt.map { isoFormatter.string(from: $0) } ?? "",
@@ -928,11 +1232,37 @@ final class WatchSessionManager: NSObject, ObservableObject {
   }
 
   private func cueAssetStartBlockReason(for plan: WatchRuntimePlan) -> String? {
-    guard plan.cueMode == "audio_only" else {
+    let overnightCueNeedsAudio = plan.cueMode == "audio_only" || plan.cueMode == "audio_haptic"
+    let trainingNeedsAudio = plan.training.enabled
+
+    guard overnightCueNeedsAudio || trainingNeedsAudio else {
       return nil
     }
 
     return localAudioAssetURL(for: plan) == nil ? "watch_audio_asset_missing" : nil
+  }
+
+  private func trainingAssetStartBlockReason(for plan: WatchRuntimePlan) -> String? {
+    guard plan.training.enabled else {
+      return nil
+    }
+
+    if plan.training.durationSec <= 0 {
+      return "watch_training_duration_invalid"
+    }
+
+    return localTrainingAssetURL(for: plan) == nil ? "watch_training_asset_missing" : nil
+  }
+
+  private func localTrainingAssetURL(for plan: WatchRuntimePlan) -> URL? {
+    guard !plan.training.resourceName.isEmpty else {
+      return nil
+    }
+
+    return Bundle.main.url(
+      forResource: plan.training.resourceName,
+      withExtension: plan.training.resourceExtension
+    )
   }
 
   private func localAudioAssetURL(for plan: WatchRuntimePlan) -> URL? {
@@ -944,6 +1274,12 @@ final class WatchSessionManager: NSObject, ObservableObject {
       forResource: plan.iPhoneAudio.cueResourceName,
       withExtension: plan.iPhoneAudio.cueResourceExtension
     )
+  }
+
+  private func runtimeError(_ message: String) -> NSError {
+    NSError(domain: "LucidCueWatchRuntime", code: -1, userInfo: [
+      NSLocalizedDescriptionKey: message
+    ])
   }
 
   private func refreshPlanText() {
@@ -962,7 +1298,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
       displayState = .failed(failedReason)
     } else if waitingForPhoneSync {
       displayState = .waitingForPhoneSync
-    } else if shouldShowSyncPhoneScreen {
+    } else if hasPendingPhoneStartSync {
       displayState = .startSyncWaiting
     } else if isStarting {
       displayState = .starting
@@ -982,6 +1318,10 @@ final class WatchSessionManager: NSObject, ObservableObject {
   }
 
   private func runningDisplayState() -> WatchRuntimeDisplayState {
+    if isTraining {
+      return .training
+    }
+
     if latestCueDecisionReason == "low_battery" {
       return .cueingDisabledLowBattery
     }
@@ -1005,13 +1345,46 @@ final class WatchSessionManager: NSObject, ObservableObject {
       return
     }
 
+    let timestamp = isoFormatter.string(from: Date())
     logWriter.append(
       eventType: eventType,
       sessionId: sessionId,
       watchSessionId: watchSessionId,
-      timestamp: isoFormatter.string(from: Date()),
+      timestamp: timestamp,
       payload: payload
     )
+
+    if shouldIncludeOwnedRuntimeEvent(eventType) {
+      ownedRuntimeEventLogs.append([
+        "protocol": "watch-runtime-event-v2",
+        "id": ownedRuntimeEventId(
+          eventType: eventType,
+          timestamp: timestamp,
+          payload: payload
+        ),
+        "sessionId": sessionId,
+        "watchSessionId": watchSessionId,
+        "timestamp": timestamp,
+        "eventType": eventType,
+        "payload": payload,
+      ])
+    }
+  }
+
+  private func shouldIncludeOwnedRuntimeEvent(_ eventType: String) -> Bool {
+    eventType.hasPrefix("watch_training_") || eventType == "watch_tlr_interval_started"
+  }
+
+  private func ownedRuntimeEventId(
+    eventType: String,
+    timestamp: String,
+    payload: [String: Any]
+  ) -> String {
+    let suffix = payload["markerIndex"].map { String(describing: $0) }
+      ?? payload["reason"].map { String(describing: $0) }
+      ?? "event"
+
+    return "\(sessionId):\(eventType):\(watchSessionId):\(timestamp):\(suffix)"
   }
 
   private func transferActiveLog(reason: String) {
@@ -1063,6 +1436,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
       "sessionId": sessionId,
       "watchSessionId": watchSessionId,
       "sentAt": isoFormatter.string(from: Date()),
+      "runtimeEvents": ownedRuntimeEventLogs,
       "epochs": ownedEpochLogs,
       "cueDeliveries": ownedCueDeliveryLogs,
       "summary": summary,

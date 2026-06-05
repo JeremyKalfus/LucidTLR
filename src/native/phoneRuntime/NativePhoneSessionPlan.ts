@@ -3,6 +3,10 @@ import type {
   CueSuppressionReason,
 } from "@/src/domain/types";
 import { MAX_BUILT_IN_CUE_DURATION_SECONDS } from "@/src/audio/cueCatalog";
+import {
+  FINAL_LUCID_TRAINING_NATIVE_RESOURCE_EXTENSION,
+  FINAL_LUCID_TRAINING_NATIVE_RESOURCE_NAME,
+} from "@/src/audio/trainingAudio";
 
 export const NATIVE_PHONE_POLICY_VERSION = "iphone-phone-runtime-2026-001";
 
@@ -18,9 +22,10 @@ export function phoneAudioBedAssetIdForBackgroundNoise(
 }
 
 export const NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_NAME =
-  "final_lucid_training";
+  FINAL_LUCID_TRAINING_NATIVE_RESOURCE_NAME;
 
-export const NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_EXTENSION = "mp3";
+export const NATIVE_PRESLEEP_TRAINING_AUDIO_RESOURCE_EXTENSION =
+  FINAL_LUCID_TRAINING_NATIVE_RESOURCE_EXTENSION;
 
 export type NativePhoneSessionPlan = {
   sessionId: string;

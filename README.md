@@ -19,8 +19,9 @@ This is not a medical device or treatment, and results are not guaranteed.
 - Local SQLite and Supabase schemas are scaffolded.
 - Upload decisions are centralized and consent-gated.
 - Watch Mode uses Watch-owned overnight operation: the iPhone syncs the
-  plan/assets/model before sleep, acts as sleep audio/status UI during the
-  night, and imports Watch logs after waking.
+  plan/assets/model before sleep, acts as sync/status UI during the night, and
+  imports Watch logs after waking. Training and cue audio are Watch-delivered;
+  background sleep audio is Phone Mode only.
 - Log Sleep Only / No TLR can use Watch Mode for Watch-owned sensing and log
   sync with cue delivery disabled.
 - WatchConnectivity is for pre-sleep sync and morning log import, not live cue

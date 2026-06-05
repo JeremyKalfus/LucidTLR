@@ -8,13 +8,13 @@ struct ContentView: View {
       VStack(alignment: .leading, spacing: 10) {
         if manager.shouldShowSyncPhoneScreen {
           VStack(alignment: .leading, spacing: 10) {
-            Text("Sync phone")
+            Text("Waiting for iPhone Sync")
               .font(.headline)
             Button("Sync Phone") {
               manager.syncPhoneFromWatch()
             }
             .disabled(!manager.canSyncPhoneFromWatch)
-            Text("your watch will manage TLR through the night, then will send the data to your phone when you wake up.")
+            Text(manager.syncPhoneScreenDetail)
               .font(.caption2)
               .foregroundStyle(.secondary)
           }
@@ -27,10 +27,10 @@ struct ContentView: View {
             Text("Open LucidCue on your iPhone and tap Sync Watch.")
               .font(.caption2)
               .foregroundStyle(.secondary)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-      } else {
+          }
+          .padding()
+          .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
           VStack(alignment: .leading, spacing: 4) {
             Text(manager.displayState.title)
               .font(.headline)

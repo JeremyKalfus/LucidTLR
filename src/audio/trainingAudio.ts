@@ -1,5 +1,8 @@
 import type { BuiltInCue } from "./cueCatalog";
 
+export const FINAL_LUCID_TRAINING_ASSET_ID = "final_lucid_training";
+export const FINAL_LUCID_TRAINING_NATIVE_RESOURCE_NAME = "final_lucid_training";
+export const FINAL_LUCID_TRAINING_NATIVE_RESOURCE_EXTENSION = "mp3";
 export const FINAL_LUCID_TRAINING_DURATION_SECONDS = 1340.928753;
 
 export const FINAL_LUCID_TRAINING_CUE_MARKER_MIDPOINTS_SECONDS = [

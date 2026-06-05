@@ -7,6 +7,7 @@ import type {
   WatchCueDeliveryLogV2,
   WatchEpochLogV2,
   WatchOwnedImportPayloadV2,
+  WatchOwnedRuntimeEventLogV2,
   WatchSessionSummaryLogV2,
 } from "./WatchOwnedTypes";
 
@@ -90,7 +91,8 @@ export function mapWatchOwnedCueDeliveryToRecord(
 export function mapWatchOwnedImportToRuntimeEvents(
   payload: WatchOwnedImportPayloadV2,
 ): WatchRuntimeEvent[] {
-  const events: WatchRuntimeEvent[] = [];
+  const events: WatchRuntimeEvent[] =
+    payload.runtimeEvents?.map(mapWatchOwnedRuntimeEventToRuntimeEvent) ?? [];
 
   for (const epoch of payload.epochs) {
     events.push({
@@ -147,6 +149,29 @@ export function mapWatchOwnedImportToRuntimeEvents(
   }
 
   return events;
+}
+
+function mapWatchOwnedRuntimeEventToRuntimeEvent(
+  event: WatchOwnedRuntimeEventLogV2,
+): WatchRuntimeEvent {
+  return {
+    id:
+      event.id ??
+      eventId({
+        sessionId: event.sessionId,
+        eventType: event.eventType,
+        timestamp: event.timestamp,
+        suffix: event.watchSessionId ?? "watch-runtime",
+      }),
+    sessionId: event.sessionId,
+    timestamp: event.timestamp,
+    eventType: event.eventType,
+    payload: {
+      protocol: event.protocol,
+      watchSessionId: event.watchSessionId,
+      ...event.payload,
+    },
+  };
 }
 
 function mapWatchOwnedSummaryToRuntimeEvent(

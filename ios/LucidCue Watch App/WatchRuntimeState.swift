@@ -5,6 +5,7 @@ enum WatchRuntimeDisplayState: Equatable {
   case startSyncWaiting
   case ready
   case starting
+  case training
   case running
   case cueWindowPending
   case cueingEnabled
@@ -24,6 +25,8 @@ enum WatchRuntimeDisplayState: Equatable {
       return "Ready"
     case .starting:
       return "Starting"
+    case .training:
+      return "Training"
     case .running:
       return "Running"
     case .cueWindowPending:
@@ -53,6 +56,8 @@ enum WatchRuntimeDisplayState: Equatable {
       return "ready"
     case .starting:
       return "starting"
+    case .training:
+      return "training"
     case .running:
       return "running"
     case .cueWindowPending:
@@ -82,6 +87,8 @@ enum WatchRuntimeDisplayState: Equatable {
       return "Plan stored on Watch."
     case .starting:
       return "Opening sensor session."
+    case .training:
+      return "Playing Watch training."
     case .running:
       return "Collecting Watch epochs."
     case .cueWindowPending:

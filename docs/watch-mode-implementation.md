@@ -6,9 +6,10 @@ cue playback, native timing, and runtime logs.
 Watch Mode v2 is Watch-owned overnight. The phone first locks on `Waiting for
 Watch Sync`; the Watch shows `Sync Phone`, and the user taps that Watch button
 to pull the plan/data and start the Watch-owned runtime. Overnight, the Apple
-Watch owns sensor collection, 30-second epoch processing, experimental REM
-probability, cue timing, cue delivery, movement gates, and local runtime logs.
-The iPhone is sleep audio plus sync/status UI only. After `Wake` on the Watch,
+Watch owns training playback, sensor collection, 30-second epoch processing,
+experimental REM probability, cue timing, cue delivery, movement gates, and
+local runtime logs. The iPhone is sync/status UI only. Background sleep audio is
+Phone Mode only. After `Wake` on the Watch,
 the Watch waits for phone sync and the phone shows `Sync Watch` to import v2
 Watch logs. WatchConnectivity is for start sync, status, and morning log import,
 not live cue timing.

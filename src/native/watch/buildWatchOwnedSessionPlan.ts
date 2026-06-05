@@ -2,6 +2,13 @@ import { getBuiltInCue } from "@/src/audio/cueCatalog";
 import type { NightSession, TlrOptions } from "@/src/domain/types";
 import type { CueDecisionSettings, SleepTimingPrior } from "@/src/engine";
 import {
+  FINAL_LUCID_TRAINING_ASSET_ID,
+  FINAL_LUCID_TRAINING_DURATION_SECONDS,
+  FINAL_LUCID_TRAINING_NATIVE_RESOURCE_EXTENSION,
+  FINAL_LUCID_TRAINING_NATIVE_RESOURCE_NAME,
+  buildTrainingCueSchedule,
+} from "@/src/audio/trainingAudio";
+import {
   LUCIDCUE_WATCH_REM_CLASSIFIER_VERSION,
   MALLELA_APPROX_FEATURE_VERSION,
   MALLELA_REM_THRESHOLD,
@@ -13,6 +20,7 @@ import {
   DEFAULT_WATCH_BATTERY_POLICY,
   type WatchCueMode,
   type WatchOwnedSessionPlanV2,
+  type WatchTrainingManifest,
 } from "./WatchOwnedTypes";
 
 export const WATCH_OWNED_SESSION_PLAN_PROTOCOL = "watch-session-plan-v2";
@@ -41,6 +49,72 @@ export function watchCueModeFromTlrOptions(options: TlrOptions): WatchCueMode {
   return "haptic_only";
 }
 
+function addSeconds(iso: string, seconds: number): string {
+  return new Date(Date.parse(iso) + seconds * 1000).toISOString();
+}
+
+export function watchTrainingEnabledForSession(input: {
+  session: NightSession;
+  settings: CueDecisionSettings;
+  tlrOptions?: TlrOptions;
+}): boolean {
+  const tlrOptions = normalizeTlrOptions(
+    input.tlrOptions,
+    input.settings.typicalWakeTime,
+  );
+
+  return input.session.sessionType === "tlr" && !tlrOptions.skipGuidedTraining;
+}
+
+export function projectedWatchTrainingCompletedAt(input: {
+  session: NightSession;
+  settings: CueDecisionSettings;
+  tlrOptions?: TlrOptions;
+}): string {
+  if (!watchTrainingEnabledForSession(input)) {
+    return input.session.trainingEndedAt ?? input.session.startedAt;
+  }
+
+  return (
+    input.session.trainingEndedAt ??
+    addSeconds(input.session.startedAt, FINAL_LUCID_TRAINING_DURATION_SECONDS)
+  );
+}
+
+function buildWatchTrainingManifest(input: {
+  session: NightSession;
+  settings: CueDecisionSettings;
+  tlrOptions?: TlrOptions;
+  selectedCue: ReturnType<typeof getBuiltInCue> | null;
+}): WatchTrainingManifest {
+  const enabled = watchTrainingEnabledForSession(input);
+  const expectedStartedAt = input.session.trainingStartedAt ?? input.session.startedAt;
+  const expectedCompletedAt = enabled
+    ? projectedWatchTrainingCompletedAt(input)
+    : input.session.trainingEndedAt;
+
+  return {
+    enabled,
+    skipped: input.session.sessionType !== "tlr" || !enabled,
+    trainingAssetId: enabled ? FINAL_LUCID_TRAINING_ASSET_ID : undefined,
+    resourceName: enabled ? FINAL_LUCID_TRAINING_NATIVE_RESOURCE_NAME : undefined,
+    resourceExtension: enabled
+      ? FINAL_LUCID_TRAINING_NATIVE_RESOURCE_EXTENSION
+      : undefined,
+    durationSec: enabled ? FINAL_LUCID_TRAINING_DURATION_SECONDS : undefined,
+    expectedStartedAt: enabled ? expectedStartedAt : undefined,
+    expectedCompletedAt,
+    cueSchedule:
+      enabled && input.selectedCue
+        ? buildTrainingCueSchedule(input.selectedCue).map((entry) => ({
+            markerIndex: entry.markerIndex,
+            markerMidpointSec: entry.markerMidpointSeconds,
+            cueStartSec: entry.cueStartSeconds,
+          }))
+        : [],
+  };
+}
+
 export function buildWatchOwnedSessionPlan(
   input: BuildWatchOwnedSessionPlanInput,
 ): WatchOwnedSessionPlanV2 {
@@ -54,6 +128,15 @@ export function buildWatchOwnedSessionPlan(
   const selectedCue = isTlrSession
     ? getBuiltInCue(session.selectedCueId ?? tlrOptions.selectedCueId)
     : null;
+  const training = buildWatchTrainingManifest({
+    session,
+    settings,
+    tlrOptions,
+    selectedCue,
+  });
+  const tlrIntervalStartsAt = isTlrSession
+    ? training.expectedCompletedAt ?? session.trainingEndedAt ?? session.startedAt
+    : session.startedAt;
 
   if (session.mode !== "watch") {
     throw new Error("Watch-owned Mode requires a watch session.");
@@ -64,6 +147,7 @@ export function buildWatchOwnedSessionPlan(
   return {
     protocol: WATCH_OWNED_SESSION_PLAN_PROTOCOL,
     sessionId: session.id,
+    sessionType: session.sessionType,
     createdAt: input.createdAt ?? new Date().toISOString(),
     validAfter: watchModeAnchorAt,
     expiresAt: sleepTiming.expectedWakeAt,
@@ -74,6 +158,20 @@ export function buildWatchOwnedSessionPlan(
       : session.startedAt,
     stopAt: sleepTiming.expectedWakeAt,
     runtimeOwner: "watch",
+    tlrEnabled: isTlrSession,
+    training,
+    tlrInterval: {
+      enabled: isTlrSession,
+      startsAt: tlrIntervalStartsAt,
+      earliestCueAt: isTlrSession
+        ? sleepTiming.likelyPhoneCueWindowStart
+        : session.startedAt,
+      stopAt: sleepTiming.expectedWakeAt,
+      derivedFrom: training.enabled ? "watch_training_end" : "session_start",
+      cueDelayAfterTrainingSec: training.enabled
+        ? settings.cueStartDelayHoursAfterTraining * 3600
+        : undefined,
+    },
     cueMode: isTlrSession ? watchCueModeFromTlrOptions(tlrOptions) : "none",
     cueBudget: isTlrSession ? settings.maxCuesPerNight : 0,
     minInterCueIntervalSec: settings.minimumSecondsSinceLastCue,

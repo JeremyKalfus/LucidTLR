@@ -51,6 +51,33 @@ export interface WatchCueAssetManifest {
   volumeHint?: number;
 }
 
+export interface WatchTrainingCueScheduleEntry {
+  markerIndex: number;
+  markerMidpointSec: number;
+  cueStartSec: number;
+}
+
+export interface WatchTrainingManifest {
+  enabled: boolean;
+  skipped: boolean;
+  trainingAssetId?: string;
+  resourceName?: string;
+  resourceExtension?: "mp3";
+  durationSec?: number;
+  expectedStartedAt?: string;
+  expectedCompletedAt?: string;
+  cueSchedule: WatchTrainingCueScheduleEntry[];
+}
+
+export interface WatchTlrIntervalManifest {
+  enabled: boolean;
+  startsAt: string;
+  earliestCueAt: string;
+  stopAt: string;
+  derivedFrom: "watch_training_end" | "session_start";
+  cueDelayAfterTrainingSec?: number;
+}
+
 export interface WatchRemModelManifest {
   modelId: string;
   version: string;
@@ -68,6 +95,7 @@ export interface WatchMovementGateConfigV2 {
 export interface WatchOwnedSessionPlanV2 {
   protocol: WatchSessionPlanProtocol;
   sessionId: string;
+  sessionType: "tlr" | "sleep_log";
   createdAt: string;
   validAfter?: string;
   expiresAt: string;
@@ -76,6 +104,9 @@ export interface WatchOwnedSessionPlanV2 {
   earliestCueAt: string;
   stopAt: string;
   runtimeOwner: "watch";
+  tlrEnabled: boolean;
+  training: WatchTrainingManifest;
+  tlrInterval: WatchTlrIntervalManifest;
   cueMode: WatchCueMode;
   cueBudget: number;
   minInterCueIntervalSec: number;
@@ -150,6 +181,23 @@ export interface WatchSessionSummaryLogV2 {
   syncStatus: "local_only" | "queued" | "imported_on_phone" | "acked";
 }
 
+export interface WatchOwnedRuntimeEventLogV2 {
+  protocol: "watch-runtime-event-v2";
+  id?: string;
+  sessionId: string;
+  watchSessionId?: string;
+  timestamp: string;
+  eventType:
+    | "watch_training_started"
+    | "watch_training_cue_marker_reached"
+    | "watch_training_cue_played"
+    | "watch_training_cue_failed"
+    | "watch_training_completed"
+    | "watch_training_failed"
+    | "watch_tlr_interval_started";
+  payload: Record<string, unknown>;
+}
+
 export interface WatchOwnedStatusV2 {
   protocol: "watch-owned-status-v2";
   available: boolean;
@@ -161,6 +209,7 @@ export interface WatchOwnedStatusV2 {
     | "start_sync_waiting"
     | "ready"
     | "starting"
+    | "training"
     | "running"
     | "cue_window_pending"
     | "cueing_enabled"
@@ -187,6 +236,7 @@ export interface WatchOwnedStatusV2 {
 
 export interface WatchOwnedImportPayloadV2 {
   sessionId: string;
+  runtimeEvents?: WatchOwnedRuntimeEventLogV2[];
   epochs: WatchEpochLogV2[];
   cueDeliveries: WatchCueDeliveryLogV2[];
   summary?: WatchSessionSummaryLogV2;

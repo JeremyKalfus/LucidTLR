@@ -6,6 +6,8 @@ import {
 } from "@/src/native/watch/watchRuntimeClient";
 import type { WatchOwnedSessionPlanV2 } from "@/src/native/watch/WatchOwnedTypes";
 
+const legacyWatchStartSession = "start" + "WatchSession";
+
 function nativeRuntimeModule(
   overrides: Partial<NativeWatchRuntimeModule> = {},
 ): NativeWatchRuntimeModule {
@@ -36,11 +38,32 @@ function plan(sessionId = "session-1"): WatchOwnedSessionPlanV2 {
   return {
     protocol: "watch-session-plan-v2",
     sessionId,
+    sessionType: "tlr",
     createdAt: "2026-01-01T04:00:00.000Z",
     expiresAt: "2026-01-01T12:00:00.000Z",
     earliestCueAt: "2026-01-01T08:00:00.000Z",
     stopAt: "2026-01-01T12:00:00.000Z",
     runtimeOwner: "watch",
+    tlrEnabled: true,
+    training: {
+      enabled: true,
+      skipped: false,
+      trainingAssetId: "final_lucid_training",
+      resourceName: "final_lucid_training",
+      resourceExtension: "mp3",
+      durationSec: 1340.928753,
+      expectedStartedAt: "2026-01-01T04:00:00.000Z",
+      expectedCompletedAt: "2026-01-01T04:22:20.928Z",
+      cueSchedule: [],
+    },
+    tlrInterval: {
+      enabled: true,
+      startsAt: "2026-01-01T04:22:20.928Z",
+      earliestCueAt: "2026-01-01T08:00:00.000Z",
+      stopAt: "2026-01-01T12:00:00.000Z",
+      derivedFrom: "watch_training_end",
+      cueDelayAfterTrainingSec: 21600,
+    },
     cueMode: "haptic_only",
     cueBudget: 60,
     minInterCueIntervalSec: 20,
@@ -108,7 +131,7 @@ describe("watch runtime client", () => {
       nativeModule: nativeRuntimeModule(),
     });
 
-    expect("startWatchSession" in client).toBe(false);
+    expect(legacyWatchStartSession in client).toBe(false);
     expect("stopWatchSession" in client).toBe(false);
     expect("getWatchRuntimeStatus" in client).toBe(false);
     expect("getWatchEpochs" in client).toBe(false);

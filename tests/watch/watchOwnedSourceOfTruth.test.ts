@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
+const legacyNativeWatchPlanBuilder = "buildNative" + "WatchSessionPlan";
+const legacyWatchCommandV1 = "watch-command" + "-v1";
+const legacyWatchStartSession = "start" + "WatchSession";
 
 function readSource(path: string): string {
   return readFileSync(join(root, path), "utf8");
@@ -26,6 +29,7 @@ describe("Watch-owned v2 source of truth", () => {
     expect(gitignore).toContain(".agent_work/*");
     expect(gitignore).toContain("!.agent_work/current.md.example");
     expect(handoff).toContain("Latest User Instruction");
+    expect(handoff).toContain("Recent Actions");
     expect(handoff).toContain("Verification Evidence");
     expect(handoff).toContain("Handoff Status");
   });
@@ -40,7 +44,11 @@ describe("Watch-owned v2 source of truth", () => {
     expect(combined).toContain("Watch Mode is watch-owned");
     expect(combined).toContain("Waiting for Watch Sync");
     expect(combined).toContain("Sync Phone");
-    expect(combined).toContain("clock-only sleep-audio speaker");
+    expect(combined).toContain("Watch Mode training audio and cue audio are Watch-delivered");
+    expect(combined).toContain("Background sleep audio is Phone Mode only");
+    expect(combined).toContain("Runtime Owner");
+    expect(combined).toContain("Avoid saying");
+    expect(orientation).not.toContain("REM-Informed:");
     expect(combined).toContain("Push Back 30m");
     expect(combined).toContain("Pause/Play TLR");
     expect(combined).toContain("Sync Watch");
@@ -66,8 +74,8 @@ describe("Watch-owned v2 source of truth", () => {
     ].map(readSource).join("\n");
 
     expect(docs).not.toContain("--lucidcue-watch-runtime-self-test");
-    expect(docs).not.toContain("buildNativeWatchSessionPlan");
-    expect(docs).not.toContain("startWatchSession");
+    expect(docs).not.toContain(legacyNativeWatchPlanBuilder);
+    expect(docs).not.toContain(legacyWatchStartSession);
     expect(docs).not.toContain("current phone-dependent Watch runtime is legacy");
     expect(docs).not.toContain("Watch-owned Watch Mode v2 is the target");
   });
@@ -82,8 +90,8 @@ describe("Watch-owned v2 source of truth", () => {
     for (const path of normalWatchModeScreens) {
       const source = readSource(path);
 
-      expect(source).not.toContain("buildNativeWatchSessionPlan");
-      expect(source).not.toContain("startWatchSession(");
+      expect(source).not.toContain(legacyNativeWatchPlanBuilder);
+      expect(source).not.toContain(`${legacyWatchStartSession}(`);
       expect(source).not.toContain("requestWatchOwnedStart");
     }
   });
@@ -114,16 +122,18 @@ describe("Watch-owned v2 source of truth", () => {
     const source = readSource("src/screens/ActiveNightSessionScreen.tsx");
 
     expect(source).toContain("buildWatchOwnedSessionPlan");
+    expect(source).toContain("projectedWatchTrainingCompletedAt");
     expect(source).toContain("beginWatchOwnedStartSync(plan)");
     expect(source).toContain('title="Waiting for Watch Sync"');
-    expect(source).toContain("startPhoneWatchSpeakerSession(plan)");
     expect(source).toContain('sendSessionEvent("start_watch_night"');
-    expect(source).toContain("<RunningSessionClock startedAt={activeSession.startedAt} />");
+    expect(source).toContain("Sleep session controlled by watch");
+    expect(source).not.toContain("buildNativePhoneWatchSpeakerPlan");
+    expect(source).not.toContain("startPhoneWatchSpeakerSession");
     expect(source).not.toContain("prepareWatchOwnedSession");
     expect(source).not.toContain("requestWatchOwnedStop");
   });
 
-  it("locks Watch end and morning review behind explicit Sync Watch plus complete v2 log import", () => {
+  it("locks Watch end behind Sync Watch and lets Morning Review reuse imported local Watch records", () => {
     const activeNight = readSource("src/screens/ActiveNightSessionScreen.tsx");
     const morningReview = readSource("src/screens/MorningReviewScreen.tsx");
 
@@ -134,6 +144,7 @@ describe("Watch-owned v2 source of truth", () => {
     expect(activeNight).toContain("isCompleteWatchOwnedImportPayload(payload)");
     expect(activeNight).toContain("WatchConnectionCheckpoint");
     expect(activeNight).toContain("waitForCompleteWatchOwnedLogs");
+    expect(morningReview).toContain("loadImportedWatchOwnedRuntimeSummary");
     expect(morningReview).toContain("isCompleteWatchOwnedImportPayload(payload)");
     expect(morningReview).toContain("WatchConnectionCheckpoint");
     expect(morningReview).not.toContain("getWatchEpochs(activeSession.id)");
@@ -144,17 +155,43 @@ describe("Watch-owned v2 source of truth", () => {
     const contentView = readSource("ios/LucidCue Watch App/ContentView.swift");
     const manager = readSource("ios/LucidCue Watch App/WatchSessionManager.swift");
 
-    expect(contentView).toContain('Text("Sync phone")');
+    expect(contentView).toContain('Text("Waiting for iPhone Sync")');
     expect(contentView).toContain('Button("Sync Phone")');
-    expect(contentView).toContain("your watch will manage TLR through the night");
+    expect(contentView).toContain("Text(manager.syncPhoneScreenDetail)");
+    expect(manager).toContain("hasPendingPhoneStartSync || shouldShowIdleSyncPhoneScreen");
+    expect(manager).toContain("hasPendingPhoneStartSync && WCSession.default.activationState");
+    expect(manager).toContain("private var shouldShowIdleSyncPhoneScreen");
+    expect(manager).toContain("failedReason == nil");
     expect(contentView).toContain('Text("Waiting for Phone Sync")');
     expect(contentView).toContain('Button("Push Back 30m")');
     expect(contentView).toContain("manager.tlrPauseButtonTitle");
     expect(contentView).toContain('Button("Wake")');
+    expect(manager).toContain("startWatchTraining");
+    expect(manager).toContain('"watch_training_started"');
+    expect(manager).toContain('"watch_training_cue_marker_reached"');
+    expect(manager).toContain('"watch_training_cue_played"');
+    expect(manager).toContain('"watch_training_completed"');
+    expect(manager).toContain('"watch_tlr_interval_started"');
     expect(manager).toContain('"schemaVersion": "watch-owned-sync-request-v2"');
     expect(manager).toContain('"watch-owned-sync-state-v2"');
     expect(manager).toContain('"sync_logs"');
     expect(manager).toContain('"ack_logs_imported"');
+  });
+
+  it("prevents Watch battery-stop shutdown from re-entering final epoch emission", () => {
+    const manager = readSource("ios/LucidCue Watch App/WatchSessionManager.swift");
+
+    expect(manager).toContain("private var isStopping = false");
+    expect(manager).toContain("guard (isRunning || isStarting) && !isStopping else");
+    expect(manager).toContain("defer {\n      isStopping = false\n    }");
+    expect(manager).toContain(
+      "emitEpoch(connectivityState: connectivityState(), enforceTerminalChecks: false)",
+    );
+    expect(manager).toContain(
+      "private func emitEpoch(connectivityState: String, enforceTerminalChecks: Bool = true)",
+    );
+    expect(manager).toContain("if enforceTerminalChecks, let plannedStopAt");
+    expect(manager).toContain("if enforceTerminalChecks, let reason = batteryStopReason");
   });
 
   it("only treats a Watch-owned import as complete when the summary counts are present", () => {
@@ -183,8 +220,8 @@ describe("Watch-owned v2 source of truth", () => {
     const source = readSource("src/native/watch/watchRuntimePersistence.ts");
 
     expect(source).toContain("importWatchOwnedRuntimeDataToLocalRecords");
-    expect(source).not.toContain("startWatchSession(");
-    expect(source).not.toContain("buildNativeWatchSessionPlan");
+    expect(source).not.toContain(`${legacyWatchStartSession}(`);
+    expect(source).not.toContain(legacyNativeWatchPlanBuilder);
   });
 
   it("does not keep the legacy phone-owned Watch native protocol in the v2 runtime path", () => {
@@ -194,11 +231,11 @@ describe("Watch-owned v2 source of truth", () => {
       "ios/LucidCue Watch App/WatchSessionManager.swift",
     ].map(readSource).join("\n");
 
-    expect(nativeSources).not.toContain("watch-command-v1");
+    expect(nativeSources).not.toContain(legacyWatchCommandV1);
     expect(nativeSources).not.toContain("watch-status-v1");
     expect(nativeSources).not.toContain("watch-status-ack-v1");
     expect(nativeSources).not.toContain("watch-epoch-v1");
-    expect(nativeSources).not.toContain("startWatchSession");
+    expect(nativeSources).not.toContain(legacyWatchStartSession);
     expect(nativeSources).not.toContain("getWatchRuntimeStatus");
   });
 
@@ -215,7 +252,9 @@ describe("Watch-owned v2 source of truth", () => {
     expect(watchResourcesStart).toBeGreaterThan(-1);
     expect(project).toContain("mallela_rf_v1.json");
     expect(project).toContain("clear_bell_chime.mp3");
+    expect(project).toContain("final_lucid_training.mp3");
     expect(watchResourcesPhase).toContain("mallela_rf_v1.json in Resources");
     expect(watchResourcesPhase).toContain("clear_bell_chime.mp3 in Resources");
+    expect(watchResourcesPhase).toContain("final_lucid_training.mp3 in Resources");
   });
 });

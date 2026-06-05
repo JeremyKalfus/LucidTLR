@@ -35,6 +35,9 @@ import {
 import {
   importWatchOwnedRuntimeDataToLocalRecords,
   isCompleteWatchOwnedImportPayload,
+  isTerminalWatchRuntimeSummary,
+  latestWatchRuntimeStopTimestamp,
+  loadImportedWatchOwnedRuntimeSummary,
   summarizeWatchRuntime,
   watchRuntime,
   type WatchRuntimeLogSummary,
@@ -250,6 +253,34 @@ export function MorningReviewScreen() {
       for (;;) {
         try {
           const db = await getLocalDb();
+          const localImport = await loadImportedWatchOwnedRuntimeSummary({
+            db,
+            sessionId: activeSession.id,
+          });
+
+          if (localImport) {
+            if (
+              canTransitionSession(
+                activeSession.sessionType,
+                activeSession.status,
+                "end_session",
+              )
+            ) {
+              sendSessionEvent(
+                "end_session",
+                latestWatchRuntimeStopTimestamp(localImport.logs) ??
+                  new Date().toISOString(),
+              );
+            }
+
+            if (!cancelled) {
+              setWatchRuntimeSummary(localImport.summary);
+              setWatchRuntimeSummaryError(null);
+            }
+
+            return;
+          }
+
           const payload = await watchRuntime.importWatchOwnedSessionLogs(
             activeSession.id,
           );
@@ -271,7 +302,7 @@ export function MorningReviewScreen() {
           const summary = summarizeWatchRuntime(imported.logs, imported.epochs);
 
           if (
-            (summary.stopped || summary.completed || summary.errored) &&
+            isTerminalWatchRuntimeSummary(summary) &&
             canTransitionSession(
               activeSession.sessionType,
               activeSession.status,

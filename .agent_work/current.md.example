@@ -16,6 +16,10 @@ List adjacent work that should not be done.
 
 List files or subsystems touched by this task.
 
+## Recent Actions
+
+Short chronological bullets of what was changed or verified.
+
 ## Decisions Made
 
 Record decisions that matter for continuation. Durable architecture decisions

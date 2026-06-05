@@ -20,9 +20,10 @@ These papers are included as full PDFs in the repo. You may also refer to Jeremy
 ### Watch Mode
 
 - iPhone + Apple Watch.
-- Apple Watch owns the overnight Watch Mode runtime: sensor collection, experimental REM probability, cue timing, cue delivery, movement gates, and local logs.
+- Apple Watch owns the overnight Watch Mode runtime: training playback, sensor collection, experimental REM probability, cue timing, cue delivery, movement gates, and local logs.
 - iPhone prepares and syncs the pre-sleep session plan, cue assets, and bundled Watch REM model before sleep, then imports Watch logs after waking.
 - WatchConnectivity is for pre-sleep plan/assets/model sync and morning log sync, not live cue timing.
+- Background sleep audio is Phone Mode only. Watch Mode training and cue audio are Watch-delivered.
 - Watch Mode also supports Log Sleep Only / No TLR nights: the Watch still owns overnight sensing and local log sync, but cue delivery is disabled.
 - Watch uses heart rate, motion, and elapsed session time for REM-informed cueing.
 - Watch Mode does not use GPS, SensorKit, live Apple sleep stages, wrist temperature, respiratory rate, or SpO2.
@@ -119,8 +120,9 @@ treatment.
   starts Watch Mode from the Watch.
 - iPhone syncs the session plan, cue assets, and Watch REM model at that
   user-led start checkpoint.
-- Watch app owns overnight sensor collection, experimental REM probability, cue timing, cue delivery, movement gates, and local logs.
-- During the night, iPhone is sleep audio plus clock/status UI only.
+- Watch app owns training playback, overnight sensor collection, experimental REM probability, cue timing, cue delivery, movement gates, and local logs.
+- During the night, iPhone is sync/status UI only. Watch Mode does not use
+  background sleep audio.
 - Watch Mode does not depend on live iPhone messages for cue timing.
 - After `Wake` on Watch, Watch waits for phone sync and iPhone shows `Sync
   Watch` to import Watch epoch, cue, and movement logs.
@@ -277,8 +279,8 @@ Aligned with Mallela/Mallett 2024, with LucidCue product safety gates:
   REM-informed cueing, not validated sleep staging or exact Mallela feature
   parity.
 - If likely REM is detected, Watch delivers the cue.
-- iPhone involvement is user-led start sync, sleep audio/status UI, and morning
-  log import.
+- iPhone involvement is user-led start sync, sync/status UI, and morning log
+  import.
 - WatchConnectivity is not used for live cue timing.
 - Beginning with the fifth consecutive likely-REM epoch, suppress additional cues until the REM period ends to reduce awakenings.
 - Watch movement data is also used for arousal gating:

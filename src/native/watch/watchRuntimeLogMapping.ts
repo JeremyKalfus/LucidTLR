@@ -1,4 +1,4 @@
-import type { WatchEpochRecordDraft, WatchRuntimeEvent } from "./WatchModeTypes";
+import type { WatchRuntimeEvent } from "./WatchModeTypes";
 
 export type WatchRuntimeLogSummary = {
   epochsReceived: number;
@@ -13,6 +13,11 @@ export type WatchRuntimeLogSummary = {
   errored: boolean;
 };
 
+type WatchRuntimeSummaryEpoch = {
+  classifierVersion?: string;
+  remLabel?: string;
+};
+
 function stringPayload(
   payload: Record<string, unknown>,
   key: string,
@@ -22,9 +27,9 @@ function stringPayload(
   return typeof value === "string" ? value : undefined;
 }
 
-export function summarizeWatchRuntime(
+export function summarizeWatchRuntime<Epoch extends WatchRuntimeSummaryEpoch>(
   events: WatchRuntimeEvent[],
-  epochs: WatchEpochRecordDraft[] = [],
+  epochs: Epoch[] = [],
 ): WatchRuntimeLogSummary {
   const classifierVersions = new Set(
     [
@@ -60,6 +65,7 @@ export function summarizeWatchRuntime(
     errored: events.some(
       (event) =>
         event.eventType === "watch_runtime_error" ||
+        event.eventType === "watch_training_failed" ||
         event.eventType === "watch_audio_bed_failed" ||
         event.eventType === "watch_cue_failed" ||
         (event.eventType === "watch_runtime_stopped" &&

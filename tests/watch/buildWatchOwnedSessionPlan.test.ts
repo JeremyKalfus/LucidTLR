@@ -5,7 +5,10 @@ import {
   buildSleepTimingPrior,
   createDefaultEngineSettings,
 } from "@/src/engine";
-import { buildWatchOwnedSessionPlan } from "@/src/native/watch/buildWatchOwnedSessionPlan";
+import {
+  buildWatchOwnedSessionPlan,
+  projectedWatchTrainingCompletedAt,
+} from "@/src/native/watch/buildWatchOwnedSessionPlan";
 
 function watchSession(): NightSession {
   return {
@@ -16,8 +19,6 @@ function watchSession(): NightSession {
     status: "waiting_for_cue_window",
     protocolVersion: "tlr-2026-001",
     startedAt: "2026-01-01T03:55:00.000Z",
-    trainingStartedAt: "2026-01-01T04:00:00.000Z",
-    trainingEndedAt: "2026-01-01T04:15:00.000Z",
     selectedCueId: "harp-flourish",
   };
 }
@@ -37,13 +38,18 @@ function watchSleepLogSession(): NightSession {
 describe("buildWatchOwnedSessionPlan", () => {
   it("builds a Watch-owned v2 plan with local runtime, cue, model, and battery policy", () => {
     const settings = createDefaultEngineSettings("standard");
+    const session = watchSession();
+    const trainingEndedAt = projectedWatchTrainingCompletedAt({
+      session,
+      settings,
+    });
     const sleepTiming = buildSleepTimingPrior({
-      trainingEndedAt: "2026-01-01T04:15:00.000Z",
+      trainingEndedAt,
       settings,
     });
 
     const plan = buildWatchOwnedSessionPlan({
-      session: watchSession(),
+      session,
       settings,
       sleepTiming,
       createdAt: "2026-01-01T04:16:00.000Z",
@@ -52,7 +58,9 @@ describe("buildWatchOwnedSessionPlan", () => {
     expect(plan).toMatchObject({
       protocol: "watch-session-plan-v2",
       sessionId: "session-watch-owned",
+      sessionType: "tlr",
       runtimeOwner: "watch",
+      tlrEnabled: true,
       cueMode: "audio_haptic",
       epochDurationSec: 30,
       accelerometerHz: 30,
@@ -73,6 +81,27 @@ describe("buildWatchOwnedSessionPlan", () => {
         modelId: "mallela_rf_v1",
         threshold: 0.24,
       },
+      training: {
+        enabled: true,
+        skipped: false,
+        trainingAssetId: "final_lucid_training",
+        resourceName: "final_lucid_training",
+        resourceExtension: "mp3",
+        expectedStartedAt: "2026-01-01T03:55:00.000Z",
+        expectedCompletedAt: trainingEndedAt,
+      },
+      tlrInterval: {
+        enabled: true,
+        startsAt: trainingEndedAt,
+        earliestCueAt: sleepTiming.likelyPhoneCueWindowStart,
+        derivedFrom: "watch_training_end",
+      },
+    });
+    expect(plan.training.durationSec).toBeGreaterThan(1300);
+    expect(plan.training.cueSchedule).toHaveLength(17);
+    expect(plan.training.cueSchedule[0]).toMatchObject({
+      markerIndex: 0,
+      markerMidpointSec: 111.672,
     });
     expect(plan.earliestCueAt).toBe(sleepTiming.likelyPhoneCueWindowStart);
     expect(plan.stopAt).toBe(sleepTiming.expectedWakeAt);
@@ -81,13 +110,14 @@ describe("buildWatchOwnedSessionPlan", () => {
 
   it("uses the Watch audio/haptic toggles to choose cue mode", () => {
     const settings = createDefaultEngineSettings("standard");
+    const session = watchSession();
     const sleepTiming = buildSleepTimingPrior({
-      trainingEndedAt: "2026-01-01T04:15:00.000Z",
+      trainingEndedAt: projectedWatchTrainingCompletedAt({ session, settings }),
       settings,
     });
 
     const plan = buildWatchOwnedSessionPlan({
-      session: watchSession(),
+      session,
       settings,
       sleepTiming,
       tlrOptions: {
@@ -118,7 +148,7 @@ describe("buildWatchOwnedSessionPlan", () => {
       trainingEndedAt: undefined,
     };
     const sleepTiming = buildSleepTimingPrior({
-      trainingEndedAt: session.startedAt,
+      trainingEndedAt: projectedWatchTrainingCompletedAt({ session, settings }),
       settings,
     });
 
@@ -131,6 +161,10 @@ describe("buildWatchOwnedSessionPlan", () => {
 
     expect(plan.validAfter).toBe(session.startedAt);
     expect(plan.trainingCompletedAt).toBeUndefined();
+    expect(plan.training.enabled).toBe(true);
+    expect(plan.training.expectedCompletedAt).toBe(
+      projectedWatchTrainingCompletedAt({ session, settings }),
+    );
     expect(plan.earliestCueAt).toBe(sleepTiming.likelyPhoneCueWindowStart);
   });
 
@@ -156,6 +190,18 @@ describe("buildWatchOwnedSessionPlan", () => {
       cueBudget: 0,
       validAfter: "2026-01-01T04:15:00.000Z",
       earliestCueAt: "2026-01-01T04:15:00.000Z",
+      sessionType: "sleep_log",
+      tlrEnabled: false,
+      training: {
+        enabled: false,
+        skipped: true,
+        cueSchedule: [],
+      },
+      tlrInterval: {
+        enabled: false,
+        startsAt: "2026-01-01T04:15:00.000Z",
+        derivedFrom: "session_start",
+      },
       remModelManifest: {
         modelId: "mallela_rf_v1",
       },

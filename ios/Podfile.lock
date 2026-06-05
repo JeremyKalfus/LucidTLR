@@ -182,6 +182,8 @@ PODS:
     - ExpoModulesCore
   - ExpoAudio (56.0.11):
     - ExpoModulesCore
+  - ExpoClipboard (56.0.3):
+    - ExpoModulesCore
   - ExpoDocumentPicker (56.0.4):
     - ExpoModulesCore
   - ExpoDomWebView (56.0.5):
@@ -2419,6 +2421,7 @@ DEPENDENCIES:
   - expo-dev-menu-interface (from `../node_modules/expo-dev-menu-interface/ios`)
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - ExpoAudio (from `../node_modules/expo-audio/ios`)
+  - ExpoClipboard (from `../node_modules/expo-clipboard/ios`)
   - ExpoDocumentPicker (from `../node_modules/expo-document-picker/ios`)
   - "ExpoDomWebView (from `../node_modules/@expo/dom-webview/ios`)"
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)
@@ -2541,6 +2544,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-asset/ios"
   ExpoAudio:
     :path: "../node_modules/expo-audio/ios"
+  ExpoClipboard:
+    :path: "../node_modules/expo-clipboard/ios"
   ExpoDocumentPicker:
     :path: "../node_modules/expo-document-picker/ios"
   ExpoDomWebView:
@@ -2752,6 +2757,7 @@ SPEC CHECKSUMS:
   expo-dev-menu-interface: 65402d4affb8b418aa6cec29b3abb0e313c8f443
   ExpoAsset: c2e7b5ba1fe75be683282d6264e38fd7cd8defbb
   ExpoAudio: 7774082d316ceecc2b26efeb10480bea2fa4d67e
+  ExpoClipboard: eee843698341fd26d571fd2807800f98abb6123c
   ExpoDocumentPicker: caa9c7c1071dc31262d86a8fe48f51929d291a43
   ExpoDomWebView: 27205be8754f9992913b8a9a08e65019f2207075
   ExpoFileSystem: d730a1cb33f2c91dec01561f0d710054fda32ae9
@@ -2852,6 +2858,6 @@ SPEC CHECKSUMS:
   RNWorklets: a6ebd7b1ae53f150d747986d70bfc34932d7ffb4
   Yoga: 77dfa8673de2874e1855002ae59c68b8be9b007b
 
-PODFILE CHECKSUM: 772396162a1d0aa8ef0ea79742baf254f6d4dc96
+PODFILE CHECKSUM: 214333edae3514da6bc95a5328857fea225a23fd
 
 COCOAPODS: 1.16.2

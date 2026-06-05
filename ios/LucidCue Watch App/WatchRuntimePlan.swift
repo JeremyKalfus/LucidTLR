@@ -25,6 +25,33 @@ struct WatchRuntimePlan: Codable, Equatable {
     var maxCuesTonight: Int
   }
 
+  struct Training: Codable, Equatable {
+    struct CueScheduleEntry: Codable, Equatable {
+      var markerIndex: Int
+      var markerMidpointSec: Double
+      var cueStartSec: Double
+    }
+
+    var enabled: Bool
+    var skipped: Bool
+    var trainingAssetId: String
+    var resourceName: String
+    var resourceExtension: String
+    var durationSec: Double
+    var expectedStartedAt: String?
+    var expectedCompletedAt: String?
+    var cueSchedule: [CueScheduleEntry]
+  }
+
+  struct TlrInterval: Codable, Equatable {
+    var enabled: Bool
+    var startsAt: String
+    var earliestCueAt: String
+    var stopAt: String
+    var derivedFrom: String
+    var cueDelayAfterTrainingSec: Double?
+  }
+
   struct Safety: Codable, Equatable {
     var stopAt: String?
     var cueWindowStartAt: String?
@@ -49,6 +76,8 @@ struct WatchRuntimePlan: Codable, Equatable {
   var iPhoneAudio: IPhoneAudio
   var classifier: Classifier
   var cuePolicy: CuePolicy
+  var training: Training
+  var tlrInterval: TlrInterval
   var safety: Safety
   var batteryPolicy: BatteryPolicy
 
@@ -69,9 +98,22 @@ struct WatchRuntimePlan: Codable, Equatable {
       ?? rawPlan.dictionaryValue("pauses")
       ?? [:]
     let movementGate = rawPlan.dictionaryValue("movementGateConfig") ?? [:]
+    let training = rawPlan.dictionaryValue("training") ?? [:]
+    let tlrInterval = rawPlan.dictionaryValue("tlrInterval") ?? [:]
     let safety = rawPlan.dictionaryValue("safety") ?? [:]
     let timing = rawPlan.dictionaryValue("timing") ?? [:]
     let batteryPolicy = rawPlan.dictionaryValue("batteryPolicy") ?? [:]
+    let trainingSchedule = (training["cueSchedule"] as? [[String: Any]] ?? []).map { entry in
+      Training.CueScheduleEntry(
+        markerIndex: entry.intValue("markerIndex") ?? 0,
+        markerMidpointSec: entry.doubleValue("markerMidpointSec")
+          ?? entry.doubleValue("markerMidpointSeconds")
+          ?? 0,
+        cueStartSec: entry.doubleValue("cueStartSec")
+          ?? entry.doubleValue("cueStartSeconds")
+          ?? 0
+      )
+    }
 
     let sessionId = rawPlan.stringValue("sessionId") ?? fallbackSessionId
     guard !sessionId.isEmpty else {
@@ -129,9 +171,31 @@ struct WatchRuntimePlan: Codable, Equatable {
           ?? 120,
         maxCuesTonight: rawPlan.intValue("cueBudget") ?? policy.intValue("maxCuesTonight") ?? 24
       ),
+      training: Training(
+        enabled: training.boolValue("enabled") ?? false,
+        skipped: training.boolValue("skipped") ?? true,
+        trainingAssetId: training.stringValue("trainingAssetId") ?? "",
+        resourceName: training.stringValue("resourceName") ?? "",
+        resourceExtension: training.stringValue("resourceExtension") ?? "mp3",
+        durationSec: training.doubleValue("durationSec") ?? 0,
+        expectedStartedAt: training.stringValue("expectedStartedAt"),
+        expectedCompletedAt: training.stringValue("expectedCompletedAt"),
+        cueSchedule: trainingSchedule
+      ),
+      tlrInterval: TlrInterval(
+        enabled: tlrInterval.boolValue("enabled") ?? rawPlan.boolValue("tlrEnabled") ?? true,
+        startsAt: tlrInterval.stringValue("startsAt") ?? rawPlan.stringValue("validAfter") ?? "",
+        earliestCueAt: tlrInterval.stringValue("earliestCueAt")
+          ?? rawPlan.stringValue("earliestCueAt")
+          ?? "",
+        stopAt: tlrInterval.stringValue("stopAt") ?? rawPlan.stringValue("stopAt") ?? "",
+        derivedFrom: tlrInterval.stringValue("derivedFrom") ?? "session_start",
+        cueDelayAfterTrainingSec: tlrInterval.doubleValue("cueDelayAfterTrainingSec")
+      ),
       safety: Safety(
         stopAt: rawPlan.stringValue("stopAt") ?? safety.stringValue("stopAt"),
         cueWindowStartAt: rawPlan.stringValue("earliestCueAt")
+          ?? tlrInterval.stringValue("earliestCueAt")
           ?? safety.stringValue("cueWindowStartAt")
           ?? timing.stringValue("earliestCueAt"),
         requireWatchBatteryAbovePercentAtStart: batteryPolicy.doubleValue("requireOverrideBelowPct")
@@ -154,6 +218,10 @@ struct WatchRuntimePlan: Codable, Equatable {
 
   func cueWindowStartDate(formatter: ISO8601DateFormatter) -> Date? {
     safety.cueWindowStartAt.flatMap(formatter.date)
+  }
+
+  func trainingExpectedCompletedDate(formatter: ISO8601DateFormatter) -> Date? {
+    training.expectedCompletedAt.flatMap(formatter.date)
   }
 
   private static func splitResourceFileName(_ fileName: String?) -> (name: String?, extension: String?) {
@@ -230,6 +298,18 @@ private extension Dictionary where Key == String, Value == Any {
 
     if let value = self[key] as? NSNumber {
       return value.doubleValue
+    }
+
+    return nil
+  }
+
+  func boolValue(_ key: String) -> Bool? {
+    if let value = self[key] as? Bool {
+      return value
+    }
+
+    if let value = self[key] as? NSNumber {
+      return value.boolValue
     }
 
     return nil

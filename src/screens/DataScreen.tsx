@@ -4,6 +4,7 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
   History,
   Moon,
@@ -46,6 +47,11 @@ import {
   loadWatchRuntimeEventsForSession,
   summarizeWatchSession,
 } from "@/src/data/local/repositories";
+import {
+  DEFAULT_DIAGNOSTICS_LOOKBACK_MINUTES,
+  buildDiagnosticsTimeline,
+  summarizePendingNativeWatchImport,
+} from "@/src/features/diagnostics/diagnosticsTimeline";
 import type {
   ExternalSleepSource,
   MorningReport,
@@ -57,7 +63,9 @@ import type {
 import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import {
+  isCompleteWatchOwnedImportPayload,
   summarizeWatchRuntime,
+  watchRuntime,
   type WatchRuntimeEvent,
   type WatchRuntimeLogSummary,
 } from "@/src/native/watch";
@@ -833,6 +841,37 @@ order by started_at desc`,
   return nativeLogs;
 }
 
+async function collectRecentPhoneRuntimeLogs(input: {
+  sessionIds: string[];
+  sinceMs: number;
+}): Promise<Record<string, NativePhoneRuntimeEvent[]>> {
+  const nativeLogSessionIds = await phoneRuntime.getPhoneRuntimeLogSessionIds();
+  const candidateSessionIds = [
+    ...input.sessionIds,
+    ...nativeLogSessionIds,
+  ].filter((id, index, ids) => ids.indexOf(id) === index);
+  const logsBySession: Record<string, NativePhoneRuntimeEvent[]> = {};
+
+  for (const sessionId of candidateSessionIds) {
+    try {
+      const logs = await phoneRuntime.getPhoneRuntimeLogs(sessionId);
+      const recentLogs = logs.filter((log) => {
+        const timestampMs = Date.parse(log.timestamp);
+
+        return Number.isFinite(timestampMs) && timestampMs >= input.sinceMs;
+      });
+
+      if (recentLogs.length > 0) {
+        logsBySession[sessionId] = recentLogs;
+      }
+    } catch {
+      // Diagnostics should include every source that can be read.
+    }
+  }
+
+  return logsBySession;
+}
+
 function confirmFullDataImport(): Promise<boolean> {
   if (Platform.OS === "web") {
     return Promise.resolve(
@@ -933,7 +972,14 @@ async function pickFullLocalDataImportFile() {
 }
 
 export function DataScreen() {
-  const { participantId, reloadLocalData } = useAppState();
+  const {
+    activeSession,
+    latestEngineSnapshot,
+    participantId,
+    reloadLocalData,
+    selectedMode,
+    sessionHistory,
+  } = useAppState();
   const [dataTransferError, setDataTransferError] = React.useState<string | null>(
     null,
   );
@@ -942,6 +988,7 @@ export function DataScreen() {
   );
   const [isExportingFullData, setIsExportingFullData] = React.useState(false);
   const [isImportingFullData, setIsImportingFullData] = React.useState(false);
+  const [isCopyingDiagnostics, setIsCopyingDiagnostics] = React.useState(false);
 
   async function exportFullData() {
     setIsExportingFullData(true);
@@ -1026,6 +1073,84 @@ export function DataScreen() {
     }
   }
 
+  async function copyDiagnosticsTimeline() {
+    setIsCopyingDiagnostics(true);
+    setDataTransferError(null);
+
+    try {
+      const db = await getLocalDb();
+      const now = new Date().toISOString();
+      const sinceMs =
+        Date.parse(now) - DEFAULT_DIAGNOSTICS_LOOKBACK_MINUTES * 60 * 1000;
+      const latestWatchSession = [activeSession, ...sessionHistory].find(
+        (session): session is NightSession => session?.mode === "watch",
+      );
+      const sessionIds = [activeSession, ...sessionHistory]
+        .flatMap((session) => (session ? [session.id] : []))
+        .filter((id, index, ids) => ids.indexOf(id) === index);
+      const [
+        phoneRuntimeStatus,
+        watchOwnedStatus,
+        nativePhoneRuntimeLogs,
+        pendingNativeWatchImport,
+      ] = await Promise.all([
+        phoneRuntime.getPhoneRuntimeStatus().catch(() => null),
+        watchRuntime.getLatestWatchOwnedStatus().catch(() => null),
+        collectRecentPhoneRuntimeLogs({ sessionIds, sinceMs }),
+        latestWatchSession
+          ? watchRuntime
+              .importWatchOwnedSessionLogs(latestWatchSession.id)
+              .then((payload) =>
+                summarizePendingNativeWatchImport({
+                  sessionId: latestWatchSession.id,
+                  payload,
+                  complete: isCompleteWatchOwnedImportPayload(payload),
+                }),
+              )
+              .catch((error) =>
+                summarizePendingNativeWatchImport({
+                  sessionId: latestWatchSession.id,
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "Could not inspect native Watch import payload.",
+                }),
+              )
+          : Promise.resolve(null),
+      ]);
+      const payload = await buildDiagnosticsTimeline({
+        db,
+        participantId,
+        selectedMode,
+        activeSession,
+        sessionHistory,
+        latestEngineSnapshot,
+        phoneRuntimeStatus,
+        watchOwnedStatus,
+        pendingNativeWatchImport,
+        nativePhoneRuntimeLogs,
+        now,
+      });
+      const json = JSON.stringify(payload, null, 2);
+      const Clipboard = await import("expo-clipboard");
+
+      await Clipboard.setStringAsync(json);
+      setDataTransferInfo(
+        `Copied ${DEFAULT_DIAGNOSTICS_LOOKBACK_MINUTES}m diagnostics (${formatBytes(
+          json.length,
+        )}).`,
+      );
+    } catch (error) {
+      setDataTransferError(
+        error instanceof Error
+          ? error.message
+          : "Could not copy diagnostics timeline.",
+      );
+    } finally {
+      setIsCopyingDiagnostics(false);
+    }
+  }
+
   return (
     <Screen>
       <SectionTitle>Data</SectionTitle>
@@ -1071,7 +1196,23 @@ export function DataScreen() {
 
       <View style={{ gap: 12 }}>
         <PrimaryPillButton
-          disabled={isExportingFullData || isImportingFullData}
+          disabled={
+            isExportingFullData || isImportingFullData || isCopyingDiagnostics
+          }
+          icon={Copy}
+          label={
+            isCopyingDiagnostics
+              ? "Copying Diagnostics..."
+              : "Copy Recent Diagnostics"
+          }
+          onPress={() => {
+            void copyDiagnosticsTimeline();
+          }}
+        />
+        <PrimaryPillButton
+          disabled={
+            isExportingFullData || isImportingFullData || isCopyingDiagnostics
+          }
           icon={Upload}
           label={isExportingFullData ? "Preparing Export..." : "Full Data Export"}
           onPress={() => {
@@ -1079,7 +1220,9 @@ export function DataScreen() {
           }}
         />
         <PrimaryPillButton
-          disabled={isExportingFullData || isImportingFullData}
+          disabled={
+            isExportingFullData || isImportingFullData || isCopyingDiagnostics
+          }
           icon={Download}
           label={isImportingFullData ? "Importing..." : "Full Data Import"}
           onPress={() => {
