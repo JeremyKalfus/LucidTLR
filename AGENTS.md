@@ -1,6 +1,6 @@
 # AGENTS.md
 
-You are working on LucidCue, a React Native + native iOS/watchOS app for
+You are working on LucidTLR, a React Native + native iOS/watchOS app for
 targeted lucidity reactivation (TLR). Keep work small, truthful, and grounded in
 the current repo.
 
@@ -8,7 +8,10 @@ the current repo.
 
 - `TLR_App_Plan.md` is the product/science contract.
 - `docs/llm-orientation.md` is the current implementation briefing.
-- `docs/decisions/001-watch-mode-is-watch-owned.md` locks Watch Mode ownership.
+- `docs/decisions/003-watch-mode-reset-placeholder.md` is the current Watch
+  Mode implementation status.
+- `docs/decisions/001-watch-mode-is-watch-owned.md` is future architecture
+  reference while Watch Mode is disabled.
 - `docs/decisions/002-phone-mode-is-phone-owned.md` locks Phone Mode ownership.
 
 For Watch Mode work, read the orientation and Watch ADR before coding. For Phone
@@ -17,8 +20,10 @@ Mode work, read the orientation and Phone ADR before coding.
 ## Non-Negotiable Invariants
 
 - Phone Mode is phone-owned.
-- Watch Mode is watch-owned.
-- In Watch Mode, the iPhone is sleep audio plus sync/status UI only.
+- Watch Mode is currently a visible disabled/planned placeholder.
+- Future Watch Mode rebuilds must stay watch-owned.
+- No current Watch Mode UI may start a Watch session or call native Watch
+  runtime/import code.
 - Do not implement live iPhone-driven Watch cue timing.
 - Do not add research-control, no-cue, untrained-cue, sham, or placebo nights.
 - Do not make therapeutic, diagnostic, medical-efficacy, or guaranteed-induction
@@ -48,6 +53,41 @@ the high-level tradeoff and the practical consequence of each option.
 - Do not improvise protocol constants inside UI components.
 - For UI work, preserve the existing visual system and ask before changing flows,
   wording intent, or design direction.
+
+## Graphify
+
+Use Graphify to improve repo orientation before broad source browsing. It is a
+navigation aid, not a source of truth; preserve the Read First docs and the
+non-negotiable invariants above.
+
+- For codebase, architecture, ownership, data-flow, or impact questions, when
+  `graphify-out/graph.json` exists, first run `graphify query "<question>"`
+  before broad `rg`/file reads. Use `--budget 1200` to keep context tight unless
+  the task clearly needs more.
+- Use `graphify explain "<symbol-or-concept>"` for focused orientation,
+  `graphify path "<A>" "<B>"` for relationship tracing, and
+  `graphify affected "<symbol-or-concept>" --depth 2` for impact checks.
+- Read `graphify-out/GRAPH_REPORT.md` only for broad architecture review or when
+  query/path/explain output is insufficient. Do not read
+  `graphify-out/graph.json` wholesale into context.
+- If `graphify-out/wiki/index.md` exists, use it for broad navigation before raw
+  source browsing.
+- After modifying indexed source or test code, run `graphify update .` to
+  refresh the local graph. This is AST-only and should have no API cost.
+- For docs, papers, images, audio, or other semantic graph refreshes, do not run
+  full Graphify extraction unless Jeremy explicitly asks; those paths can call
+  model providers.
+- If `graphify-out/` is missing, you may run `graphify update .` from the repo
+  root to rebuild the local graph using `.graphifyignore`.
+- Do not commit `graphify-out/`; it is generated local output. Keep
+  `.graphifyignore` focused so vendor/generated/media files do not dominate the
+  graph.
+- Do not run `graphify extract`, `graphify label`, `graphify install`,
+  `graphify hook install`, or Graphify project/platform installers unless Jeremy
+  explicitly asks. Those paths can use API keys, mutate agent config, or install
+  git hooks.
+- Graphify query/path/explain calls are logged locally by Graphify; do not put
+  secrets or private user data in Graphify questions.
 
 ## Handoff Rule
 

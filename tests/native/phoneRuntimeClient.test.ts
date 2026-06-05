@@ -11,7 +11,6 @@ function nativeRuntimeModule(
   return {
     startPhoneTlrSession: vi.fn(() => Promise.resolve()),
     startPhoneTlrSessionAfterPresleepTraining: vi.fn(() => Promise.resolve()),
-    startPhoneWatchSpeakerSession: vi.fn(() => Promise.resolve()),
     skipPhonePresleepTrainingAndStartRuntime: vi.fn(() => Promise.resolve()),
     pausePhonePresleepTraining: vi.fn(() => Promise.resolve()),
     resumePhonePresleepTraining: vi.fn(() => Promise.resolve()),
@@ -55,9 +54,6 @@ describe("phone runtime client", () => {
     expect(() =>
       client.startPhoneTlrSessionAfterPresleepTraining({} as never),
     ).toThrow("iPhone Phone Mode native runtime is unavailable");
-    expect(() =>
-      client.startPhoneWatchSpeakerSession({} as never),
-    ).toThrow("iPhone Phone Mode native runtime is unavailable");
     expect(() => client.skipPhonePresleepTrainingAndStartRuntime()).toThrow(
       "iPhone Phone Mode native runtime is unavailable",
     );
@@ -100,19 +96,6 @@ describe("phone runtime client", () => {
     expect(
       nativeModule.skipPhonePresleepTrainingAndStartRuntime,
     ).toHaveBeenCalledOnce();
-  });
-
-  it("calls exported native Watch speaker-only session start", async () => {
-    const nativeModule = nativeRuntimeModule();
-    const client = createPhoneRuntimeClient({
-      platform: "ios",
-      nativeModule,
-    });
-    const plan = { sessionId: "watch-speaker-session" } as never;
-
-    await client.startPhoneWatchSpeakerSession(plan);
-
-    expect(nativeModule.startPhoneWatchSpeakerSession).toHaveBeenCalledWith(plan);
   });
 
   it("requires the native presleep skip handoff in iOS builds", async () => {

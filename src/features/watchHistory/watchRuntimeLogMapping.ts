@@ -1,4 +1,4 @@
-import type { WatchRuntimeEvent } from "./WatchModeTypes";
+import type { WatchRuntimeEvent } from "./watchHistoryTypes";
 
 export type WatchRuntimeLogSummary = {
   epochsReceived: number;
@@ -87,3 +87,4 @@ export function latestWatchRuntimeStopTimestamp(
 
   return stringPayload(stopEvent.payload, "stoppedAt") ?? stopEvent.timestamp;
 }
+

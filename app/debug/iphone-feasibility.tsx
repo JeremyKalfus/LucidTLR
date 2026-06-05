@@ -531,7 +531,7 @@ export default function IPhoneFeasibilityRoute() {
   async function shareLogs(): Promise<void> {
     await Share.share({
       message: JSON.stringify(logs, null, 2),
-      title: "LucidCue iPhone feasibility logs",
+      title: "LucidTLR iPhone feasibility logs",
     });
   }
 

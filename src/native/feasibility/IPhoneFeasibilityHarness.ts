@@ -78,7 +78,7 @@ interface NativeFeasibilityModule {
   clearFeasibilityLogs: () => Promise<void>;
 }
 
-const nativeModule = NativeModules.LucidCueOvernightFeasibility as
+const nativeModule = NativeModules.LucidTLROvernightFeasibility as
   | NativeFeasibilityModule
   | undefined;
 
@@ -89,7 +89,7 @@ export function isIPhoneFeasibilityModuleAvailable(): boolean {
 function requireNativeModule(): NativeFeasibilityModule {
   if (!isIPhoneFeasibilityModuleAvailable() || !nativeModule) {
     throw new Error(
-      "LucidCueOvernightFeasibility is only available in a custom iOS development build.",
+      "LucidTLROvernightFeasibility is only available in a custom iOS development build.",
     );
   }
 

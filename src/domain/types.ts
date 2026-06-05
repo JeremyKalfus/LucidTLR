@@ -52,6 +52,7 @@ export type CueDecisionReason =
   | "cue_budget_exhausted"
   | "phone_late_rem_opportunity"
   | "watch_likely_rem"
+  | "watch_mode_disabled"
   | "rem_persistent_suppression"
   | "sensor_quality_bad"
   | "cueing_disabled_sleep_log"

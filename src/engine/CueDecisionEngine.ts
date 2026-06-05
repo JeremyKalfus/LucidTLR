@@ -21,7 +21,6 @@ import { buildMovementGateState, evaluateMovementGate } from "./MovementGate";
 import { scorePhoneOpportunity } from "./PhoneOpportunityProvider";
 import { buildSleepTimingPrior } from "./SleepTimingPrior";
 import { buildVolumeState } from "./VolumeController";
-import { evaluateWatchOpportunity } from "./WatchOpportunityProvider";
 
 function fallbackSleepTiming(context: CueDecisionContext): SleepTimingPrior {
   const trainingEndedAt = context.session?.trainingEndedAt ?? context.now;
@@ -139,10 +138,17 @@ export function evaluateCueDecision(context: CueDecisionContext): CueDecision {
     });
   }
 
-  if (
-    context.mode === "phone" &&
-    Date.parse(context.now) < Date.parse(timing.likelyPhoneCueWindowStart)
-  ) {
+  if (context.mode === "watch") {
+    return buildDecision({
+      context,
+      action: "suppress",
+      reason: "watch_mode_disabled",
+      timing,
+      movement: movementState,
+    });
+  }
+
+  if (Date.parse(context.now) < Date.parse(timing.likelyPhoneCueWindowStart)) {
     return buildDecision({
       context,
       action: "suppress",
@@ -190,39 +196,6 @@ export function evaluateCueDecision(context: CueDecisionContext): CueDecision {
       timing,
       movement: movementState,
       nextCheckAt: budgetGate.nextCheckAt,
-    });
-  }
-
-  if (context.mode === "watch") {
-    const watch = evaluateWatchOpportunity(context, timing);
-
-    if (!watch.eligible) {
-      return buildDecision({
-        context,
-        action: watch.action,
-        reason: watch.reason,
-        timing,
-        movement: movementState,
-        watch: watch.state,
-        opportunityScore: watch.score,
-        nextCheckAt: watch.nextCheckAt,
-        activePauseUntil: watch.activePauseUntil,
-      });
-    }
-
-    return buildDecision({
-      context,
-      action: "play_cue",
-      reason: "watch_likely_rem",
-      timing,
-      movement: movementState,
-      watch: watch.state,
-      opportunityScore: watch.score,
-      cue: true,
-      nextCheckAt: addSeconds(
-        context.now,
-        context.settings.cueIntervalRangeSeconds[0],
-      ),
     });
   }
 

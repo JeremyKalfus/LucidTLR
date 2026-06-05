@@ -51,11 +51,11 @@ export function GuideScreen() {
       />
       <GuideCard
         title="Watch Mode"
-        body="Watch Mode uses Apple Watch heart rate, motion, and elapsed session time. Prepare the night on the phone, start it from the Watch app, then sync watch records back for review."
+        body="Watch Mode remains visible as a planned Apple Watch option, but it is disabled while the Watch runtime is rebuilt."
       />
       <GuideCard
         title="Expectations"
-        body="Results are not guaranteed. LucidCue is not a medical treatment."
+        body="Results are not guaranteed. LucidTLR is not a medical treatment."
       />
     </Screen>
   );

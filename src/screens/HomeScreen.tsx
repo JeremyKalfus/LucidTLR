@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { AlarmClock, Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
 import React from "react";
-import { Switch, Text, View } from "react-native";
+import { Alert, Switch, Text, View } from "react-native";
 
 import {
   Card,
@@ -21,6 +21,10 @@ import {
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import type { TlrOptionsPatch } from "@/src/features/tlrOptions/tlrOptions";
+import {
+  WATCH_MODE_DISABLED_MESSAGE,
+  WATCH_MODE_DISABLED_TITLE,
+} from "@/src/features/watchMode/watchModeAvailability";
 import {
   phoneRuntime,
   type NativePhoneRuntimeEvent,
@@ -73,10 +77,12 @@ function HomeSectionLabel({ children }: { children: string }) {
 }
 
 function WatchCueToggleRow({
+  disabled = false,
   label,
   value,
   onValueChange,
 }: {
+  disabled?: boolean;
   label: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
@@ -104,6 +110,7 @@ function WatchCueToggleRow({
       </Text>
       <Switch
         accessibilityLabel={label}
+        disabled={disabled}
         value={value}
         onValueChange={onValueChange}
         trackColor={{ false: colors.cardBorder, true: colors.textDim }}
@@ -141,23 +148,35 @@ export function HomeScreen() {
   });
   const cuePreviewStatus = useAudioPlayerStatus(cuePreviewPlayer);
   const lastSession = sessionHistory[0] ?? null;
+  const showWatchDisabledMessage = React.useCallback(() => {
+    if (process.env.EXPO_OS === "web") {
+      console.info(`${WATCH_MODE_DISABLED_TITLE}: ${WATCH_MODE_DISABLED_MESSAGE}`);
+      return;
+    }
+
+    Alert.alert(WATCH_MODE_DISABLED_TITLE, WATCH_MODE_DISABLED_MESSAGE);
+  }, []);
   const [lastSleepLogs, setLastSleepLogs] = React.useState<
     NativePhoneRuntimeEvent[]
   >([]);
   const handleBeginTlr = React.useCallback(() => {
     if (selectedMode === "watch") {
-      startSession("tlr");
-      router.push("/active-night-session");
+      showWatchDisabledMessage();
       return;
     }
 
     startSession("tlr");
     router.push("/presleep-training");
-  }, [selectedMode, startSession]);
+  }, [selectedMode, showWatchDisabledMessage, startSession]);
   const handleNoTlr = React.useCallback(() => {
+    if (selectedMode === "watch") {
+      showWatchDisabledMessage();
+      return;
+    }
+
     startSession("sleep_log");
     router.push("/active-night-session");
-  }, [startSession]);
+  }, [selectedMode, showWatchDisabledMessage, startSession]);
   const handleTlrOptionsChange = React.useCallback(
     (patch: TlrOptionsPatch) => {
       void updateTlrOptions(patch);
@@ -196,7 +215,7 @@ export function HomeScreen() {
           cuePreviewPlayer.play();
         }
       } catch (error) {
-        console.warn("[LucidCue] Cue preview failed", error);
+          console.warn("[LucidTLR] Cue preview failed", error);
       }
     }
 
@@ -291,6 +310,7 @@ export function HomeScreen() {
           {selectedMode === "watch" ? (
             <View style={{ gap: 7, paddingTop: 2 }}>
               <WatchCueToggleRow
+                disabled
                 label="watch audio cue"
                 value={tlrOptions.watchAudioCueEnabled}
                 onValueChange={(watchAudioCueEnabled) => {
@@ -300,6 +320,7 @@ export function HomeScreen() {
                 }}
               />
               <WatchCueToggleRow
+                disabled
                 label="watch haptic cue"
                 value={tlrOptions.watchHapticCueEnabled}
                 onValueChange={(watchHapticCueEnabled) => {
@@ -312,6 +333,16 @@ export function HomeScreen() {
                   );
                 }}
               />
+              <Text
+                selectable
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: typography.label.fontSize,
+                  lineHeight: typography.label.lineHeight,
+                }}
+              >
+                {WATCH_MODE_DISABLED_MESSAGE}
+              </Text>
             </View>
           ) : null}
         </View>

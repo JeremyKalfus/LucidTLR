@@ -1,8 +1,8 @@
 # iOS Development Build
 
-LucidCue needs a custom iOS development build before testing locked-background
+LucidTLR needs a custom iOS development build before testing locked-background
 behavior. Expo Go is not sufficient for this project because Expo Go cannot
-include LucidCue-specific native modules, iOS background-mode entitlements, or
+include LucidTLR-specific native modules, iOS background-mode entitlements, or
 custom native audio/motion/watch behavior.
 
 The custom development build is required for the native Phone runtime and Watch
@@ -62,7 +62,7 @@ Start Metro for the installed development client:
 npx expo start --dev-client
 ```
 
-Open the LucidCue development build on the iPhone and connect to the Metro
+Open the LucidTLR development build on the iPhone and connect to the Metro
 server shown by Expo. If the phone cannot reach the computer on the local
 network, retry with:
 

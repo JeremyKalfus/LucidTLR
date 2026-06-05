@@ -14,7 +14,7 @@ import {
   graphPointsForWatchData,
   type WatchGraphPoint,
 } from "@/src/components/sleep/watchSleepGraphData";
-import type { WatchRuntimeEvent } from "@/src/native/watch";
+import type { WatchRuntimeEvent } from "@/src/features/watchHistory/watchHistoryTypes";
 import { colors, typography } from "@/src/theme/tokens";
 
 type GraphPoint = {

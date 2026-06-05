@@ -50,7 +50,6 @@ import {
 import {
   DEFAULT_DIAGNOSTICS_LOOKBACK_MINUTES,
   buildDiagnosticsTimeline,
-  summarizePendingNativeWatchImport,
 } from "@/src/features/diagnostics/diagnosticsTimeline";
 import type {
   ExternalSleepSource,
@@ -63,12 +62,10 @@ import type {
 import { formatEnginePercent } from "@/src/engine";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import {
-  isCompleteWatchOwnedImportPayload,
   summarizeWatchRuntime,
-  watchRuntime,
-  type WatchRuntimeEvent,
   type WatchRuntimeLogSummary,
-} from "@/src/native/watch";
+} from "@/src/features/watchHistory/watchRuntimeLogMapping";
+import type { WatchRuntimeEvent } from "@/src/features/watchHistory/watchHistoryTypes";
 import {
   phoneRuntime,
   summarizePhoneRuntimeEvents,
@@ -876,7 +873,7 @@ function confirmFullDataImport(): Promise<boolean> {
   if (Platform.OS === "web") {
     return Promise.resolve(
       globalThis.confirm(
-        "Importing this file will overwrite all local LucidCue data on this device.",
+        "Importing this file will overwrite all local LucidTLR data on this device.",
       ),
     );
   }
@@ -884,7 +881,7 @@ function confirmFullDataImport(): Promise<boolean> {
   return new Promise((resolve) => {
     Alert.alert(
       "Overwrite local data?",
-      "Importing this file will replace the entire local LucidCue account on this device, including engine settings, sessions, dream journal, and local logs.",
+      "Importing this file will replace the entire local LucidTLR account on this device, including engine settings, sessions, dream journal, and local logs.",
       [
         {
           text: "Cancel",
@@ -926,11 +923,11 @@ function confirmSleepNightDelete(record: SleepNightRecord): Promise<boolean> {
 
 async function shareFullLocalDataExport(snapshot: FullLocalDataExport) {
   const json = JSON.stringify(snapshot, null, 2);
-  const fileName = `lucidcue-full-data-${safeFilePart(snapshot.exportedAt)}.json`;
-  const message = `LucidCue full local data export\nexportedAt: ${snapshot.exportedAt}`;
+  const fileName = `lucidtlr-full-data-${safeFilePart(snapshot.exportedAt)}.json`;
+  const message = `LucidTLR full local data export\nexportedAt: ${snapshot.exportedAt}`;
 
   if (Platform.OS === "ios" && FileSystem.documentDirectory) {
-    const exportDirectory = `${FileSystem.documentDirectory}lucidcue-exports/`;
+    const exportDirectory = `${FileSystem.documentDirectory}lucidtlr-exports/`;
     const fileUri = `${exportDirectory}${fileName}`;
 
     await FileSystem.makeDirectoryAsync(exportDirectory, {
@@ -1062,7 +1059,7 @@ export function DataScreen() {
 
       await reloadLocalData();
       setDataTransferInfo(
-        `Imported ${asset.name ?? "LucidCue export"} and replaced local data.`,
+        `Imported ${asset.name ?? "LucidTLR export"} and replaced local data.`,
       );
     } catch (error) {
       setDataTransferError(
@@ -1082,41 +1079,15 @@ export function DataScreen() {
       const now = new Date().toISOString();
       const sinceMs =
         Date.parse(now) - DEFAULT_DIAGNOSTICS_LOOKBACK_MINUTES * 60 * 1000;
-      const latestWatchSession = [activeSession, ...sessionHistory].find(
-        (session): session is NightSession => session?.mode === "watch",
-      );
       const sessionIds = [activeSession, ...sessionHistory]
         .flatMap((session) => (session ? [session.id] : []))
         .filter((id, index, ids) => ids.indexOf(id) === index);
       const [
         phoneRuntimeStatus,
-        watchOwnedStatus,
         nativePhoneRuntimeLogs,
-        pendingNativeWatchImport,
       ] = await Promise.all([
         phoneRuntime.getPhoneRuntimeStatus().catch(() => null),
-        watchRuntime.getLatestWatchOwnedStatus().catch(() => null),
         collectRecentPhoneRuntimeLogs({ sessionIds, sinceMs }),
-        latestWatchSession
-          ? watchRuntime
-              .importWatchOwnedSessionLogs(latestWatchSession.id)
-              .then((payload) =>
-                summarizePendingNativeWatchImport({
-                  sessionId: latestWatchSession.id,
-                  payload,
-                  complete: isCompleteWatchOwnedImportPayload(payload),
-                }),
-              )
-              .catch((error) =>
-                summarizePendingNativeWatchImport({
-                  sessionId: latestWatchSession.id,
-                  error:
-                    error instanceof Error
-                      ? error.message
-                      : "Could not inspect native Watch import payload.",
-                }),
-              )
-          : Promise.resolve(null),
       ]);
       const payload = await buildDiagnosticsTimeline({
         db,
@@ -1126,8 +1097,7 @@ export function DataScreen() {
         sessionHistory,
         latestEngineSnapshot,
         phoneRuntimeStatus,
-        watchOwnedStatus,
-        pendingNativeWatchImport,
+        pendingNativeWatchImport: null,
         nativePhoneRuntimeLogs,
         now,
       });
@@ -1169,7 +1139,7 @@ export function DataScreen() {
           title="iPhone runtime timeline"
         />
         <DataNavRow
-          detail="Local Watch Mode epochs, cue events, classifier status, and sync gaps."
+          detail="Historical local Watch epochs and runtime events already synced."
           icon={Watch}
           route="/data/watch-mode"
           title="Watch mode timeline"
@@ -1428,7 +1398,7 @@ export function TlrEngineDataScreen() {
         />
         <InfoRow
           label="classifier"
-          value={watch ? "lucidcue-watch-rem-v1" : "see Watch mode timeline"}
+          value={watch ? "historical Watch signal" : "Watch Mode disabled"}
         />
       </Card>
 
@@ -1487,7 +1457,7 @@ export function IphoneRuntimeDataScreen() {
         phoneRuntime.getPhoneRuntimeLogs(runtimeSession.id),
       ]);
       const payload = {
-        exportSchema: "lucidcue-phone-runtime-export-v1",
+        exportSchema: "lucidtlr-phone-runtime-export-v1",
         exportedAt: new Date().toISOString(),
         sessionId: runtimeSession.id,
         session: runtimeSession.session ?? null,
@@ -1498,11 +1468,11 @@ export function IphoneRuntimeDataScreen() {
         events: logs,
       };
       const json = JSON.stringify(payload, null, 2);
-      const fileName = `lucidcue-phone-runtime-${safeFilePart(runtimeSession.id)}-${safeFilePart(payload.exportedAt)}.json`;
-      const message = `LucidCue iPhone Phone Mode logs\nsession: ${runtimeSession.id}\nevents: ${logs.length}\nexportedAt: ${payload.exportedAt}`;
+      const fileName = `lucidtlr-phone-runtime-${safeFilePart(runtimeSession.id)}-${safeFilePart(payload.exportedAt)}.json`;
+      const message = `LucidTLR iPhone Phone Mode logs\nsession: ${runtimeSession.id}\nevents: ${logs.length}\nexportedAt: ${payload.exportedAt}`;
 
       if (Platform.OS === "ios" && FileSystem.documentDirectory) {
-        const exportDirectory = `${FileSystem.documentDirectory}lucidcue-exports/`;
+        const exportDirectory = `${FileSystem.documentDirectory}lucidtlr-exports/`;
         const fileUri = `${exportDirectory}${fileName}`;
 
         await FileSystem.makeDirectoryAsync(exportDirectory, {

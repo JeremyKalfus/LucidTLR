@@ -1,17 +1,13 @@
 #import <React/RCTBridgeModule.h>
 #import <React/RCTInvalidating.h>
 
-@interface RCT_EXTERN_MODULE(LucidCuePhoneRuntime, NSObject)
+@interface RCT_EXTERN_MODULE(LucidTLRPhoneRuntime, NSObject)
 
 RCT_EXTERN_METHOD(startPhoneTlrSession:(NSDictionary *)plan
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(startPhoneTlrSessionAfterPresleepTraining:(NSDictionary *)plan
-                  resolver:(RCTPromiseResolveBlock)resolve
-                  rejecter:(RCTPromiseRejectBlock)reject)
-
-RCT_EXTERN_METHOD(startPhoneWatchSpeakerSession:(NSDictionary *)plan
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -54,6 +50,6 @@ RCT_EXTERN_METHOD(clearPhoneRuntimeLogs:(NSString *)sessionId
 
 @end
 
-@interface LucidCuePhoneRuntime (Invalidating) <RCTInvalidating>
+@interface LucidTLRPhoneRuntime (Invalidating) <RCTInvalidating>
 
 @end

@@ -9,23 +9,10 @@ build-artifacts/
 coverage/
 graphify-out/
 ios/Pods/
+ios/build/
 
 # Local agent handoff/history should not become graph input.
 .agent_work/
 
-# Binary/media and paper assets need semantic extraction to be useful. Keep them
-# out of the default local AST graph so a future full run cannot upload them by
-# accident.
-*.pdf
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.webp
-*.svg
-*.mp3
-*.wav
-*.m4a
-*.ogg
-*.mp4
-*.mov
+# Papers and media are intentionally included when Jeremy explicitly requests a
+# full semantic Graphify extraction. Do not run `graphify extract` casually.

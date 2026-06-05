@@ -25,7 +25,7 @@ function LoadingOnboardingGate() {
           textAlign: "center",
         }}
       >
-        Loading LucidCue...
+        Loading LucidTLR...
       </Text>
     </View>
   );

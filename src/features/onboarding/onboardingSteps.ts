@@ -1,6 +1,6 @@
 import type { OnboardingStep } from "../../domain/forms";
 
-export const ONBOARDING_FORM_ID = "lucidcue-onboarding-v1";
+export const ONBOARDING_FORM_ID = "lucidtlr-onboarding-v1";
 export const STUDY_PARTICIPATION_QUESTION_ID = "study_participation";
 export const STUDY_OPT_IN_VALUE = "opt_in";
 export const STUDY_OPT_OUT_VALUE = "opt_out";
@@ -15,31 +15,31 @@ export const onboardingSteps: OnboardingStep[] = [
         id: "welcome_copy",
         type: "info",
         prompt:
-          "LucidCue is a dream-training app built around targeted lucidity reactivation, or TLR. Before sleep, you practice a cue while rehearsing the idea of noticing that you are dreaming.",
+          "LucidTLR is a dream-training app built around targeted lucidity reactivation, or TLR. Before sleep, you practice a cue while rehearsing the idea of noticing that you are dreaming.",
       },
       {
         id: "welcome_tlr_copy",
         type: "info",
         prompt:
-          "Later in the night, LucidCue may play that learned cue again. The goal is to gently reactivate the lucid-dreaming mindset during sleep.",
+          "Later in the night, LucidTLR may play that learned cue again. The goal is to gently reactivate the lucid-dreaming mindset during sleep.",
       },
       {
         id: "welcome_modes_copy",
         type: "info",
         prompt:
-          "Phone Mode uses your phone beside the bed. Watch Mode prepares on the phone, starts from the Watch app, and syncs watch records back later.",
+          "Phone Mode uses your phone beside the bed. Watch Mode remains visible as a planned Apple Watch option, but it is disabled in this build.",
       },
       {
         id: "welcome_setup_copy",
         type: "info",
         prompt:
-          "This setup asks about sleep timing, dream recall, sound sensitivity, goals, and whether you want to use LucidCue privately or anonymously share structured app data for research.",
+          "This setup asks about sleep timing, dream recall, sound sensitivity, goals, and whether you want to use LucidTLR privately or anonymously share structured app data for research.",
       },
       {
         id: "welcome_expectations_copy",
         type: "info",
         prompt:
-          "Results are not guaranteed. The main risk is possible sleep disruption. LucidCue is not a medical treatment.",
+          "Results are not guaranteed. The main risk is possible sleep disruption. LucidTLR is not a medical treatment.",
       },
     ],
   },
@@ -52,7 +52,7 @@ export const onboardingSteps: OnboardingStep[] = [
         id: "mode",
         type: "single_choice",
         prompt:
-          "Choose your mode. Using an Apple Watch adds sleep-sensing context, which may help LucidCue time cues during likely REM periods. Results are not guaranteed.",
+          "Choose your mode. Phone Mode is available now. Watch Mode is planned and remains visible, but cannot start nights in this build. Results are not guaranteed.",
         required: true,
         options: [
           {
@@ -63,7 +63,7 @@ export const onboardingSteps: OnboardingStep[] = [
           {
             value: "watch",
             label: "Phone + Apple Watch",
-            note: "Prepare on phone, start on Watch, sync later.",
+            note: "Planned; disabled in this build.",
           },
         ],
       },
@@ -78,7 +78,7 @@ export const onboardingSteps: OnboardingStep[] = [
         id: STUDY_PARTICIPATION_QUESTION_ID,
         type: "single_choice",
         prompt:
-          "LucidCue can be used privately. You can also choose to anonymously share structured app data with CNL at Northwestern University to support lucid dreaming research.",
+          "LucidTLR can be used privately. You can also choose to anonymously share structured app data with CNL at Northwestern University to support lucid dreaming research.",
         required: true,
         options: [
           {
@@ -310,13 +310,13 @@ export const onboardingSteps: OnboardingStep[] = [
         type: "permission_summary",
         mode: "watch",
         prompt:
-          "Watch Mode needs audio/haptic cue settings, HealthKit, Watch app setup, sync access, and notifications if needed.",
+          "Watch Mode is planned and disabled in this build; no Watch runtime permissions are requested for it now.",
       },
       {
         id: "excluded_permissions_copy",
         type: "info",
         prompt:
-          "LucidCue does not request location, contacts, texts, or advertising ID.",
+          "LucidTLR does not request location, contacts, texts, or advertising ID.",
       },
     ],
   },

@@ -4,7 +4,6 @@ import type {
   HistoricalSleepPrior,
   NightSession,
   SoundSensitivityProfile,
-  WatchSensorQuality,
 } from "@/src/domain/types";
 import {
   buildEngineSnapshot,
@@ -394,109 +393,17 @@ describe("Phone Mode scoring", () => {
   });
 });
 
-describe("Watch Mode opportunity", () => {
-  function watchContext(overrides: Partial<CueDecisionContext> = {}) {
-    return makeContext({
-      mode: "watch",
-      session: makeSession({ mode: "watch" }),
-      watchSignal: {
-        epochStart: "2026-01-02T05:00:00.000Z",
-        epochEnd: "2026-01-02T05:00:30.000Z",
-        remProbability: 0.3,
-        sleepProbability: 0.8,
-        sensorQuality: "good",
-        stableLowMovementSeconds: 60,
-        consecutiveLikelyRemEpochs: 1,
-        connectivityState: "connected",
-      },
-      ...overrides,
-    });
-  }
-
-  it("plays on likely REM", () => {
-    const decision = evaluateCueDecision(watchContext());
-
-    expect(decision.action).toBe("play_cue");
-    expect(decision.reason).toBe("watch_likely_rem");
-  });
-
-  it("can cue on likely REM before the phone cue window", () => {
+describe("Watch Mode disabled placeholder", () => {
+  it("never produces Watch cues while disabled", () => {
     const decision = evaluateCueDecision(
-      watchContext({
-        now: "2026-01-02T04:00:00.000Z",
-        watchSignal: {
-          epochStart: "2026-01-02T04:00:00.000Z",
-          epochEnd: "2026-01-02T04:00:30.000Z",
-          remProbability: 0.3,
-          sleepProbability: 0.8,
-          sensorQuality: "good",
-          stableLowMovementSeconds: 60,
-          consecutiveLikelyRemEpochs: 1,
-          connectivityState: "connected",
-        },
-      }),
-    );
-
-    expect(decision.action).toBe("play_cue");
-    expect(decision.reason).toBe("watch_likely_rem");
-  });
-
-  it("pauses when the watch epoch has unstable movement", () => {
-    const decision = evaluateCueDecision(
-      watchContext({
+      makeContext({
+        mode: "watch",
+        session: makeSession({ mode: "watch" }),
         watchSignal: {
           epochStart: "2026-01-02T05:00:00.000Z",
           epochEnd: "2026-01-02T05:00:30.000Z",
-          remProbability: 0.3,
-          sleepProbability: 0.8,
-          sensorQuality: "good",
-          stableLowMovementSeconds: 0,
-          consecutiveLikelyRemEpochs: 1,
-          connectivityState: "connected",
-        },
-      }),
-    );
-
-    expect(decision.action).toBe("pause");
-    expect(decision.reason).toBe("movement");
-  });
-
-  it("exposes non-stub watch opportunity scoring", () => {
-    const context = watchContext({
-      watchSignal: {
-        epochStart: "2026-01-02T05:00:00.000Z",
-        epochEnd: "2026-01-02T05:00:30.000Z",
-        remProbability: 0.26,
-        sleepProbability: 0.75,
-        sensorQuality: "good",
-        stableLowMovementSeconds: 60,
-        consecutiveLikelyRemEpochs: 1,
-        connectivityState: "connected",
-      },
-    });
-    const decision = evaluateCueDecision(context);
-    const snapshot = buildEngineSnapshot({ context, decision });
-
-    expect(decision.opportunityScore).toBeGreaterThan(0);
-    expect(decision.opportunityScore).toBeLessThan(1);
-    expect(decision.watch?.scoreBreakdown?.sleepProbabilityScore).toBe(0.75);
-    expect(snapshot.scoreRows.map((row) => row.label)).toEqual([
-      "watch REM",
-      "watch sleep probability",
-      "watch movement stability",
-      "sleep prior",
-      "watch opportunity",
-    ]);
-  });
-
-  it("suppresses below the REM threshold", () => {
-    const decision = evaluateCueDecision(
-      watchContext({
-        watchSignal: {
-          epochStart: "2026-01-02T05:00:00.000Z",
-          epochEnd: "2026-01-02T05:00:30.000Z",
-          remProbability: 0.1,
-          sleepProbability: 0.8,
+          remProbability: 0.95,
+          sleepProbability: 0.95,
           sensorQuality: "good",
           stableLowMovementSeconds: 60,
           consecutiveLikelyRemEpochs: 1,
@@ -506,72 +413,23 @@ describe("Watch Mode opportunity", () => {
     );
 
     expect(decision.action).toBe("suppress");
-    expect(decision.reason).toBe("outside_sleep_opportunity");
+    expect(decision.reason).toBe("watch_mode_disabled");
+    expect(decision.cueId).toBeUndefined();
+    expect(decision.watch).toBeUndefined();
   });
 
-  it("suppresses after 5 consecutive likely-REM epochs", () => {
+  it("keeps historical sleep timing metadata without enabling Watch cueing", () => {
     const decision = evaluateCueDecision(
-      watchContext({
-        watchSignal: {
-          epochStart: "2026-01-02T05:00:00.000Z",
-          epochEnd: "2026-01-02T05:00:30.000Z",
-          remProbability: 0.3,
-          sleepProbability: 0.8,
-          sensorQuality: "good",
-          stableLowMovementSeconds: 60,
-          consecutiveLikelyRemEpochs: 5,
-          connectivityState: "connected",
-        },
-      }),
-    );
-
-    expect(decision.action).toBe("suppress");
-    expect(decision.reason).toBe("rem_persistent_suppression");
-  });
-
-  it.each(["missing", "bad"] as WatchSensorQuality[])(
-    "suppresses %s sensor quality",
-    (sensorQuality) => {
-      const decision = evaluateCueDecision(
-        watchContext({
-          watchSignal: {
-            epochStart: "2026-01-02T05:00:00.000Z",
-            epochEnd: "2026-01-02T05:00:30.000Z",
-            remProbability: 0.3,
-            sleepProbability: 0.8,
-            sensorQuality,
-            stableLowMovementSeconds: 60,
-            consecutiveLikelyRemEpochs: 1,
-            connectivityState: "disconnected",
-          },
-        }),
-      );
-
-      expect(decision.action).toBe("suppress");
-      expect(decision.reason).toBe("sensor_quality_bad");
-    },
-  );
-
-  it("keeps live REM probability decisive even with a historical REM prior", () => {
-    const decision = evaluateCueDecision(
-      watchContext({
+      makeContext({
+        mode: "watch",
+        session: makeSession({ mode: "watch" }),
         historicalSleepPrior: makeHistoricalPrior(),
-        watchSignal: {
-          epochStart: "2026-01-02T05:00:00.000Z",
-          epochEnd: "2026-01-02T05:00:30.000Z",
-          remProbability: 0.1,
-          sleepProbability: 0.8,
-          sensorQuality: "good",
-          stableLowMovementSeconds: 60,
-          consecutiveLikelyRemEpochs: 1,
-          connectivityState: "connected",
-        },
       }),
     );
 
     expect(decision.sleepTiming.source).toBe("historical_sleep");
     expect(decision.action).toBe("suppress");
-    expect(decision.reason).toBe("outside_sleep_opportunity");
+    expect(decision.reason).toBe("watch_mode_disabled");
   });
 });
 

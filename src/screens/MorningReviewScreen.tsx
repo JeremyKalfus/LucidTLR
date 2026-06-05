@@ -11,9 +11,10 @@ import {
   SectionTitle,
   TextField,
 } from "@/src/components/ui";
-import { WatchConnectionCheckpoint } from "@/src/components/watch/WatchConnectionCheckpoint";
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import {
+  loadWatchEpochsForSession,
+  loadWatchRuntimeEventsForSession,
   saveMorningReport,
   updatePhoneNightCalibrationFeedback,
 } from "@/src/data/local/repositories";
@@ -33,26 +34,13 @@ import {
   type PhoneRuntimeLogSummary,
 } from "@/src/native/phoneRuntime";
 import {
-  importWatchOwnedRuntimeDataToLocalRecords,
-  isCompleteWatchOwnedImportPayload,
-  isTerminalWatchRuntimeSummary,
-  latestWatchRuntimeStopTimestamp,
-  loadImportedWatchOwnedRuntimeSummary,
   summarizeWatchRuntime,
-  watchRuntime,
   type WatchRuntimeLogSummary,
-} from "@/src/native/watch";
+} from "@/src/features/watchHistory/watchRuntimeLogMapping";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
 type FieldValue = boolean | number | null;
-const WATCH_SYNC_POLL_MS = 2000;
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -250,91 +238,35 @@ export function MorningReviewScreen() {
         return;
       }
 
-      for (;;) {
-        try {
-          const db = await getLocalDb();
-          const localImport = await loadImportedWatchOwnedRuntimeSummary({
+      try {
+        const db = await getLocalDb();
+        const [events, epochs] = await Promise.all([
+          loadWatchRuntimeEventsForSession({
             db,
             sessionId: activeSession.id,
-          });
-
-          if (localImport) {
-            if (
-              canTransitionSession(
-                activeSession.sessionType,
-                activeSession.status,
-                "end_session",
-              )
-            ) {
-              sendSessionEvent(
-                "end_session",
-                latestWatchRuntimeStopTimestamp(localImport.logs) ??
-                  new Date().toISOString(),
-              );
-            }
-
-            if (!cancelled) {
-              setWatchRuntimeSummary(localImport.summary);
-              setWatchRuntimeSummaryError(null);
-            }
-
-            return;
-          }
-
-          const payload = await watchRuntime.importWatchOwnedSessionLogs(
-            activeSession.id,
-          );
-
-          if (!isCompleteWatchOwnedImportPayload(payload)) {
-            await wait(WATCH_SYNC_POLL_MS);
-
-            if (cancelled) {
-              return;
-            }
-
-            continue;
-          }
-
-          const imported = await importWatchOwnedRuntimeDataToLocalRecords({
+          }),
+          loadWatchEpochsForSession({
             db,
-            payload,
-          });
-          const summary = summarizeWatchRuntime(imported.logs, imported.epochs);
+            sessionId: activeSession.id,
+          }),
+        ]);
+        const summary = summarizeWatchRuntime(events, epochs);
 
-          if (
-            isTerminalWatchRuntimeSummary(summary) &&
-            canTransitionSession(
-              activeSession.sessionType,
-              activeSession.status,
-              "end_session",
-            )
-          ) {
-            sendSessionEvent(
-              "end_session",
-              payload.summary?.stoppedAt ?? new Date().toISOString(),
-            );
-          }
-
-          if (!cancelled) {
-            setWatchRuntimeSummary(summary);
-            setWatchRuntimeSummaryError(null);
-          }
-
-          return;
-        } catch (error) {
-          if (!cancelled) {
-            setWatchRuntimeSummaryError(
-              error instanceof Error
-                ? error.message
-                : "Could not sync watch night logs.",
-            );
-          }
-
-          await wait(WATCH_SYNC_POLL_MS);
-
-          if (cancelled) {
-            return;
-          }
+        if (!cancelled) {
+          setWatchRuntimeSummary(summary);
+          setWatchRuntimeSummaryError(
+            events.length > 0 || epochs.length > 0
+              ? null
+              : "No local Watch history was synced before Watch Mode was disabled.",
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setWatchRuntimeSummaryError(
+            error instanceof Error
+              ? error.message
+              : "Could not load local Watch history.",
+          );
         }
       }
     }
@@ -344,11 +276,7 @@ export function MorningReviewScreen() {
     return () => {
       cancelled = true;
     };
-  }, [activeSession, sendSessionEvent, usesWatchRuntime]);
-
-  if (usesWatchRuntime && !watchRuntimeSummary) {
-    return <WatchConnectionCheckpoint detail={watchRuntimeSummaryError} />;
-  }
+  }, [activeSession, usesWatchRuntime]);
 
   return (
     <Screen>

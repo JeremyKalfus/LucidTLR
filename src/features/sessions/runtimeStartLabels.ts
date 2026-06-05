@@ -2,7 +2,7 @@ import type { AppMode } from "@/src/domain/types";
 
 export function runtimeStartLoadingLabel(mode: AppMode): string {
   return mode === "watch"
-    ? "Preparing Watch Night..."
+    ? "Watch Mode Disabled"
     : "Starting Phone Runtime...";
 }
 
@@ -15,6 +15,6 @@ export function nativeRuntimeStartButtonLabel(input: {
   }
 
   return input.mode === "watch"
-    ? "Prepare Watch Night"
+    ? "Watch Mode Disabled"
     : "Start Native Phone Runtime";
 }

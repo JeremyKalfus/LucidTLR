@@ -28,7 +28,7 @@ import type {
   WatchCueRecordDraft,
   WatchEpochRecordDraft,
   WatchRuntimeEvent,
-} from "@/src/native/watch/WatchModeTypes";
+} from "@/src/features/watchHistory/watchHistoryTypes";
 import { ONBOARDING_FORM_ID, onboardingSteps } from "@/src/features/onboarding/onboardingSteps";
 
 export const ONBOARDING_COMPLETED_AT_SETTING = "onboarding_completed_at";

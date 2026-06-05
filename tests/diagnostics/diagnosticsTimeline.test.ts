@@ -6,7 +6,6 @@ import type { EngineSnapshot } from "@/src/engine";
 import {
   DIAGNOSTICS_TIMELINE_SCHEMA,
   buildDiagnosticsTimeline,
-  summarizePendingNativeWatchImport,
 } from "@/src/features/diagnostics/diagnosticsTimeline";
 import {
   DIAGNOSTICS_ROUTE_EVENTS_SETTING,
@@ -132,7 +131,7 @@ describe("diagnostics timeline", () => {
             sensor_quality: "good",
             rem_probability: 0.7,
             rem_label: "likely_rem",
-            classifier_version: "lucidcue-watch-rem-v1",
+            classifier_version: "historical-watch-rem",
             watch_battery_level: 0.8,
             watch_connectivity_state: "delayed",
             cue_decision_reason: "watch_likely_rem",
@@ -156,7 +155,7 @@ describe("diagnostics timeline", () => {
       latestEngineSnapshot: {
         sessionStatus: "ended",
         currentValues: {
-          latestDecisionReason: "watch_likely_rem",
+          latestDecisionReason: "watch_mode_disabled",
         },
       } as unknown as EngineSnapshot,
       phoneRuntimeStatus: {
@@ -170,17 +169,7 @@ describe("diagnostics timeline", () => {
         cuesInBlock: 0,
         tlrPaused: false,
       },
-      watchOwnedStatus: {
-        protocol: "watch-owned-status-v2",
-        available: true,
-        runtimeOwner: "watch",
-        state: "completed",
-        sessionId: "watch-session-1",
-      },
-      pendingNativeWatchImport: summarizePendingNativeWatchImport({
-        sessionId: "watch-session-1",
-        complete: false,
-      }),
+      pendingNativeWatchImport: null,
       nativePhoneRuntimeLogs: {
         "phone-session-1": [phoneRuntimeLog],
       },
@@ -194,10 +183,10 @@ describe("diagnostics timeline", () => {
       "watch_runtime",
     );
     expect(payload.timeline.map((event) => event.source)).toContain("watch_epoch");
-    expect(payload.timeline.map((event) => event.source)).toContain(
+    expect(payload.timeline.map((event) => event.source)).not.toContain(
       "native_watch_import",
     );
-    expect(payload.liveStatus.watchOwnedStatus?.state).toBe("completed");
+    expect(payload.liveStatus.watchModeStatus).toBe("planned_rebuild");
     expect(payload.counts.watch_epoch).toBe(1);
   });
 });

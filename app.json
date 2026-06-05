@@ -1,8 +1,13 @@
 {
   "expo": {
-    "name": "LucidCue",
-    "slug": "lucidcue",
-    "scheme": "lucidcue",
+    "name": "LucidTLR",
+    "slug": "lucidtlr",
+    "scheme": [
+      "lucidtlr",
+      "lucidcue",
+      "exp+lucidtlr",
+      "exp+lucidcue"
+    ],
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
@@ -15,7 +20,7 @@
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.jeremykalfus.lucidcue",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "LucidCue uses microphone access only for local debug feasibility audio analysis when explicitly enabled on the hidden development screen.",
+        "NSMicrophoneUsageDescription": "LucidTLR uses microphone access only for local debug feasibility audio analysis when explicitly enabled on the hidden development screen.",
         "UIBackgroundModes": [
           "audio"
         ]

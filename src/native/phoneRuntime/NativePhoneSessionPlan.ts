@@ -11,13 +11,13 @@ import {
 export const NATIVE_PHONE_POLICY_VERSION = "iphone-phone-runtime-2026-001";
 
 export const DEFAULT_PHONE_AUDIO_BED_ASSET_ID =
-  "lucidcue-audible-bed-white-noise";
+  "lucidtlr-audible-bed-white-noise";
 
 export function phoneAudioBedAssetIdForBackgroundNoise(
   option: BackgroundNoiseOption,
 ): string {
   return option === "binaural_beats"
-    ? "lucidcue-audible-bed-binaural-beats"
+    ? "lucidtlr-audible-bed-binaural-beats"
     : DEFAULT_PHONE_AUDIO_BED_ASSET_ID;
 }
 
@@ -31,7 +31,6 @@ export type NativePhoneSessionPlan = {
   sessionId: string;
   protocolVersion: string;
   nativePolicyVersion: string;
-  speakerOnly?: boolean;
 
   mode: "phone";
   startedAt: string;

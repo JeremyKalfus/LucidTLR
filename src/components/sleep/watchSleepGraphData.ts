@@ -1,5 +1,5 @@
 import type { WatchEpoch } from "@/src/domain/types";
-import type { WatchRuntimeEvent } from "@/src/native/watch";
+import type { WatchRuntimeEvent } from "@/src/features/watchHistory/watchHistoryTypes";
 
 export type WatchGraphPoint = {
   timestamp: string;

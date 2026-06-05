@@ -125,7 +125,7 @@ export function PresleepTrainingScreen() {
     canTransitionSession("tlr", session.status, "skip_guided_training");
   const canStartRuntime =
     session?.status === "waiting_for_cue_window" &&
-    (session.mode === "phone" || session.mode === "watch");
+    session.mode === "phone";
   const isTraining = session?.status === "training";
   const usesNativeLockedTraining =
     session?.mode === "phone" && phoneRuntime.isAvailable();
@@ -141,7 +141,7 @@ export function PresleepTrainingScreen() {
 
   const appendTrainingDebugEvent = React.useCallback(
     (eventType: string, payload: Record<string, unknown>) => {
-      console.info(`[LucidCue training] ${eventType}`, payload);
+      console.info(`[LucidTLR training] ${eventType}`, payload);
     },
     [],
   );
@@ -397,7 +397,7 @@ export function PresleepTrainingScreen() {
       router.replace("/active-night-session");
     } catch (error) {
       console.warn(
-        "[LucidCue training] Could not reconcile native presleep training.",
+        "[LucidTLR training] Could not reconcile native presleep training.",
         error instanceof Error
           ? error.message
           : error,
@@ -514,6 +514,7 @@ export function PresleepTrainingScreen() {
 
     try {
       if (runtimeSession.mode === "watch") {
+        setRuntimeError("Watch Mode is disabled in this build.");
         router.replace("/active-night-session");
         return;
       }
@@ -546,6 +547,20 @@ export function PresleepTrainingScreen() {
       }
     } finally {
       setIsStartingRuntime(false);
+    }
+  }
+
+  function createTlrSession() {
+    try {
+      startSession("tlr");
+    } catch (error) {
+      const message = errorMessage(error, "Could not create a TLR session.");
+
+      setRuntimeError(message);
+
+      if (process.env.EXPO_OS !== "web") {
+        Alert.alert("TLR session unavailable", message);
+      }
     }
   }
 
@@ -664,7 +679,7 @@ export function PresleepTrainingScreen() {
         <PrimaryPillButton
           icon={Plus}
           label="Create TLR Session"
-          onPress={() => startSession("tlr")}
+          onPress={createTlrSession}
         />
       ) : null}
 

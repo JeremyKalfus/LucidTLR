@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>LucidCue</string>
+	<string>LucidTLR</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -27,6 +27,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>lucidtlr</string>
 				<string>lucidcue</string>
 				<string>com.jeremykalfus.lucidcue</string>
 			</array>
@@ -34,6 +35,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>exp+lucidtlr</string>
 				<string>exp+lucidcue</string>
 			</array>
 		</dict>
@@ -58,7 +60,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Expo Dev Launcher uses the local network to discover and connect to development servers running on your computer.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>LucidCue uses microphone access only for local debug feasibility audio analysis when explicitly enabled on the hidden development screen.</string>
+	<string>LucidTLR uses microphone access only for local debug feasibility audio analysis when explicitly enabled on the hidden development screen.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

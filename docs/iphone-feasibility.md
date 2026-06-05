@@ -17,7 +17,7 @@ In a development build, start Metro with:
 npx expo start --dev-client
 ```
 
-Then open the route in the installed LucidCue development client.
+Then open the route in the installed LucidTLR development client.
 
 ## What It Tests
 

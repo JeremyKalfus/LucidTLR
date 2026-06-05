@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   latestWatchRuntimeStopTimestamp,
   summarizeWatchRuntime,
-} from "@/src/native/watch/watchRuntimeLogMapping";
+} from "@/src/features/watchHistory/watchRuntimeLogMapping";
 import {
   type WatchRuntimeEvent,
-} from "@/src/native/watch/WatchModeTypes";
+} from "@/src/features/watchHistory/watchHistoryTypes";
 
 const baseEvent = (
   eventType: WatchRuntimeEvent["eventType"],
@@ -23,7 +23,7 @@ describe("watchRuntimeLogMapping", () => {
   it("summarizes watch cueing, suppressions, classifier, and stop status", () => {
     const events: WatchRuntimeEvent[] = [
       baseEvent("watch_runtime_started", {
-        classifierVersion: "lucidcue-watch-rem-v1",
+        classifierVersion: "historical-watch-rem",
       }),
       baseEvent("watch_cue_played"),
       baseEvent("watch_cue_suppressed"),
@@ -43,7 +43,7 @@ describe("watchRuntimeLogMapping", () => {
           epochEnd: "2026-01-01T05:00:30.000Z",
           elapsedSessionSeconds: 30,
           remLabel: "likely_rem",
-          classifierVersion: "lucidcue-watch-rem-v1",
+          classifierVersion: "historical-watch-rem",
         },
       ]),
     ).toMatchObject({
@@ -52,7 +52,7 @@ describe("watchRuntimeLogMapping", () => {
       cuesPlayed: 1,
       cueSuppressions: 1,
       movementPauses: 1,
-      classifierVersions: ["lucidcue-watch-rem-v1"],
+      classifierVersions: ["historical-watch-rem"],
       completed: true,
     });
     expect(latestWatchRuntimeStopTimestamp(events)).toBe(

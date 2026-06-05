@@ -99,7 +99,6 @@ private struct PhoneRuntimePlan: Codable {
   let sessionId: String
   let protocolVersion: String
   let nativePolicyVersion: String
-  let speakerOnly: Bool?
   let mode: String
   let startedAt: String
   let trainingStartedAt: String
@@ -145,9 +144,9 @@ private struct RuntimeSnapshot: Codable {
   let state: PhoneRuntimeState
 }
 
-@objc(LucidCuePhoneRuntime)
-class LucidCuePhoneRuntime: NSObject {
-  private let queue = DispatchQueue(label: "com.lucidcue.phone-runtime")
+@objc(LucidTLRPhoneRuntime)
+class LucidTLRPhoneRuntime: NSObject {
+  private let queue = DispatchQueue(label: "com.lucidtlr.phone-runtime")
   private let queueKey = DispatchSpecificKey<String>()
   private let isoFormatter = ISO8601DateFormatter()
   private let motionManager = CMMotionManager()
@@ -348,19 +347,11 @@ class LucidCuePhoneRuntime: NSObject {
       }
 
       do {
-        if plan.speakerOnly == true {
-          _ = try self.handOffPresleepTrainingToSpeakerOnly(
-            plan: plan,
-            completionReason: "user_skipped",
-            latestDecisionReason: "training_skipped"
-          )
-        } else {
-          _ = try self.handOffPresleepTrainingToRuntime(
-            plan: plan,
-            completionReason: "user_skipped",
-            latestDecisionReason: "training_skipped"
-          )
-        }
+        _ = try self.handOffPresleepTrainingToRuntime(
+          plan: plan,
+          completionReason: "user_skipped",
+          latestDecisionReason: "training_skipped"
+        )
         resolve(nil)
       } catch {
         self.appendEvent("runtime_error", payload: [
@@ -369,68 +360,6 @@ class LucidCuePhoneRuntime: NSObject {
         ])
         self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
         reject("phone_training_skip_failed", error.localizedDescription, error)
-      }
-    }
-  }
-
-  @objc(startPhoneWatchSpeakerSession:resolver:rejecter:)
-  func startPhoneWatchSpeakerSession(
-    _ planDictionary: NSDictionary,
-    resolver resolve: @escaping RCTPromiseResolveBlock,
-    rejecter reject: @escaping RCTPromiseRejectBlock
-  ) {
-    let plan: PhoneRuntimePlan
-
-    do {
-      plan = try decodePlan(planDictionary)
-      try validatePlan(plan)
-    } catch {
-      reject("invalid_phone_speaker_plan", error.localizedDescription, error)
-      return
-    }
-
-    queue.async {
-      self.stopRuntime(reason: "replaced_by_new_session", errorMessage: nil, logEvent: true)
-      self.activePlan = plan
-      self.audioInterruptionActive = false
-      self.audioRecoveryGraceUntil = nil
-      self.nextAudioRecoveryAttemptAt = nil
-      self.state = PhoneRuntimeState(
-        sessionId: plan.sessionId,
-        runtimeStartedAt: self.formatDate(Date()),
-        phase: plan.training.lockedPlayback.enabled ? "training" : "runtime",
-        cueCount: 0,
-        cuesInBlock: 0,
-        stableLowMovementSeconds: 0,
-        latestDecisionReason: plan.training.lockedPlayback.enabled
-          ? "watch_speaker_training_started"
-          : "watch_speaker_started",
-        userPaused: false,
-        userDeferredUntil: nil,
-        alarmRinging: false,
-        alarmFireAt: plan.alarm.fireAt,
-        alarmFiredAt: nil
-      )
-      self.activeLogs = self.loadLogs(sessionId: plan.sessionId)
-
-      do {
-        if plan.training.lockedPlayback.enabled {
-          try self.configureAudioSession()
-          try self.startPresleepTrainingPlayback(plan: plan)
-        } else {
-          self.appendRuntimeStartedEvent(plan: plan)
-          try self.startSpeakerOnlySubsystems(plan: plan)
-        }
-
-        self.persistRuntimeSnapshot()
-        resolve(nil)
-      } catch {
-        self.appendEvent("runtime_error", payload: [
-          "operation": "start_watch_speaker_session",
-          "error": error.localizedDescription
-        ])
-        self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
-        reject("phone_speaker_start_failed", error.localizedDescription, error)
       }
     }
   }
@@ -802,15 +731,6 @@ class LucidCuePhoneRuntime: NSObject {
     scheduleAlarmIfNeeded(plan: plan)
   }
 
-  private func startSpeakerOnlySubsystems(plan: PhoneRuntimePlan) throws {
-    try configureAudioSession()
-    try startAudioBed(plan: plan)
-    try startBackgroundAudio(plan: plan)
-    logBatterySummary(reason: "watch_speaker_start")
-    scheduleBatteryTimer()
-    scheduleAlarmIfNeeded(plan: plan)
-  }
-
   private func configureAudioSession() throws {
     let session = AVAudioSession.sharedInstance()
     var lastError: Error?
@@ -849,14 +769,14 @@ class LucidCuePhoneRuntime: NSObject {
     ]
 
     switch plan.audioBed.assetId {
-    case "lucidcue-audible-bed-white-noise":
+    case "lucidtlr-audible-bed-white-noise":
       buffer = makeWhiteNoiseBuffer(
         format: format,
         durationSeconds: 4,
         amplitude: 0.22
       )
       payload["option"] = "white_noise"
-    case "lucidcue-audible-bed-binaural-beats":
+    case "lucidtlr-audible-bed-binaural-beats":
       buffer = makeBinauralBuffer(
         format: format,
         carrierFrequency: plan.backgroundAudio.binauralCarrierFrequencyHz,
@@ -1077,19 +997,11 @@ class LucidCuePhoneRuntime: NSObject {
 
   private func completePresleepTrainingAndStartRuntime(plan: PhoneRuntimePlan) {
     do {
-      if plan.speakerOnly == true {
-        _ = try handOffPresleepTrainingToSpeakerOnly(
-          plan: plan,
-          completionReason: "training_audio_finished",
-          latestDecisionReason: "watch_speaker_training_completed"
-        )
-      } else {
-        _ = try handOffPresleepTrainingToRuntime(
-          plan: plan,
-          completionReason: "training_audio_finished",
-          latestDecisionReason: "training_completed"
-        )
-      }
+      _ = try handOffPresleepTrainingToRuntime(
+        plan: plan,
+        completionReason: "training_audio_finished",
+        latestDecisionReason: "training_completed"
+      )
     } catch {
       appendEvent("runtime_error", payload: [
         "operation": "training_handoff_start_runtime",
@@ -1097,43 +1009,6 @@ class LucidCuePhoneRuntime: NSObject {
       ])
       stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
     }
-  }
-
-  @discardableResult
-  private func handOffPresleepTrainingToSpeakerOnly(
-    plan: PhoneRuntimePlan,
-    completionReason: String,
-    latestDecisionReason: String
-  ) throws -> Bool {
-    guard state?.phase == "training" else {
-      return false
-    }
-
-    cancelPresleepTrainingTimers()
-    trainingAudioPlayer?.stop()
-    trainingAudioPlayer = nil
-    trainingCueAudioPlayer?.stop()
-    trainingCueAudioPlayer = nil
-
-    let now = Date()
-    let expectedTrainingEndedAt = parseDate(plan.trainingEndedAt)
-    let driftMs = expectedTrainingEndedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? 0
-
-    state?.phase = "runtime"
-    state?.latestDecisionReason = latestDecisionReason
-
-    appendEvent("training_completed", payload: [
-      "reason": completionReason,
-      "expectedTrainingEndedAt": plan.trainingEndedAt,
-      "actualTrainingEndedAt": formatDate(now),
-      "driftMs": driftMs,
-      "appState": currentAppState()
-    ])
-    appendRuntimeStartedEvent(plan: plan)
-
-    try startSpeakerOnlySubsystems(plan: plan)
-    persistRuntimeSnapshot()
-    return true
   }
 
   @discardableResult
@@ -2663,7 +2538,7 @@ class LucidCuePhoneRuntime: NSObject {
       try ensureStorageDirectory()
       try data.write(to: logsURL(sessionId: sessionId), options: [.atomic])
     } catch {
-      NSLog("LucidCue phone runtime log write failed: \(error.localizedDescription)")
+      NSLog("LucidTLR phone runtime log write failed: \(error.localizedDescription)")
     }
   }
 
@@ -2775,7 +2650,7 @@ class LucidCuePhoneRuntime: NSObject {
 
   private func storageDirectory() -> URL {
     FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("LucidCuePhoneRuntime", isDirectory: true)
+      .appendingPathComponent("LucidTLRPhoneRuntime", isDirectory: true)
   }
 
   private func ensureStorageDirectory() throws {
@@ -2799,7 +2674,7 @@ class LucidCuePhoneRuntime: NSObject {
 
   private func runtimeError(_ message: String) -> NSError {
     NSError(
-      domain: "LucidCuePhoneRuntime",
+      domain: "LucidTLRPhoneRuntime",
       code: -1,
       userInfo: [NSLocalizedDescriptionKey: message]
     )

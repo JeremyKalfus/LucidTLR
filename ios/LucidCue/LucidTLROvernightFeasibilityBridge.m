@@ -1,6 +1,6 @@
 #import <React/RCTBridgeModule.h>
 
-@interface RCT_EXTERN_MODULE(LucidCueOvernightFeasibility, NSObject)
+@interface RCT_EXTERN_MODULE(LucidTLROvernightFeasibility, NSObject)
 
 RCT_EXTERN_METHOD(startFeasibilitySession:(NSDictionary *)options
                   resolver:(RCTPromiseResolveBlock)resolve

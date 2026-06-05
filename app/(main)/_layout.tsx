@@ -24,7 +24,7 @@ function LoadingGate() {
           textAlign: "center",
         }}
       >
-        Loading LucidCue...
+        Loading LucidTLR...
       </Text>
     </View>
   );

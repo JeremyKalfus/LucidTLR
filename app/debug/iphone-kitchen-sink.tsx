@@ -298,7 +298,7 @@ export default function IPhoneKitchenSinkRoute() {
         null,
         2,
       ),
-      title: "LucidCue 45-minute kitchen sink logs",
+      title: "LucidTLR 45-minute kitchen sink logs",
     });
   }
 

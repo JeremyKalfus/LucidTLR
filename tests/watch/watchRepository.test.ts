@@ -7,7 +7,7 @@ import {
   saveWatchEpochs,
   summarizeWatchSession,
 } from "@/src/data/local/repositories";
-import type { WatchEpochRecordDraft } from "@/src/native/watch";
+import type { WatchEpochRecordDraft } from "@/src/features/watchHistory/watchHistoryTypes";
 
 class FakeWatchDb implements LocalDb {
   readonly rows = new Map<string, Record<string, unknown>>();
@@ -110,7 +110,7 @@ function epoch(overrides: Partial<WatchEpochRecordDraft> = {}): WatchEpochRecord
     sleepProbability: 0.8,
     remProbability: 0.3,
     remLabel: "likely_rem",
-    classifierVersion: "lucidcue-watch-rem-v1",
+    classifierVersion: "historical-watch-rem",
     stableLowMovementSeconds: 60,
     roughMovementIntensity: "light",
     cueDecisionReason: "watch_likely_rem",
@@ -157,7 +157,7 @@ describe("watch epoch repository helpers", () => {
       usableEpochs: 2,
       likelyRemEpochs: 1,
       connectivityGaps: 1,
-      classifierVersions: ["lucidcue-watch-rem-v1"],
+      classifierVersions: ["historical-watch-rem"],
     });
   });
 });

@@ -5,7 +5,7 @@ import {
   type NativePhoneRuntimeModule,
 } from "./phoneRuntimeClient";
 
-const nativeModule = NativeModules.LucidCuePhoneRuntime as
+const nativeModule = NativeModules.LucidTLRPhoneRuntime as
   | NativePhoneRuntimeModule
   | undefined;
 

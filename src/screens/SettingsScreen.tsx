@@ -43,9 +43,9 @@ import {
   type PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
 import {
-  watchRuntime,
-  type WatchOwnedStatusV2,
-} from "@/src/native/watch";
+  WATCH_MODE_DISABLED_MESSAGE,
+  WATCH_MODE_DISABLED_STATUS,
+} from "@/src/features/watchMode/watchModeAvailability";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
@@ -288,10 +288,12 @@ function SettingsNote({ children }: { children: string }) {
 }
 
 function SettingsToggleRow({
+  disabled = false,
   label,
   value,
   onValueChange,
 }: {
+  disabled?: boolean;
   label: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
@@ -319,6 +321,7 @@ function SettingsToggleRow({
       </Text>
       <Switch
         accessibilityLabel={label}
+        disabled={disabled}
         value={value}
         onValueChange={onValueChange}
         trackColor={{ false: colors.cardBorder, true: colors.textDim }}
@@ -541,7 +544,7 @@ export function SettingsScreen() {
           title="Android phone mode"
         />
         <SettingsNavRow
-          detail="Watch setup, sync status, and sensing assumptions."
+          detail="Visible planned option; runtime disabled in this build."
           icon={Watch}
           route="/settings/watch-mode"
           title="Watch mode"
@@ -689,22 +692,6 @@ export function AndroidPhoneModeSettingsScreen() {
 export function WatchModeSettingsScreen() {
   const { selectedMode, setSelectedMode, tlrOptions, updateTlrOptions } =
     useAppState();
-  const [runtimeStatus, setRuntimeStatus] =
-    React.useState<WatchOwnedStatusV2 | null>(null);
-
-  React.useEffect(() => {
-    let mounted = true;
-
-    void watchRuntime.getLatestWatchOwnedStatus().then((status) => {
-      if (mounted) {
-        setRuntimeStatus(status);
-      }
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   return (
     <Screen>
@@ -716,36 +703,12 @@ export function WatchModeSettingsScreen() {
           label="Use Watch Mode"
           onPress={() => setSelectedMode("watch")}
         />
-        <InfoRow
-          label="setup/sync client"
-          value={
-            runtimeStatus?.available
-              ? runtimeStatus.state
-              : runtimeStatus?.reason ?? "unknown"
-          }
-        />
-        <InfoRow
-          label="setup/sync status"
-          value={
-            runtimeStatus
-              ? runtimeStatus.watchReachable
-                ? "ready for setup/sync"
-                : runtimeStatus.connectivityState ?? "unknown"
-              : "unknown"
-          }
-        />
-        <InfoRow
-          label="REM classifier"
-          value={
-            runtimeStatus?.modelAvailable
-              ? runtimeStatus.classifierVersion ?? "lucidcue-watch-rem-v1"
-              : "mallela-rf boundary; cueing disabled until exact features verified"
-          }
-        />
-        <InfoRow label="REM threshold" value="0.24" />
-        <InfoRow label="epoch length" value="30 seconds" />
+        <InfoRow label="runtime" value={WATCH_MODE_DISABLED_STATUS} />
+        <InfoRow label="native Watch client" value="disabled" />
+        <InfoRow label="historical data" value="local synced rows only" />
         <InfoRow label="cue channel" value={watchCueChannelLabel(tlrOptions)} />
         <SettingsToggleRow
+          disabled
           label="Watch audio cue"
           value={tlrOptions.watchAudioCueEnabled}
           onValueChange={(watchAudioCueEnabled) => {
@@ -755,6 +718,7 @@ export function WatchModeSettingsScreen() {
           }}
         />
         <SettingsToggleRow
+          disabled
           label="Watch haptic cue"
           value={tlrOptions.watchHapticCueEnabled}
           onValueChange={(watchHapticCueEnabled) => {
@@ -763,12 +727,8 @@ export function WatchModeSettingsScreen() {
             );
           }}
         />
-        <InfoRow label="battery start" value="warn below 60%" />
         <SettingsNote>
-          Watch Mode is the watch-owned overnight path. Begin the night on the
-          phone, sync from the Watch, then sync epochs and events back for
-          review after waking. Setup/sync reachability is not the overnight
-          source of truth.
+          {WATCH_MODE_DISABLED_MESSAGE}
         </SettingsNote>
       </Card>
     </Screen>

@@ -5,15 +5,11 @@ import type {
   NativePhoneRuntimeEvent,
   PhoneRuntimeStatus,
 } from "@/src/native/phoneRuntime";
-import type {
-  WatchOwnedImportPayloadV2,
-  WatchOwnedStatusV2,
-} from "@/src/native/watch";
 
 import { loadDiagnosticsRouteEvents } from "./diagnosticsRouteStore";
 
 export const DIAGNOSTICS_TIMELINE_SCHEMA =
-  "lucidcue-diagnostics-timeline-v1";
+  "lucidtlr-diagnostics-timeline-v1";
 export const DEFAULT_DIAGNOSTICS_LOOKBACK_MINUTES = 60;
 
 type RecentSessionRow = {
@@ -116,7 +112,7 @@ export type DiagnosticsTimelineExport = {
   };
   liveStatus: {
     phoneRuntimeStatus: PhoneRuntimeStatus | null;
-    watchOwnedStatus: WatchOwnedStatusV2 | null;
+    watchModeStatus: "planned_rebuild";
     pendingNativeWatchImport: PendingNativeWatchImportSnapshot | null;
   };
   counts: Record<string, number>;
@@ -129,7 +125,7 @@ export type PendingNativeWatchImportSnapshot = {
   epochCount: number;
   cueDeliveryCount: number;
   runtimeEventCount: number;
-  summary?: WatchOwnedImportPayloadV2["summary"];
+  summary?: Record<string, unknown>;
   error?: string;
 };
 
@@ -212,23 +208,6 @@ function countBySource(events: DiagnosticsTimelineEvent[]): Record<string, numbe
   return counts;
 }
 
-export function summarizePendingNativeWatchImport(input: {
-  sessionId: string;
-  payload?: WatchOwnedImportPayloadV2;
-  complete?: boolean;
-  error?: string;
-}): PendingNativeWatchImportSnapshot {
-  return {
-    sessionId: input.sessionId,
-    complete: input.complete ?? false,
-    epochCount: input.payload?.epochs.length ?? 0,
-    cueDeliveryCount: input.payload?.cueDeliveries.length ?? 0,
-    runtimeEventCount: input.payload?.runtimeEvents?.length ?? 0,
-    summary: input.payload?.summary,
-    error: input.error,
-  };
-}
-
 export async function buildDiagnosticsTimeline(input: {
   db: LocalDb;
   participantId: string;
@@ -237,7 +216,6 @@ export async function buildDiagnosticsTimeline(input: {
   sessionHistory: NightSession[];
   latestEngineSnapshot: EngineSnapshot;
   phoneRuntimeStatus: PhoneRuntimeStatus | null;
-  watchOwnedStatus: WatchOwnedStatusV2 | null;
   pendingNativeWatchImport: PendingNativeWatchImportSnapshot | null;
   nativePhoneRuntimeLogs: Record<string, NativePhoneRuntimeEvent[]>;
   now?: string;
@@ -480,12 +458,12 @@ order by timestamp asc`,
   events.push({
     timestamp: exportedAt,
     source: "live_status",
-    kind: "live_watch_owned_status",
-    sessionId: input.watchOwnedStatus?.sessionId,
-    label: input.watchOwnedStatus
-      ? `watch ${input.watchOwnedStatus.state}`
-      : "watch status not queried",
-    payload: (input.watchOwnedStatus ?? {}) as Record<string, unknown>,
+    kind: "watch_mode_status",
+    label: "Watch Mode planned rebuild",
+    payload: {
+      status: "planned_rebuild",
+      nativeRuntimeQueried: false,
+    },
   });
 
   if (input.pendingNativeWatchImport) {
@@ -524,7 +502,7 @@ order by timestamp asc`,
     },
     liveStatus: {
       phoneRuntimeStatus: input.phoneRuntimeStatus,
-      watchOwnedStatus: input.watchOwnedStatus,
+      watchModeStatus: "planned_rebuild",
       pendingNativeWatchImport: input.pendingNativeWatchImport,
     },
     counts: countBySource(sortedEvents),

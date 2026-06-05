@@ -157,7 +157,7 @@ describe("buildNativePhoneSessionPlan", () => {
 
     expect(plan.audioBed).toMatchObject({
       enabled: true,
-      assetId: "lucidcue-audible-bed-white-noise",
+      assetId: "lucidtlr-audible-bed-white-noise",
       volume: 0.04,
     });
     expect(plan.safety.requireAudioBed).toBe(true);
@@ -228,7 +228,7 @@ describe("buildNativePhoneSessionPlan", () => {
     });
 
     expect(plan.audioBed.enabled).toBe(true);
-    expect(plan.audioBed.assetId).toBe("lucidcue-audible-bed-white-noise");
+    expect(plan.audioBed.assetId).toBe("lucidtlr-audible-bed-white-noise");
     expect(plan.safety.requireAudioBed).toBe(true);
     expect(plan.backgroundAudio).toMatchObject({
       option: "none",
@@ -348,7 +348,7 @@ describe("buildNativePhoneSessionPlan", () => {
 
     expect(plan.nativePolicyVersion).toContain("dev-kitchen-sink-45m");
     expect(plan.audioBed.enabled).toBe(true);
-    expect(plan.audioBed.assetId).toBe("lucidcue-audible-bed-white-noise");
+    expect(plan.audioBed.assetId).toBe("lucidtlr-audible-bed-white-noise");
     expect(plan.audioBed.volume).toBe(0.03);
     expect(plan.safety.stopAt).toBe(
       "2026-01-20T04:46:00.000Z",

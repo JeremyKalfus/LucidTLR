@@ -49,7 +49,8 @@ interface NativeHealthHistoryModule {
 }
 
 const nativeHealthHistoryModule =
-  (NativeModules.LucidCueHealthHistory ??
+  (NativeModules.LucidTLRHealthHistory ??
+    NativeModules.LucidCueHealthHistory ??
     NativeModules.HealthHistoryAdapter) as NativeHealthHistoryModule | undefined;
 
 function platformSupportsHealthHistory(): boolean {

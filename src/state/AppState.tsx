@@ -61,6 +61,7 @@ import { createLocalDreamJournalEntry } from "@/src/features/journal/journalType
 import { createNightSession, applySessionEvent } from "@/src/features/sessions/sessionActions";
 import type { SessionEvent } from "@/src/features/sessions/sessionStateMachine";
 import { canTransitionSession } from "@/src/features/sessions/sessionStateMachine";
+import { WATCH_MODE_DISABLED_MESSAGE } from "@/src/features/watchMode/watchModeAvailability";
 import {
   createDefaultTlrOptions,
   mergeTlrOptionsPatch,
@@ -943,6 +944,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const startSession = React.useCallback(
     (sessionType: SessionType) => {
+      if (selectedMode === "watch") {
+        throw new Error(WATCH_MODE_DISABLED_MESSAGE);
+      }
+
       const now = new Date().toISOString();
       const session = createNightSession({
         id: createId("session"),

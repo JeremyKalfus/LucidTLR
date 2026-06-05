@@ -19,7 +19,6 @@ export interface NativePhoneRuntimeModule {
   startPhoneTlrSessionAfterPresleepTraining: (
     plan: NativePhoneSessionPlan,
   ) => Promise<void>;
-  startPhoneWatchSpeakerSession?: (plan: NativePhoneSessionPlan) => Promise<void>;
   skipPhonePresleepTrainingAndStartRuntime: () => Promise<void>;
   pausePhonePresleepTraining: () => Promise<void>;
   resumePhonePresleepTraining: () => Promise<void>;
@@ -73,7 +72,7 @@ function unavailableStatus(reason: string): PhoneRuntimeStatus {
 }
 
 function missingNativeMethodReason(methodName: string): string {
-  return `LucidCuePhoneRuntime in this iOS build does not export ${methodName}. Install a current iOS development build before using Phone Mode.`;
+  return `LucidTLRPhoneRuntime in this iOS build does not export ${methodName}. Install a current iOS development build before using Phone Mode.`;
 }
 
 function firstMissingNativeMethod(
@@ -94,7 +93,7 @@ export function createPhoneRuntimeClient(options: PhoneRuntimeClientOptions) {
   const nonIosReason =
     "iPhone Phone Mode native runtime is unavailable on this platform.";
   const missingModuleReason =
-    "LucidCuePhoneRuntime is only available in a custom iOS development build.";
+    "LucidTLRPhoneRuntime is only available in a custom iOS development build.";
 
   function requireNativeModule(): Partial<NativePhoneRuntimeModule> {
     if (options.platform !== "ios") {
@@ -138,16 +137,6 @@ export function createPhoneRuntimeClient(options: PhoneRuntimeClientOptions) {
       return requireNativeMethod("startPhoneTlrSessionAfterPresleepTraining")(
         plan,
       );
-    },
-
-    startPhoneWatchSpeakerSession(plan: NativePhoneSessionPlan) {
-      const nativeModule = requireNativeModule();
-
-      if (typeof nativeModule.startPhoneWatchSpeakerSession !== "function") {
-        throw new Error(missingNativeMethodReason("startPhoneWatchSpeakerSession"));
-      }
-
-      return nativeModule.startPhoneWatchSpeakerSession(plan);
     },
 
     skipPhonePresleepTrainingAndStartRuntime() {

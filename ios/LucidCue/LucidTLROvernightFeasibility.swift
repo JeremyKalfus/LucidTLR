@@ -31,9 +31,9 @@ private struct AudioSegment {
   let frequencyHz: Double
 }
 
-@objc(LucidCueOvernightFeasibility)
-class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
-  private let queue = DispatchQueue(label: "com.lucidcue.feasibility")
+@objc(LucidTLROvernightFeasibility)
+class LucidTLROvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
+  private let queue = DispatchQueue(label: "com.lucidtlr.feasibility")
   private let isoFormatter = ISO8601DateFormatter()
   private var logs: [[String: Any]] = []
   private var activeSession: FeasibilitySession?
@@ -300,7 +300,7 @@ class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
     }
 
     throw lastError ?? NSError(
-      domain: "LucidCueFeasibility",
+      domain: "LucidTLRFeasibility",
       code: -1,
       userInfo: [NSLocalizedDescriptionKey: "Could not configure audio session."]
     )
@@ -822,7 +822,7 @@ class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
     do {
       guard let url = Bundle.main.url(forResource: segment.resourceName, withExtension: "wav") else {
         throw NSError(
-          domain: "LucidCueFeasibility",
+          domain: "LucidTLRFeasibility",
           code: -2,
           userInfo: [NSLocalizedDescriptionKey: "Missing bundled audio segment \(segment.fileName)."]
         )
@@ -932,20 +932,20 @@ class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
     [
       AudioSegment(
         key: "low",
-        resourceName: "lucidcue_feasibility_low",
-        fileName: "lucidcue_feasibility_low.wav",
+        resourceName: "lucidtlr_feasibility_low",
+        fileName: "lucidtlr_feasibility_low.wav",
         frequencyHz: 330
       ),
       AudioSegment(
         key: "medium",
-        resourceName: "lucidcue_feasibility_medium",
-        fileName: "lucidcue_feasibility_medium.wav",
+        resourceName: "lucidtlr_feasibility_medium",
+        fileName: "lucidtlr_feasibility_medium.wav",
         frequencyHz: 660
       ),
       AudioSegment(
         key: "high",
-        resourceName: "lucidcue_feasibility_high",
-        fileName: "lucidcue_feasibility_high.wav",
+        resourceName: "lucidtlr_feasibility_high",
+        fileName: "lucidtlr_feasibility_high.wav",
         frequencyHz: 990
       )
     ]
@@ -1218,7 +1218,7 @@ class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
   }
 
   private func scheduleNotificationFallback(session: FeasibilitySession) {
-    let identifier = "lucidcue-feasibility-\(session.options.sessionId)"
+    let identifier = "lucidtlr-feasibility-\(session.options.sessionId)"
     notificationIdentifier = identifier
 
     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
@@ -1240,7 +1240,7 @@ class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
         }
 
         let content = UNMutableNotificationContent()
-        content.title = "LucidCue feasibility cue"
+        content.title = "LucidTLR feasibility cue"
         content.body = "Notification fallback cue fired."
         content.sound = .default
         content.userInfo = [
@@ -1364,7 +1364,7 @@ class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
 
   private func restoreSessionIfNeeded() {
     guard
-      let data = UserDefaults.standard.data(forKey: "lucidcue_feasibility_active_session"),
+      let data = UserDefaults.standard.data(forKey: "lucidtlr_feasibility_active_session"),
       let session = try? JSONDecoder().decode(FeasibilitySession.self, from: data)
     else {
       return
@@ -1432,13 +1432,13 @@ class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
 
   private func persistActiveSession(_ session: FeasibilitySession) {
     if let data = try? JSONEncoder().encode(session) {
-      UserDefaults.standard.set(data, forKey: "lucidcue_feasibility_active_session")
+      UserDefaults.standard.set(data, forKey: "lucidtlr_feasibility_active_session")
     }
   }
 
   private func clearActiveSession() {
     activeSession = nil
-    UserDefaults.standard.removeObject(forKey: "lucidcue_feasibility_active_session")
+    UserDefaults.standard.removeObject(forKey: "lucidtlr_feasibility_active_session")
   }
 
   private func appendEvent(_ eventType: String, payload: [String: Any]) {
@@ -1465,7 +1465,7 @@ class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
       try ensureStorageDirectory()
       try data.write(to: logsURL(), options: [.atomic])
     } catch {
-      NSLog("LucidCue feasibility log write failed: \(error.localizedDescription)")
+      NSLog("LucidTLR feasibility log write failed: \(error.localizedDescription)")
     }
   }
 
@@ -1487,7 +1487,7 @@ class LucidCueOvernightFeasibility: NSObject, UNUserNotificationCenterDelegate {
 
   private func storageDirectory() -> URL {
     FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("LucidCueFeasibility", isDirectory: true)
+      .appendingPathComponent("LucidTLRFeasibility", isDirectory: true)
   }
 
   private func ensureStorageDirectory() throws {

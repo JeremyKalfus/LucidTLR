@@ -3,7 +3,11 @@ import type {
   WatchEpoch,
 } from "@/src/domain/types";
 
-export type WatchConnectivityState = "connected" | "delayed" | "disconnected" | "unknown";
+export type WatchConnectivityState =
+  | "connected"
+  | "delayed"
+  | "disconnected"
+  | "unknown";
 
 export type WatchMovementIntensity = "still" | "light" | "moderate" | "large";
 
@@ -80,3 +84,4 @@ export type WatchCueRecordDraft = {
   played: boolean;
   suppressionReason: CueSuppressionReason;
 };
+

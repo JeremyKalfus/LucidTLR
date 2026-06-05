@@ -8,14 +8,18 @@ import {
   setAppSetting,
 } from "./repositories";
 
-export const FULL_LOCAL_DATA_EXPORT_SCHEMA = "lucidcue-full-local-data-v1";
+export const FULL_LOCAL_DATA_EXPORT_SCHEMA = "lucidtlr-full-local-data-v1";
+export const LEGACY_FULL_LOCAL_DATA_EXPORT_SCHEMA =
+  "lucidcue-full-local-data-v1";
 export const NATIVE_PHONE_RUNTIME_LOG_ARCHIVE_SETTING =
   "native_phone_runtime_log_archive_v1";
 
 type LocalDataRow = Record<string, string | number | null>;
 
 export type FullLocalDataExport = {
-  exportSchema: typeof FULL_LOCAL_DATA_EXPORT_SCHEMA;
+  exportSchema:
+    | typeof FULL_LOCAL_DATA_EXPORT_SCHEMA
+    | typeof LEGACY_FULL_LOCAL_DATA_EXPORT_SCHEMA;
   exportedAt: string;
   tables: Record<LocalTableName, LocalDataRow[]>;
   nativePhoneRuntimeLogs: Record<string, NativePhoneRuntimeEvent[]>;
@@ -40,23 +44,27 @@ function quoteIdentifier(value: string): string {
 }
 
 function assertFullLocalDataExport(value: unknown): FullLocalDataExport {
+  const exportSchema = (value as { exportSchema?: unknown } | null)?.exportSchema;
+  const validSchema =
+    exportSchema === FULL_LOCAL_DATA_EXPORT_SCHEMA ||
+    exportSchema === LEGACY_FULL_LOCAL_DATA_EXPORT_SCHEMA;
+
   if (
     !value ||
     typeof value !== "object" ||
-    (value as { exportSchema?: unknown }).exportSchema !==
-      FULL_LOCAL_DATA_EXPORT_SCHEMA ||
+    !validSchema ||
     typeof (value as { exportedAt?: unknown }).exportedAt !== "string" ||
     !((value as { tables?: unknown }).tables) ||
     typeof (value as { tables?: unknown }).tables !== "object"
   ) {
-    throw new Error("Selected file is not a LucidCue full data export.");
+    throw new Error("Selected file is not a LucidTLR full data export.");
   }
 
   const parsed = value as FullLocalDataExport;
 
   for (const table of LOCAL_TABLES) {
     if (!Array.isArray(parsed.tables[table])) {
-      throw new Error(`LucidCue export is missing table ${table}.`);
+      throw new Error(`LucidTLR export is missing table ${table}.`);
     }
   }
 

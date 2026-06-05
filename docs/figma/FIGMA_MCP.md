@@ -1,12 +1,12 @@
 # Figma MCP Connection
 
-This project uses Figma MCP as the visual source of truth for LucidCue UI work.
+This project uses Figma MCP as the visual source of truth for LucidTLR UI work.
 Before implementing UI, use the Figma MCP tools to inspect exact colors, fonts,
 sizes, radii, spacing, borders, icons, and screenshots. You do not have to follow it exactly, but it should be a broad guideline.
 
 ## Source File
 
-- Figma file: LucidCue home page
+- Figma file: LucidCue home page (legacy external file name)
 - URL: https://www.figma.com/design/xLQfDmzGAc5dTty0rMlu6p/LucidCue-home-page?node-id=0-1&p=f&t=OKgxllhXHz8dDfG0-0
 - File key: `xLQfDmzGAc5dTty0rMlu6p`
 - Page node: `0:1` (`Page 1`)

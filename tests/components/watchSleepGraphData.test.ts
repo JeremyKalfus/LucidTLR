@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { graphPointsForWatchData } from "@/src/components/sleep/watchSleepGraphData";
 import type { WatchEpoch } from "@/src/domain/types";
-import type { WatchRuntimeEvent } from "@/src/native/watch/WatchModeTypes";
+import type { WatchRuntimeEvent } from "@/src/features/watchHistory/watchHistoryTypes";
 
 const epoch = (overrides: Partial<WatchEpoch>): WatchEpoch => ({
   id: `epoch-${overrides.epochEnd ?? "1"}`,

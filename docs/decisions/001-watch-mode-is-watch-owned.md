@@ -1,5 +1,10 @@
 # 001: Watch Mode Is Watch-Owned
 
+## Current Status
+
+Future-reference architecture. Superseded for current implementation status by
+ADR 003 while Watch Mode is reset to a visible disabled placeholder.
+
 ## Decision
 
 Watch Mode is Watch-owned. The Apple Watch owns overnight sensing, 30-second
@@ -37,13 +42,12 @@ connectivity assumptions.
 - Background sleep audio is Phone Mode only.
 - Watch Mode No TLR / Log Sleep Only uses the same Watch-owned runtime with cue
   delivery disabled.
-- Watch Mode is current architecture but engineering beta until physical
-  overnight reliability is validated.
+- This architecture is not implemented in the current app after the Watch Mode
+  reset.
 
 ## Key Files
 
 - `docs/llm-orientation.md`
 - `src/screens/ActiveNightSessionScreen.tsx`
-- `src/native/watch/`
-- `ios/LucidCue/LucidCueWatchRuntime.swift`
-- `ios/LucidCue Watch App/`
+- `docs/decisions/003-watch-mode-reset-placeholder.md`
+- `docs/future/watch-mode-implementation-watch-owned-v2-reference.md`

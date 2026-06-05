@@ -1,11 +1,11 @@
-# LucidCue
+# LucidTLR
 
-LucidCue is a planned React Native + TypeScript app for targeted lucidity
-reactivation (TLR) lucid-dream induction.
+LucidTLR is a React Native + TypeScript app for targeted lucidity reactivation
+(TLR).
 
-The app is designed to be local-first, with optional consent-gated research
-upload through Supabase. It currently contains the protocol, domain, onboarding,
-session, local storage, sync-policy, native Phone runtime, native Watch runtime,
+The app is local-first, with optional consent-gated research upload through
+Supabase. It contains the protocol, domain, onboarding, session, local storage,
+sync-policy, native iPhone Phone Mode runtime, disabled Watch Mode placeholders,
 and theme foundations.
 
 This is not a medical device or treatment, and results are not guaranteed.
@@ -14,23 +14,14 @@ This is not a medical device or treatment, and results are not guaranteed.
 
 - Phone Mode is implemented for custom iOS development builds and remains
   iPhone-owned.
-- Domain/session/report/journal types are defined before UI work.
+- Watch Mode remains visible in UI as a planned option, but cannot start nights
+  in this build.
+- Historical local Watch rows in `watch_epochs` and `watch_runtime_events`
+  remain readable in Data, diagnostics, and full local exports.
+- Domain/session/report/journal types are defined.
 - Onboarding is modeled as a single data-driven survey wizard.
 - Local SQLite and Supabase schemas are scaffolded.
 - Upload decisions are centralized and consent-gated.
-- Watch Mode uses Watch-owned overnight operation: the iPhone syncs the
-  plan/assets/model before sleep, acts as sync/status UI during the night, and
-  imports Watch logs after waking. Training and cue audio are Watch-delivered;
-  background sleep audio is Phone Mode only.
-- Log Sleep Only / No TLR can use Watch Mode for Watch-owned sensing and log
-  sync with cue delivery disabled.
-- WatchConnectivity is for pre-sleep sync and morning log import, not live cue
-  timing.
-- Watch Mode uses experimental REM probability, not validated sleep staging. It
-  does not use GPS, SensorKit, live Apple sleep stages, wrist temperature,
-  respiratory rate, or SpO2.
-- Watch Mode is engineering beta: the architecture is current, but physical
-  overnight reliability is not yet claimed.
 
 ## Development Builds
 
