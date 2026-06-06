@@ -4,9 +4,7 @@
     "slug": "lucidtlr",
     "scheme": [
       "lucidtlr",
-      "lucidcue",
-      "exp+lucidtlr",
-      "exp+lucidcue"
+      "exp+lucidtlr"
     ],
     "version": "0.1.0",
     "orientation": "portrait",
@@ -18,7 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "icon": "./assets/images/icon.png",
-      "bundleIdentifier": "com.jeremykalfus.lucidcue",
+      "bundleIdentifier": "com.jeremykalfus.lucidtlr",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "LucidTLR uses microphone access only for local debug feasibility audio analysis when explicitly enabled on the hidden development screen.",
         "UIBackgroundModes": [

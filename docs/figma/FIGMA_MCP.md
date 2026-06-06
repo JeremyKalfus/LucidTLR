@@ -6,12 +6,13 @@ sizes, radii, spacing, borders, icons, and screenshots. You do not have to follo
 
 ## Source File
 
-- Figma file: LucidCue home page (legacy external file name)
+- Figma file: LucidTLR home page
+- External URL slug still uses the pre-rename `LucidCue-home-page` name.
 - URL: https://www.figma.com/design/xLQfDmzGAc5dTty0rMlu6p/LucidCue-home-page?node-id=0-1&p=f&t=OKgxllhXHz8dDfG0-0
 - File key: `xLQfDmzGAc5dTty0rMlu6p`
 - Page node: `0:1` (`Page 1`)
 - Main frame node: `1:3` (`iPhone 16 - 1`)
-- Local reference snapshot: `docs/figma/lucidcue-home-page-page-1.png`
+- Local reference snapshot: `docs/figma/lucidtlr-home-page-page-1.png`
 
 ## Verified MCP Status
 
@@ -50,7 +51,7 @@ Starter-plan tool-call limit. The inventory below combines:
 - The exact `#0C0C0C` frame background returned by `get_design_context` for
   `1:3`.
 - Snapshot-derived color samples from
-  `docs/figma/lucidcue-home-page-page-1.png`.
+  `docs/figma/lucidtlr-home-page-page-1.png`.
 
 When the MCP limit resets, replace provisional values with direct
 `get_variable_defs` / `use_figma` values before treating these as final design

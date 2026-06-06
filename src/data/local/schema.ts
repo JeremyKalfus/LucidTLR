@@ -1,4 +1,4 @@
-export const LOCAL_DATABASE_NAME = "lucidcue.db";
+export const LOCAL_DATABASE_NAME = "lucidtlr.db";
 
 export const LOCAL_MIGRATIONS = [
   {

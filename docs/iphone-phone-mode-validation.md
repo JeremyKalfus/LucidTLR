@@ -2,6 +2,9 @@
 
 This document records manual validation evidence for iPhone Phone Mode. It is an engineering validation log, not a public support claim or medical/therapeutic claim.
 
+Legacy `LucidCue` URLs, filenames, and asset IDs below are retained only as
+historical evidence from the May 30, 2026 validation run.
+
 ## Overnight Locked Run - May 30, 2026
 
 ### Test Context

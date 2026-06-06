@@ -2588,19 +2588,24 @@ class LucidTLRPhoneRuntime: NSObject {
     }
 
     if let data = try? JSONEncoder().encode(RuntimeSnapshot(plan: activePlan, state: state)) {
-      UserDefaults.standard.set(data, forKey: "lucidcue_phone_runtime_active_snapshot")
+      UserDefaults.standard.set(
+        data,
+        forKey: LucidTLRLegacyMigration.phoneRuntimeSnapshotUserDefaultsKey
+      )
     }
   }
 
   private func clearRuntimeSnapshot() {
-    UserDefaults.standard.removeObject(forKey: "lucidcue_phone_runtime_active_snapshot")
+    UserDefaults.standard.removeObject(
+      forKey: LucidTLRLegacyMigration.phoneRuntimeSnapshotUserDefaultsKey
+    )
+    UserDefaults.standard.removeObject(
+      forKey: LucidTLRLegacyMigration.legacyPhoneRuntimeSnapshotUserDefaultsKey
+    )
   }
 
   private func restoreRuntimeIfNeeded() {
-    guard
-      let data = UserDefaults.standard.data(forKey: "lucidcue_phone_runtime_active_snapshot"),
-      let snapshot = try? JSONDecoder().decode(RuntimeSnapshot.self, from: data)
-    else {
+    guard let snapshot = loadPersistedRuntimeSnapshot() else {
       return
     }
 
@@ -2642,6 +2647,35 @@ class LucidTLRPhoneRuntime: NSObject {
         self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
       }
     }
+  }
+
+  private func loadPersistedRuntimeSnapshot() -> RuntimeSnapshot? {
+    let defaults = UserDefaults.standard
+
+    if let data = defaults.data(
+      forKey: LucidTLRLegacyMigration.phoneRuntimeSnapshotUserDefaultsKey
+    ), let snapshot = try? JSONDecoder().decode(RuntimeSnapshot.self, from: data) {
+      return snapshot
+    }
+
+    guard
+      let legacyData = defaults.data(
+        forKey: LucidTLRLegacyMigration.legacyPhoneRuntimeSnapshotUserDefaultsKey
+      ),
+      let legacySnapshot = try? JSONDecoder().decode(RuntimeSnapshot.self, from: legacyData)
+    else {
+      return nil
+    }
+
+    defaults.set(
+      legacyData,
+      forKey: LucidTLRLegacyMigration.phoneRuntimeSnapshotUserDefaultsKey
+    )
+    defaults.removeObject(
+      forKey: LucidTLRLegacyMigration.legacyPhoneRuntimeSnapshotUserDefaultsKey
+    )
+
+    return legacySnapshot
   }
 
   private func logsURL(sessionId: String) -> URL {

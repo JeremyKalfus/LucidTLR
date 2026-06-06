@@ -28,15 +28,13 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>lucidtlr</string>
-				<string>lucidcue</string>
-				<string>com.jeremykalfus.lucidcue</string>
+				<string>com.jeremykalfus.lucidtlr</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>exp+lucidtlr</string>
-				<string>exp+lucidcue</string>
 			</array>
 		</dict>
 	</array>
