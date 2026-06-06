@@ -2,6 +2,11 @@ import * as SQLite from "expo-sqlite";
 import type { SQLiteBindParams, SQLiteDatabase } from "expo-sqlite";
 
 import type { LocalDb } from "./localDb";
+import {
+  LEGACY_LOCAL_DATABASE_MIGRATION_SETTING,
+  migrateLegacyLocalDatabaseIfNeeded,
+  type LegacyLocalDatabaseMigrationResult,
+} from "./legacyLocalDataMigration";
 import { LOCAL_DATABASE_NAME } from "./schema";
 import { LOCAL_RUNTIME_MIGRATIONS } from "./runtimeMigrations";
 
@@ -54,13 +59,45 @@ create table if not exists local_migrations (
   }
 }
 
+async function recordLegacyLocalDatabaseMigration(
+  db: SQLiteDatabase,
+  migration: LegacyLocalDatabaseMigrationResult,
+): Promise<void> {
+  if (
+    migration.action === "not_needed"
+  ) {
+    return;
+  }
+
+  const migratedAt = migration.migratedAt ?? new Date().toISOString();
+
+  await db.runAsync(
+    `insert into app_settings (key, value_json, updated_at)
+values (?, ?, ?)
+on conflict(key) do update set
+  value_json = excluded.value_json,
+  updated_at = excluded.updated_at`,
+    [
+      LEGACY_LOCAL_DATABASE_MIGRATION_SETTING,
+      JSON.stringify({
+        migratedAt,
+        action: migration.action,
+        backupUri: migration.backupUri ?? null,
+      }),
+      migratedAt,
+    ],
+  );
+}
+
 export async function getLocalDb(): Promise<LocalDb> {
   if (!localDbPromise) {
-    localDbPromise = SQLite.openDatabaseAsync(LOCAL_DATABASE_NAME).then(
-      async (db) => {
-        await runMigrations(db);
-        return new ExpoSQLiteLocalDb(db);
-      },
+    localDbPromise = migrateLegacyLocalDatabaseIfNeeded().then(
+      async (migration) =>
+        SQLite.openDatabaseAsync(LOCAL_DATABASE_NAME).then(async (db) => {
+          await runMigrations(db);
+          await recordLegacyLocalDatabaseMigration(db, migration);
+          return new ExpoSQLiteLocalDb(db);
+        }),
     );
   }
 

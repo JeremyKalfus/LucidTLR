@@ -3,6 +3,21 @@
 Use this as the current implementation briefing. `TLR_App_Plan.md` remains the
 product/science contract.
 
+## Repository Rename Transition
+
+- This repo and app are now `LucidTLR`.
+- Older docs, generated artifacts, local data, bundle paths, export schemas, or
+  migration code may still mention `LucidCue` for history or backward
+  compatibility.
+- Do not treat every `LucidCue` string as stale. Preserve legacy names when
+  they are required to read old local databases, import old exports, migrate
+  native snapshots, or explain pre-rename history.
+- New user-facing copy, app metadata, native targets, and docs should use
+  `LucidTLR` unless Jeremy explicitly asks for different branding.
+- `graphify-out/` may lag behind the rename because it is generated local
+  output. Use it for navigation only, refresh it with `graphify update .` when
+  needed, and do not commit it.
+
 ## Current Architecture
 
 - Phone Mode is phone-owned. The iPhone owns presleep training, overnight audio,
@@ -70,8 +85,10 @@ Avoid saying:
   `src/screens/ActiveNightSessionScreen.tsx`,
   `src/screens/MorningReviewScreen.tsx`
 - Phone runtime: `src/native/phoneRuntime/`,
-  `ios/LucidCue/LucidTLRPhoneRuntime.swift`
-- Watch placeholder app: `ios/LucidCue Watch App/`
+  `ios/LucidTLR/LucidTLRPhoneRuntime.swift`
+- Watch placeholder app: `ios/LucidTLR Watch App/`
+- Rename compatibility: `src/data/local/legacyLocalDataMigration.ts`,
+  `ios/LucidTLR/LucidTLRLegacyMigration.swift`
 - Built-in cue metadata: `src/audio/cueCatalog.ts`
 - Watch placeholder tests: `tests/watch/watchOwnedSourceOfTruth.test.ts`
 

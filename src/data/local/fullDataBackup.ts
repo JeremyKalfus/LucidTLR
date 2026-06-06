@@ -1,6 +1,7 @@
 import type { NativePhoneRuntimeEvent } from "@/src/native/phoneRuntime";
 
 import type { LocalDb } from "./localDb";
+import { LEGACY_FULL_LOCAL_DATA_EXPORT_SCHEMA } from "./legacyLocalDataMigration";
 import { LOCAL_TABLES, type LocalTableName } from "./schema";
 import {
   clearAllLocalData,
@@ -9,8 +10,6 @@ import {
 } from "./repositories";
 
 export const FULL_LOCAL_DATA_EXPORT_SCHEMA = "lucidtlr-full-local-data-v1";
-export const LEGACY_FULL_LOCAL_DATA_EXPORT_SCHEMA =
-  "lucidcue-full-local-data-v1";
 export const NATIVE_PHONE_RUNTIME_LOG_ARCHIVE_SETTING =
   "native_phone_runtime_log_archive_v1";
 

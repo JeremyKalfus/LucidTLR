@@ -74,14 +74,14 @@ describe("Watch Mode disabled placeholder source of truth", () => {
     expect(fileExists("src/native/watch")).toBe(false);
     expect(fileExists("src/engine/watchRem")).toBe(false);
     expect(fileExists(legacyName("assets/models/mallela", "_rf_v1.json"))).toBe(false);
-    expect(fileExists(legacyName("ios/LucidCue/LucidCue", "WatchRuntime.swift"))).toBe(false);
-    expect(fileExists(legacyName("ios/LucidCue/LucidCue", "WatchRuntimeBridge.m"))).toBe(false);
+    expect(fileExists(legacyName("ios/LucidTLR/LucidTLR", "WatchRuntime.swift"))).toBe(false);
+    expect(fileExists(legacyName("ios/LucidTLR/LucidTLR", "WatchRuntimeBridge.m"))).toBe(false);
   });
 
   it("keeps the Watch app as a placeholder target", () => {
-    const watchFiles = readdirSync(path.join(repoRoot, "ios/LucidCue Watch App"));
-    const contentView = readSource("ios/LucidCue Watch App/ContentView.swift");
-    const watchApp = readSource("ios/LucidCue Watch App/LucidTLRWatchApp.swift");
+    const watchFiles = readdirSync(path.join(repoRoot, "ios/LucidTLR Watch App"));
+    const contentView = readSource("ios/LucidTLR Watch App/ContentView.swift");
+    const watchApp = readSource("ios/LucidTLR Watch App/LucidTLRWatchApp.swift");
 
     expect(watchFiles).not.toContain(legacyName("WatchSession", "Manager.swift"));
     expect(contentView).toContain("LucidTLR Watch");
@@ -93,7 +93,7 @@ describe("Watch Mode disabled placeholder source of truth", () => {
 
   it("removes the phone-side Watch speaker path", () => {
     const runtimeClient = readSource("src/native/phoneRuntime/phoneRuntimeClient.ts");
-    const phoneRuntimeSwift = readSource("ios/LucidCue/LucidTLRPhoneRuntime.swift");
+    const phoneRuntimeSwift = readSource("ios/LucidTLR/LucidTLRPhoneRuntime.swift");
 
     expect(fileExists(legacyName("src/native/phoneRuntime/buildNativePhone", "WatchSpeakerPlan.ts"))).toBe(false);
     expect(runtimeClient).not.toContain(legacyName("startPhone", "WatchSpeakerSession"));

@@ -1,6 +1,9 @@
-# Watch Mode Implementation
+# Future Watch Mode Implementation Reference
 
-LucidCue Phone Mode remains unchanged: the iPhone owns its overnight audio bed,
+This is future-reference architecture, not the current implementation. Current
+Watch Mode is a visible disabled/planned placeholder.
+
+LucidTLR Phone Mode remains unchanged: the iPhone owns its overnight audio bed,
 cue playback, native timing, and runtime logs.
 
 Watch Mode v2 is Watch-owned overnight. The phone first locks on `Waiting for
@@ -22,7 +25,7 @@ The Mallela random-forest model asset is exported from the public
 `rmallela26/TLR` training CSVs and source at commit
 `9cc30e7157696331dbb79e0cf43f164cfc9685c2`. The native Watch runtime loads the
 bundled model as the experimental REM-probability signal for
-`lucidcue-watch-rem-v1`, then adds LucidCue safety gates for sensor quality,
+`lucidtlr-watch-rem-v1`, then adds LucidTLR safety gates for sensor quality,
 movement stability, cue budget, recent cueing, cue-associated movement, and
 persistent likely-REM suppression beginning with the fifth consecutive
 likely-REM epoch. This is REM-informed cueing, not validated sleep staging or a

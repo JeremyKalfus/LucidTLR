@@ -28,6 +28,6 @@ validation boundary.
 
 - `TLR_App_Plan.md`
 - `src/native/phoneRuntime/`
-- `ios/LucidCue/LucidTLRPhoneRuntime.swift`
+- `ios/LucidTLR/LucidTLRPhoneRuntime.swift`
 - `src/screens/PresleepTrainingScreen.tsx`
 - `src/screens/ActiveNightSessionScreen.tsx`

@@ -1,4 +1,4 @@
-# Keep Graphify focused on LucidCue source, tests, and docs.
+# Keep Graphify focused on LucidTLR source, tests, and docs.
 
 # Dependencies, generated output, and native build products.
 node_modules/
