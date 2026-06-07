@@ -95,4 +95,29 @@ describe("Watch Mode v3 architecture guardrails", () => {
     expect(combined).not.toContain("WatchConnectivity");
     expect(fileExists("src/native/watch")).toBe(false);
   });
+
+  it("keeps Swift v3 contract mirrors in the Watch target without runtime frameworks", () => {
+    const project = readSource("ios/LucidTLR.xcodeproj/project.pbxproj");
+    const swiftFiles = [
+      "ios/LucidTLR Watch App/Runtime/WatchRuntimePlanV3.swift",
+      "ios/LucidTLR Watch App/Runtime/WatchPackageManifestV3.swift",
+      "ios/LucidTLR Watch App/Runtime/WatchRuntimeEventV3.swift",
+      "ios/LucidTLR Watch App/Runtime/WatchEpochRecordV3.swift",
+      "ios/LucidTLR Watch App/Runtime/WatchCueRecordV3.swift",
+      "ios/LucidTLR Watch App/Runtime/WatchMovementRecordV3.swift",
+    ];
+
+    for (const file of swiftFiles) {
+      const source = readSource(file);
+      const fileName = path.basename(file);
+
+      expect(project).toContain(`${fileName} in Sources`);
+      expect(source).toContain("Codable");
+      expect(source).not.toContain("import HealthKit");
+      expect(source).not.toContain("import CoreMotion");
+      expect(source).not.toContain("import WatchConnectivity");
+      expect(source).not.toContain("import AVFoundation");
+      expect(source).not.toContain("import WatchKit");
+    }
+  });
 });
