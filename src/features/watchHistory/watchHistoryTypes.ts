@@ -16,6 +16,29 @@ export type WatchRuntimeEvent = {
   sessionId: string;
   timestamp: string;
   eventType:
+    | "runtime_preflight_started"
+    | "runtime_preflight_passed"
+    | "runtime_preflight_failed"
+    | "runtime_plan_committed"
+    | "runtime_started"
+    | "training_started"
+    | "training_completed"
+    | "tlr_interval_started"
+    | "log_only_started"
+    | "epoch_processed"
+    | "cue_decision"
+    | "cue_suppressed"
+    | "cue_play_attempted"
+    | "cue_played"
+    | "cue_failed"
+    | "movement_pause_started"
+    | "movement_pause_ended"
+    | "cue_associated_movement_pause_started"
+    | "user_interaction_logged"
+    | "low_battery_safe_seal_started"
+    | "package_sealed"
+    | "runtime_stopped"
+    | "runtime_error"
     | "watch_runtime_start_requested"
     | "watch_start_command_sent"
     | "watch_start_confirmed"
@@ -85,3 +108,12 @@ export type WatchCueRecordDraft = {
   suppressionReason: CueSuppressionReason;
 };
 
+export type WatchMovementRecordDraft = {
+  id: string;
+  sessionId: string;
+  timestamp: string;
+  intensity: number;
+  wasCueAssociated: boolean;
+  pauseStartedAt?: string;
+  pauseEndedAt?: string;
+};

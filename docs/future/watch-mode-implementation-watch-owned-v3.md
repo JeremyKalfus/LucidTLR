@@ -77,13 +77,26 @@ Sealed packages stay on the Watch until a durable ack with the matching
 `packageId` and `packageHash` is stored. Package deletion must be gated by that
 matching ack. Raw high-rate motion is not persisted by default.
 
+## Phone Package Import
+
+The iPhone morning importer validates the sealed package manifest, plan hash,
+file hashes, sequence continuity, and record counts before writing session data.
+Imports are local-only and idempotent: duplicate packages must not duplicate
+epochs, runtime events, cue events, movement events, or package tracking rows.
+
+Package import tracking lives in `watch_sync_packages`. The phone may mark a
+package imported locally, but package deletion remains a Watch-side retention
+decision after a later matching ack path is implemented. The importer does not
+add WatchConnectivity or a native bridge.
+
 ## Implementation Sequencing
 
 The synthetic Watch-owned runtime core with fake providers must compile and pass
-tests before real providers are added. The file-backed Watch storage layer must
-compile and pass tests before hidden lab or real providers are added. Real HealthKit, workout, CoreMotion,
-haptic, audio, WatchConnectivity, and package-transfer providers remain later
-phases and must stay behind the same provider protocols.
+tests before real providers are added. The file-backed Watch storage layer and
+phone-side package importer must compile and pass tests before hidden lab or
+real providers are added. Real HealthKit, workout, CoreMotion, haptic, audio,
+WatchConnectivity, and package-transfer providers remain later phases and must
+stay behind the same provider protocols.
 
 ## Cue Output
 

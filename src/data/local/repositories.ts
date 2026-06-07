@@ -27,6 +27,7 @@ import type {
 import type {
   WatchCueRecordDraft,
   WatchEpochRecordDraft,
+  WatchMovementRecordDraft,
   WatchRuntimeEvent,
 } from "@/src/features/watchHistory/watchHistoryTypes";
 import { ONBOARDING_FORM_ID, onboardingSteps } from "@/src/features/onboarding/onboardingSteps";
@@ -97,6 +98,7 @@ interface MovementEventRow {
   id: string;
   session_id: string;
   timestamp: string;
+  source: MovementEvent["source"];
   intensity: number | null;
   was_cue_associated: number;
   pause_started_at: string | null;
@@ -142,6 +144,35 @@ interface WatchRuntimeEventRow {
   timestamp: string;
   event_type: WatchRuntimeEvent["eventType"];
   payload_json: string;
+}
+
+export type WatchSyncPackageImportStatus =
+  | "importing"
+  | "imported"
+  | "import_failed";
+
+export interface WatchSyncPackageImportRecord {
+  packageId: string;
+  sessionId: string;
+  planHash: string;
+  packageHash: string;
+  sealedAt: string;
+  importedAt?: string;
+  importStatus: WatchSyncPackageImportStatus;
+  manifestJson: string;
+  importError?: string;
+}
+
+interface WatchSyncPackageRow {
+  package_id: string;
+  session_id: string;
+  plan_hash: string;
+  package_hash: string;
+  sealed_at: string;
+  imported_at: string | null;
+  import_status: WatchSyncPackageImportStatus;
+  manifest_json: string;
+  import_error: string | null;
 }
 
 interface MorningReportRow {
@@ -198,6 +229,7 @@ const resetTables = [
   "dream_journals",
   "morning_reports",
   "watch_runtime_events",
+  "watch_sync_packages",
   "watch_epochs",
   "movement_events",
   "cue_events",
@@ -323,7 +355,7 @@ function toMovementEvent(row: MovementEventRow): MovementEvent {
     id: row.id,
     sessionId: row.session_id,
     timestamp: row.timestamp,
-    source: "phone",
+    source: row.source === "watch" ? "watch" : "phone",
     intensity: row.intensity ?? 0,
     wasCueAssociated: row.was_cue_associated === 1,
     pauseStartedAt: row.pause_started_at ?? undefined,
@@ -373,6 +405,22 @@ function toWatchRuntimeEvent(row: WatchRuntimeEventRow): WatchRuntimeEvent {
     timestamp: row.timestamp,
     eventType: row.event_type,
     payload: JSON.parse(row.payload_json) as Record<string, unknown>,
+  };
+}
+
+function toWatchSyncPackageImport(
+  row: WatchSyncPackageRow,
+): WatchSyncPackageImportRecord {
+  return {
+    packageId: row.package_id,
+    sessionId: row.session_id,
+    planHash: row.plan_hash,
+    packageHash: row.package_hash,
+    sealedAt: row.sealed_at,
+    importedAt: row.imported_at ?? undefined,
+    importStatus: row.import_status,
+    manifestJson: row.manifest_json,
+    importError: row.import_error ?? undefined,
   };
 }
 
@@ -527,6 +575,7 @@ export async function deleteLocalSession(input: {
     "movement_events",
     "watch_epochs",
     "watch_runtime_events",
+    "watch_sync_packages",
     "morning_reports",
     "dream_journals",
     "questionnaire_responses",
@@ -654,6 +703,37 @@ on conflict(id) do nothing`,
   }
 }
 
+export async function saveWatchMovementRecords(input: {
+  db: LocalDb;
+  records: WatchMovementRecordDraft[];
+}): Promise<void> {
+  for (const record of input.records) {
+    await input.db.execute(
+      `insert into movement_events (
+  id,
+  session_id,
+  timestamp,
+  source,
+  intensity,
+  was_cue_associated,
+  pause_started_at,
+  pause_ended_at,
+  upload_status
+) values (?, ?, ?, 'watch', ?, ?, ?, ?, 'local_only')
+on conflict(id) do nothing`,
+      [
+        record.id,
+        record.sessionId,
+        record.timestamp,
+        record.intensity,
+        record.wasCueAssociated ? 1 : 0,
+        record.pauseStartedAt ?? null,
+        record.pauseEndedAt ?? null,
+      ],
+    );
+  }
+}
+
 export async function loadCueEventsForSession(input: {
   db: LocalDb;
   sessionId: string;
@@ -684,6 +764,7 @@ export async function loadMovementEventsForSession(input: {
     `select id,
   session_id,
   timestamp,
+  source,
   intensity,
   was_cue_associated,
   pause_started_at,
@@ -932,6 +1013,106 @@ order by timestamp asc`,
   );
 
   return rows.map(toWatchRuntimeEvent);
+}
+
+export async function loadWatchSyncPackageImport(input: {
+  db: LocalDb;
+  packageId: string;
+}): Promise<WatchSyncPackageImportRecord | null> {
+  const row = await input.db.queryOne<WatchSyncPackageRow>(
+    `select package_id,
+  session_id,
+  plan_hash,
+  package_hash,
+  sealed_at,
+  imported_at,
+  import_status,
+  manifest_json,
+  import_error
+from watch_sync_packages
+where package_id = ?
+limit 1`,
+    [input.packageId],
+  );
+
+  return row ? toWatchSyncPackageImport(row) : null;
+}
+
+export async function markWatchSyncPackageImporting(input: {
+  db: LocalDb;
+  packageId: string;
+  sessionId: string;
+  planHash: string;
+  packageHash: string;
+  sealedAt: string;
+  manifestJson: string;
+}): Promise<void> {
+  await input.db.execute(
+    `insert into watch_sync_packages (
+  package_id,
+  session_id,
+  plan_hash,
+  package_hash,
+  sealed_at,
+  imported_at,
+  import_status,
+  manifest_json,
+  import_error
+) values (?, ?, ?, ?, ?, null, 'importing', ?, null)
+on conflict(package_id) do update set
+  import_status = 'importing',
+  manifest_json = excluded.manifest_json,
+  import_error = null
+where watch_sync_packages.package_hash = excluded.package_hash`,
+    [
+      input.packageId,
+      input.sessionId,
+      input.planHash,
+      input.packageHash,
+      input.sealedAt,
+      input.manifestJson,
+    ],
+  );
+}
+
+export async function markWatchSyncPackageImported(input: {
+  db: LocalDb;
+  packageId: string;
+  packageHash: string;
+  importedAt: string;
+  manifestJson: string;
+}): Promise<void> {
+  await input.db.execute(
+    `update watch_sync_packages
+set imported_at = ?,
+  import_status = 'imported',
+  manifest_json = ?,
+  import_error = null
+where package_id = ?
+  and package_hash = ?`,
+    [
+      input.importedAt,
+      input.manifestJson,
+      input.packageId,
+      input.packageHash,
+    ],
+  );
+}
+
+export async function markWatchSyncPackageImportFailed(input: {
+  db: LocalDb;
+  packageId: string;
+  packageHash: string;
+  importError: string;
+}): Promise<void> {
+  await input.db.execute(
+    `update watch_sync_packages
+set import_status = 'import_failed',
+  import_error = ?
+where package_id = ?
+  and package_hash = ?`,
+    [input.importError, input.packageId, input.packageHash],
+  );
 }
 
 export async function saveMorningReport(input: {

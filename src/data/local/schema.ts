@@ -29,6 +29,10 @@ export const LOCAL_MIGRATIONS = [
     id: "007_watch_mode_runtime_completion",
     filename: "007_watch_mode_runtime_completion.sql",
   },
+  {
+    id: "008_watch_sync_packages",
+    filename: "008_watch_sync_packages.sql",
+  },
 ] as const;
 
 export const LOCAL_TABLES = [
@@ -40,6 +44,7 @@ export const LOCAL_TABLES = [
   "movement_events",
   "watch_epochs",
   "watch_runtime_events",
+  "watch_sync_packages",
   "morning_reports",
   "dream_journals",
   "external_sleep_sessions",
