@@ -143,6 +143,7 @@ export interface WatchPackageImportResult {
   sessionId: string;
   packageHash: string;
   importedAt: string;
+  ackEligible: true;
   counts: {
     events: number;
     epochs: number;

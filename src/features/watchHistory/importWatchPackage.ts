@@ -30,6 +30,29 @@ import type {
   WatchRuntimeEventPackageRecordV3,
 } from "./watchPackageImportTypes";
 
+function buildImportResult(input: {
+  decoded: DecodedWatchPackageV3;
+  status: WatchPackageImportResult["status"];
+  importedAt: string;
+}): WatchPackageImportResult {
+  const { manifest } = input.decoded;
+
+  return {
+    status: input.status,
+    packageId: manifest.packageId,
+    sessionId: manifest.sessionId,
+    packageHash: manifest.packageHash,
+    importedAt: input.importedAt,
+    ackEligible: true,
+    counts: {
+      events: manifest.eventCount,
+      epochs: manifest.epochCount,
+      cueEvents: manifest.cueEventCount,
+      movementEvents: manifest.movementEventCount,
+    },
+  };
+}
+
 function eventTimestamp(
   decoded: DecodedWatchPackageV3,
   eventType: string,
@@ -227,58 +250,85 @@ export async function importWatchPackage(
   }
 
   if (existingPackage?.importStatus === "imported") {
-    return {
+    return buildImportResult({
+      decoded,
       status: "already_imported",
-      packageId: manifest.packageId,
-      sessionId: manifest.sessionId,
-      packageHash: manifest.packageHash,
       importedAt: existingPackage.importedAt ?? input.importedAt,
-      counts: {
-        events: manifest.eventCount,
-        epochs: manifest.epochCount,
-        cueEvents: manifest.cueEventCount,
-        movementEvents: manifest.movementEventCount,
-      },
-    };
+    });
   }
 
-  await markWatchSyncPackageImporting({
-    db: input.db,
-    packageId: manifest.packageId,
-    sessionId: manifest.sessionId,
-    planHash: manifest.planHash,
-    packageHash: manifest.packageHash,
-    sealedAt: manifest.sealedAt,
-    manifestJson,
-  });
+  if (!input.db.withTransaction) {
+    throw new Error(
+      "Watch package import requires LocalDb.withTransaction before it can become ack-eligible.",
+    );
+  }
 
   try {
-    await upsertLocalSession({
-      db: input.db,
-      session: toImportedSession(decoded),
-    });
-    await saveWatchRuntimeEvents({
-      db: input.db,
-      events: decoded.events.map(toWatchRuntimeEvent),
-    });
-    await saveWatchEpochs({
-      db: input.db,
-      records: decoded.epochs.map(toWatchEpoch),
-    });
-    await saveWatchCueRecords({
-      db: input.db,
-      records: decoded.cueEvents.map(toWatchCue),
-    });
-    await saveWatchMovementRecords({
-      db: input.db,
-      records: decoded.movementEvents.map(toWatchMovement),
-    });
-    await markWatchSyncPackageImported({
-      db: input.db,
-      packageId: manifest.packageId,
-      packageHash: manifest.packageHash,
-      importedAt: input.importedAt,
-      manifestJson,
+    return await input.db.withTransaction(async (tx) => {
+      const transactionPackage = await loadWatchSyncPackageImport({
+        db: tx,
+        packageId: manifest.packageId,
+      });
+
+      if (
+        transactionPackage &&
+        transactionPackage.packageHash !== manifest.packageHash
+      ) {
+        throw new Error(
+          `Watch package ${manifest.packageId} already exists with a different packageHash.`,
+        );
+      }
+
+      if (transactionPackage?.importStatus === "imported") {
+        return buildImportResult({
+          decoded,
+          status: "already_imported",
+          importedAt: transactionPackage.importedAt ?? input.importedAt,
+        });
+      }
+
+      await markWatchSyncPackageImporting({
+        db: tx,
+        packageId: manifest.packageId,
+        sessionId: manifest.sessionId,
+        planHash: manifest.planHash,
+        packageHash: manifest.packageHash,
+        sealedAt: manifest.sealedAt,
+        manifestJson,
+      });
+      await upsertLocalSession({
+        db: tx,
+        session: toImportedSession(decoded),
+      });
+      await saveWatchRuntimeEvents({
+        db: tx,
+        events: decoded.events.map(toWatchRuntimeEvent),
+      });
+      await saveWatchEpochs({
+        db: tx,
+        records: decoded.epochs.map(toWatchEpoch),
+      });
+      await saveWatchCueRecords({
+        db: tx,
+        records: decoded.cueEvents.map(toWatchCue),
+      });
+      await saveWatchMovementRecords({
+        db: tx,
+        records: decoded.movementEvents.map(toWatchMovement),
+      });
+      await markWatchSyncPackageImported({
+        db: tx,
+        packageId: manifest.packageId,
+        packageHash: manifest.packageHash,
+        importedAt: input.importedAt,
+        manifestJson,
+      });
+
+      return buildImportResult({
+        decoded,
+        status: "imported",
+        importedAt: input.importedAt,
+      });
     });
   } catch (error) {
     await markWatchSyncPackageImportFailed({
@@ -290,18 +340,4 @@ export async function importWatchPackage(
 
     throw error;
   }
-
-  return {
-    status: "imported",
-    packageId: manifest.packageId,
-    sessionId: manifest.sessionId,
-    packageHash: manifest.packageHash,
-    importedAt: input.importedAt,
-    counts: {
-      events: manifest.eventCount,
-      epochs: manifest.epochCount,
-      cueEvents: manifest.cueEventCount,
-      movementEvents: manifest.movementEventCount,
-    },
-  };
 }

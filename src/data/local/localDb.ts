@@ -4,6 +4,7 @@ export interface LocalDb {
   execute(sql: string, params?: unknown[]): Promise<void>;
   query<T>(sql: string, params?: unknown[]): Promise<T[]>;
   queryOne<T>(sql: string, params?: unknown[]): Promise<T | null>;
+  withTransaction?<T>(work: (tx: LocalDb) => Promise<T>): Promise<T>;
 }
 
 export interface LocalRecord {

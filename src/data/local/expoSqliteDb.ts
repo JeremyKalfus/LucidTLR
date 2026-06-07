@@ -29,6 +29,18 @@ class ExpoSQLiteLocalDb implements LocalDb {
   async queryOne<T>(sql: string, params: unknown[] = []): Promise<T | null> {
     return this.db.getFirstAsync<T>(sql, params as SQLiteBindParams);
   }
+
+  async withTransaction<T>(
+    work: (tx: LocalDb) => Promise<T>,
+  ): Promise<T> {
+    let result: T | undefined;
+
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      result = await work(new ExpoSQLiteLocalDb(tx));
+    });
+
+    return result as T;
+  }
 }
 
 let localDbPromise: Promise<ExpoSQLiteLocalDb> | null = null;

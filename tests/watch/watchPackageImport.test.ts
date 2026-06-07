@@ -33,8 +33,75 @@ class FakePackageImportDb implements LocalDb {
   readonly cueEvents = new Map<string, Row>();
   readonly movementEvents = new Map<string, Row>();
   readonly packages = new Map<string, Row>();
+  transactionCommits = 0;
+  transactionRollbacks = 0;
+  withTransaction?: <T>(work: (tx: LocalDb) => Promise<T>) => Promise<T>;
+
+  constructor(
+    private readonly options: {
+      failOnSqlIncludes?: string;
+      transactions?: boolean;
+    } = {},
+  ) {
+    if (options.transactions !== false) {
+      this.withTransaction = async <T,>(
+        work: (tx: LocalDb) => Promise<T>,
+      ): Promise<T> => {
+        const tx = this.clone();
+
+        try {
+          const result = await work(tx);
+          this.replaceFrom(tx);
+          this.transactionCommits += 1;
+
+          return result;
+        } catch (error) {
+          this.transactionRollbacks += 1;
+          throw error;
+        }
+      };
+    }
+  }
+
+  private clone(): FakePackageImportDb {
+    const db = new FakePackageImportDb({
+      failOnSqlIncludes: this.options.failOnSqlIncludes,
+      transactions: false,
+    });
+
+    db.replaceFrom(this);
+
+    return db;
+  }
+
+  private replaceFrom(source: FakePackageImportDb): void {
+    this.replaceMap(this.sessions, source.sessions);
+    this.replaceMap(this.runtimeEvents, source.runtimeEvents);
+    this.replaceMap(this.epochs, source.epochs);
+    this.replaceMap(this.cueEvents, source.cueEvents);
+    this.replaceMap(this.movementEvents, source.movementEvents);
+    this.replaceMap(this.packages, source.packages);
+  }
+
+  private replaceMap(
+    target: Map<string, Row>,
+    source: Map<string, Row>,
+  ): void {
+    target.clear();
+
+    for (const [key, value] of source) {
+      target.set(key, { ...value });
+    }
+  }
 
   async execute(sql: string, params: unknown[] = []): Promise<void> {
+    if (
+      this.options.failOnSqlIncludes &&
+      sql.includes(this.options.failOnSqlIncludes)
+    ) {
+      throw new Error(`Injected SQL failure: ${this.options.failOnSqlIncludes}`);
+    }
+
     if (sql.includes("insert into watch_sync_packages")) {
       const [
         packageId,
@@ -291,6 +358,7 @@ describe("Watch package phone importer", () => {
       }),
     ).resolves.toMatchObject({
       status: "imported",
+      ackEligible: true,
       packageId: sealedPackage.manifest.packageId,
       counts: {
         events: sealedPackage.manifest.eventCount,
@@ -300,6 +368,8 @@ describe("Watch package phone importer", () => {
       },
     });
 
+    expect(db.transactionCommits).toBe(1);
+    expect(db.transactionRollbacks).toBe(0);
     expect(db.sessions.get(sealedPackage.manifest.sessionId)).toMatchObject({
       mode: "watch",
       status: "ended",
@@ -342,8 +412,10 @@ describe("Watch package phone importer", () => {
     ).resolves.toMatchObject({
       status: "already_imported",
       importedAt: WATCH_PACKAGE_FIXTURE_IMPORTED_AT,
+      ackEligible: true,
     });
 
+    expect(db.transactionCommits).toBe(1);
     expect({
       sessions: db.sessions.size,
       runtimeEvents: db.runtimeEvents.size,
@@ -351,6 +423,50 @@ describe("Watch package phone importer", () => {
       cueEvents: db.cueEvents.size,
       movementEvents: db.movementEvents.size,
     }).toEqual(sizesAfterFirstImport);
+  });
+
+  it("requires transaction support before a new package can become ack-eligible", async () => {
+    const sealedPackage = buildSyntheticTlrWatchPackageFixture();
+    const db = new FakePackageImportDb({ transactions: false });
+
+    await expect(
+      importWatchPackage({
+        db,
+        sealedPackage,
+        importedAt: WATCH_PACKAGE_FIXTURE_IMPORTED_AT,
+      }),
+    ).rejects.toThrow("requires LocalDb.withTransaction");
+
+    expect(db.sessions.size).toBe(0);
+    expect(db.runtimeEvents.size).toBe(0);
+    expect(db.epochs.size).toBe(0);
+    expect(db.cueEvents.size).toBe(0);
+    expect(db.movementEvents.size).toBe(0);
+    expect(db.packages.size).toBe(0);
+  });
+
+  it("rolls back partial package imports if any transaction write fails", async () => {
+    const sealedPackage = buildSyntheticTlrWatchPackageFixture();
+    const db = new FakePackageImportDb({
+      failOnSqlIncludes: "insert into watch_epochs",
+    });
+
+    await expect(
+      importWatchPackage({
+        db,
+        sealedPackage,
+        importedAt: WATCH_PACKAGE_FIXTURE_IMPORTED_AT,
+      }),
+    ).rejects.toThrow("Injected SQL failure: insert into watch_epochs");
+
+    expect(db.transactionCommits).toBe(0);
+    expect(db.transactionRollbacks).toBe(1);
+    expect(db.sessions.size).toBe(0);
+    expect(db.runtimeEvents.size).toBe(0);
+    expect(db.epochs.size).toBe(0);
+    expect(db.cueEvents.size).toBe(0);
+    expect(db.movementEvents.size).toBe(0);
+    expect(db.packages.size).toBe(0);
   });
 
   it("imports sleep_log packages without cue rows while preserving sensing rows", async () => {
@@ -363,6 +479,7 @@ describe("Watch package phone importer", () => {
       importedAt: WATCH_PACKAGE_FIXTURE_IMPORTED_AT,
     });
 
+    expect(db.transactionCommits).toBe(1);
     expect(db.sessions.get(sealedPackage.manifest.sessionId)).toMatchObject({
       mode: "watch",
       session_type: "sleep_log",
@@ -441,6 +558,17 @@ describe("Watch package phone importer", () => {
     expect(source("src/data/local/migrations/008_watch_sync_packages.sql")).toContain(
       "idx_watch_sync_packages_session",
     );
+  });
+
+  it("exposes an exclusive local DB transaction path for ack-safe imports", () => {
+    const localDb = source("src/data/local/localDb.ts");
+    const expoDb = source("src/data/local/expoSqliteDb.ts");
+    const importer = source("src/features/watchHistory/importWatchPackage.ts");
+
+    expect(localDb).toContain("withTransaction?");
+    expect(expoDb).toContain("withExclusiveTransactionAsync");
+    expect(importer).toContain("requires LocalDb.withTransaction");
+    expect(importer).toContain("ackEligible: true");
   });
 
   it("keeps Watch Mode public-disabled and avoids transport/native runtime imports", () => {

@@ -83,6 +83,11 @@ The iPhone morning importer validates the sealed package manifest, plan hash,
 file hashes, sequence continuity, and record counts before writing session data.
 Imports are local-only and idempotent: duplicate packages must not duplicate
 epochs, runtime events, cue events, movement events, or package tracking rows.
+Successful new imports must be committed inside a local database transaction
+before the importer returns `ackEligible: true`; future transport may only send
+a Watch package acknowledgement after that committed result. A duplicate package
+that is already recorded as imported is also ack-eligible because the local
+commit has already completed.
 
 Package import tracking lives in `watch_sync_packages`. The phone may mark a
 package imported locally, but package deletion remains a Watch-side retention
