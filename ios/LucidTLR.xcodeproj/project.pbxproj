@@ -27,19 +27,10 @@
 		4AFEF0048B754B4A9CF00001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0038B754B4A9CF00001 /* ContentView.swift */; };
 		4AFEF0088B754B4A9CF00001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEF0078B754B4A9CF00001 /* Assets.xcassets */; };
 		4AFEF00A8B754B4A9CF00001 /* LucidTLR Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4AFEF0098B754B4A9CF00001 /* LucidTLR Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		A50000000000000000000001 /* SleepShieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* SleepShieldView.swift */; };
-		A50000000000000000000002 /* SleepShieldViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* SleepShieldViewModel.swift */; };
-		A50000000000000000000003 /* DimRuntimeControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000013 /* DimRuntimeControlsView.swift */; };
-		A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */; };
-		A70000000000000000000001 /* WatchModeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000011 /* WatchModeLabView.swift */; };
-		A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000012 /* WatchModeLabViewModel.swift */; };
-		A60000000000000000000001 /* WatchStorageErrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* WatchStorageErrors.swift */; };
-		A60000000000000000000002 /* WatchStoragePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* WatchStoragePaths.swift */; };
-		A60000000000000000000003 /* WatchSessionDirectoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000013 /* WatchSessionDirectoryStore.swift */; };
-		A60000000000000000000004 /* WatchFileBackedLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000014 /* WatchFileBackedLogStore.swift */; };
-		A60000000000000000000005 /* WatchPackageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000015 /* WatchPackageStore.swift */; };
-		A60000000000000000000006 /* WatchPackageAckStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000016 /* WatchPackageAckStore.swift */; };
-		A60000000000000000000007 /* WatchSyntheticStorageFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */; };
+		594C5BE62EC14CE082E832DF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */; };
+		59895943679DB790F65BE750 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */; };
+		5E297646B1EBAE539E8C17DC /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77DCF48682FC1CF275A85758 /* ExpoModulesProvider.swift */; };
+		7E32BB753790FD539B784603 /* libPods-LucidTLR.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C62D26F77A8CCE4C01DF72D /* libPods-LucidTLR.a */; };
 		A30000000000000000000001 /* WatchRuntimePlanV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* WatchRuntimePlanV3.swift */; };
 		A30000000000000000000002 /* WatchPackageManifestV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* WatchPackageManifestV3.swift */; };
 		A30000000000000000000003 /* WatchRuntimeEventV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* WatchRuntimeEventV3.swift */; };
@@ -60,10 +51,24 @@
 		A4000000000000000000000C /* WatchRuntimeLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4000000000000000000001C /* WatchRuntimeLogStore.swift */; };
 		A4000000000000000000000D /* WatchPackageSealer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4000000000000000000001D /* WatchPackageSealer.swift */; };
 		A4000000000000000000000E /* WatchSyntheticRuntimeFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4000000000000000000001E /* WatchSyntheticRuntimeFixtures.swift */; };
-		594C5BE62EC14CE082E832DF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */; };
-		59895943679DB790F65BE750 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */; };
-		5E297646B1EBAE539E8C17DC /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77DCF48682FC1CF275A85758 /* ExpoModulesProvider.swift */; };
-		7E32BB753790FD539B784603 /* libPods-LucidTLR.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C62D26F77A8CCE4C01DF72D /* libPods-LucidTLR.a */; };
+		A80000000000000000000001 /* WatchRuntimeCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000011 /* WatchRuntimeCapabilities.swift */; };
+		A80000000000000000000002 /* WatchRuntimePreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000012 /* WatchRuntimePreflight.swift */; };
+		A80000000000000000000003 /* WatchRuntimeStartGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000013 /* WatchRuntimeStartGate.swift */; };
+		A80000000000000000000004 /* SyntheticPreflightProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000014 /* SyntheticPreflightProvider.swift */; };
+		A80000000000000000000005 /* WatchRuntimePreflightFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000015 /* WatchRuntimePreflightFixtures.swift */; };
+		A50000000000000000000001 /* SleepShieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* SleepShieldView.swift */; };
+		A50000000000000000000002 /* SleepShieldViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* SleepShieldViewModel.swift */; };
+		A50000000000000000000003 /* DimRuntimeControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000013 /* DimRuntimeControlsView.swift */; };
+		A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */; };
+		A60000000000000000000001 /* WatchStorageErrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* WatchStorageErrors.swift */; };
+		A60000000000000000000002 /* WatchStoragePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* WatchStoragePaths.swift */; };
+		A60000000000000000000003 /* WatchSessionDirectoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000013 /* WatchSessionDirectoryStore.swift */; };
+		A60000000000000000000004 /* WatchFileBackedLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000014 /* WatchFileBackedLogStore.swift */; };
+		A60000000000000000000005 /* WatchPackageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000015 /* WatchPackageStore.swift */; };
+		A60000000000000000000006 /* WatchPackageAckStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000016 /* WatchPackageAckStore.swift */; };
+		A60000000000000000000007 /* WatchSyntheticStorageFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */; };
+		A70000000000000000000001 /* WatchModeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000011 /* WatchModeLabView.swift */; };
+		A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000012 /* WatchModeLabViewModel.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
@@ -115,19 +120,10 @@
 		4AFEF0078B754B4A9CF00001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4AFEF0098B754B4A9CF00001 /* LucidTLR Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LucidTLR Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4AFEF00B8B754B4A9CF00001 /* LucidTLRWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LucidTLRWatch.entitlements; sourceTree = "<group>"; };
-		A50000000000000000000011 /* SleepShieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepShieldView.swift; sourceTree = "<group>"; };
-		A50000000000000000000012 /* SleepShieldViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepShieldViewModel.swift; sourceTree = "<group>"; };
-		A50000000000000000000013 /* DimRuntimeControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimRuntimeControlsView.swift; sourceTree = "<group>"; };
-		A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeBedtimeInstructionsView.swift; sourceTree = "<group>"; };
-		A70000000000000000000011 /* WatchModeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabView.swift; sourceTree = "<group>"; };
-		A70000000000000000000012 /* WatchModeLabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabViewModel.swift; sourceTree = "<group>"; };
-		A60000000000000000000011 /* WatchStorageErrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchStorageErrors.swift; sourceTree = "<group>"; };
-		A60000000000000000000012 /* WatchStoragePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchStoragePaths.swift; sourceTree = "<group>"; };
-		A60000000000000000000013 /* WatchSessionDirectoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionDirectoryStore.swift; sourceTree = "<group>"; };
-		A60000000000000000000014 /* WatchFileBackedLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchFileBackedLogStore.swift; sourceTree = "<group>"; };
-		A60000000000000000000015 /* WatchPackageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageStore.swift; sourceTree = "<group>"; };
-		A60000000000000000000016 /* WatchPackageAckStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageAckStore.swift; sourceTree = "<group>"; };
-		A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyntheticStorageFixtures.swift; sourceTree = "<group>"; };
+		77DCF48682FC1CF275A85758 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-LucidTLR/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		7DD843155625942B85B99783 /* Pods-LucidTLR.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LucidTLR.release.xcconfig"; path = "Target Support Files/Pods-LucidTLR/Pods-LucidTLR.release.xcconfig"; sourceTree = "<group>"; };
+		8C62D26F77A8CCE4C01DF72D /* libPods-LucidTLR.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-LucidTLR.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B771E6CA78DA387983E7C6C /* Pods-LucidTLR.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LucidTLR.debug.xcconfig"; path = "Target Support Files/Pods-LucidTLR/Pods-LucidTLR.debug.xcconfig"; sourceTree = "<group>"; };
 		A30000000000000000000011 /* WatchRuntimePlanV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePlanV3.swift; sourceTree = "<group>"; };
 		A30000000000000000000012 /* WatchPackageManifestV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageManifestV3.swift; sourceTree = "<group>"; };
 		A30000000000000000000013 /* WatchRuntimeEventV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeEventV3.swift; sourceTree = "<group>"; };
@@ -148,10 +144,24 @@
 		A4000000000000000000001C /* WatchRuntimeLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeLogStore.swift; sourceTree = "<group>"; };
 		A4000000000000000000001D /* WatchPackageSealer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageSealer.swift; sourceTree = "<group>"; };
 		A4000000000000000000001E /* WatchSyntheticRuntimeFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyntheticRuntimeFixtures.swift; sourceTree = "<group>"; };
-		77DCF48682FC1CF275A85758 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-LucidTLR/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		7DD843155625942B85B99783 /* Pods-LucidTLR.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LucidTLR.release.xcconfig"; path = "Target Support Files/Pods-LucidTLR/Pods-LucidTLR.release.xcconfig"; sourceTree = "<group>"; };
-		8C62D26F77A8CCE4C01DF72D /* libPods-LucidTLR.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-LucidTLR.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		9B771E6CA78DA387983E7C6C /* Pods-LucidTLR.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LucidTLR.debug.xcconfig"; path = "Target Support Files/Pods-LucidTLR/Pods-LucidTLR.debug.xcconfig"; sourceTree = "<group>"; };
+		A80000000000000000000011 /* WatchRuntimeCapabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeCapabilities.swift; sourceTree = "<group>"; };
+		A80000000000000000000012 /* WatchRuntimePreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePreflight.swift; sourceTree = "<group>"; };
+		A80000000000000000000013 /* WatchRuntimeStartGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeStartGate.swift; sourceTree = "<group>"; };
+		A80000000000000000000014 /* SyntheticPreflightProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticPreflightProvider.swift; sourceTree = "<group>"; };
+		A80000000000000000000015 /* WatchRuntimePreflightFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePreflightFixtures.swift; sourceTree = "<group>"; };
+		A50000000000000000000011 /* SleepShieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepShieldView.swift; sourceTree = "<group>"; };
+		A50000000000000000000012 /* SleepShieldViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepShieldViewModel.swift; sourceTree = "<group>"; };
+		A50000000000000000000013 /* DimRuntimeControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimRuntimeControlsView.swift; sourceTree = "<group>"; };
+		A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeBedtimeInstructionsView.swift; sourceTree = "<group>"; };
+		A60000000000000000000011 /* WatchStorageErrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchStorageErrors.swift; sourceTree = "<group>"; };
+		A60000000000000000000012 /* WatchStoragePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchStoragePaths.swift; sourceTree = "<group>"; };
+		A60000000000000000000013 /* WatchSessionDirectoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionDirectoryStore.swift; sourceTree = "<group>"; };
+		A60000000000000000000014 /* WatchFileBackedLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchFileBackedLogStore.swift; sourceTree = "<group>"; };
+		A60000000000000000000015 /* WatchPackageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageStore.swift; sourceTree = "<group>"; };
+		A60000000000000000000016 /* WatchPackageAckStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageAckStore.swift; sourceTree = "<group>"; };
+		A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyntheticStorageFixtures.swift; sourceTree = "<group>"; };
+		A70000000000000000000011 /* WatchModeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabView.swift; sourceTree = "<group>"; };
+		A70000000000000000000012 /* WatchModeLabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabViewModel.swift; sourceTree = "<group>"; };
 		A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = LucidTLR/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = LucidTLR/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
@@ -259,47 +269,6 @@
 			path = "LucidTLR Watch App";
 			sourceTree = "<group>";
 		};
-		A30000000000000000000020 /* Runtime */ = {
-			isa = PBXGroup;
-			children = (
-				A30000000000000000000011 /* WatchRuntimePlanV3.swift */,
-				A30000000000000000000012 /* WatchPackageManifestV3.swift */,
-				A30000000000000000000013 /* WatchRuntimeEventV3.swift */,
-				A30000000000000000000014 /* WatchEpochRecordV3.swift */,
-				A30000000000000000000015 /* WatchCueRecordV3.swift */,
-				A30000000000000000000016 /* WatchMovementRecordV3.swift */,
-				A40000000000000000000011 /* WatchRuntimeState.swift */,
-				A40000000000000000000012 /* WatchRuntimeProtocols.swift */,
-				A40000000000000000000013 /* WatchRuntimeClock.swift */,
-				A40000000000000000000014 /* WatchSessionCoordinator.swift */,
-				A40000000000000000000015 /* EpochAggregator.swift */,
-				A40000000000000000000016 /* CuePolicyEngine.swift */,
-				A40000000000000000000017 /* RemProbabilityEvaluator.swift */,
-				A40000000000000000000018 /* SyntheticHeartRateProvider.swift */,
-				A40000000000000000000019 /* SyntheticMotionProvider.swift */,
-				A4000000000000000000001A /* SyntheticBatteryProvider.swift */,
-				A4000000000000000000001B /* SyntheticCueOutputProvider.swift */,
-				A4000000000000000000001C /* WatchRuntimeLogStore.swift */,
-				A4000000000000000000001D /* WatchPackageSealer.swift */,
-				A4000000000000000000001E /* WatchSyntheticRuntimeFixtures.swift */,
-			);
-			path = Runtime;
-			sourceTree = "<group>";
-		};
-		A60000000000000000000020 /* Storage */ = {
-			isa = PBXGroup;
-			children = (
-				A60000000000000000000011 /* WatchStorageErrors.swift */,
-				A60000000000000000000012 /* WatchStoragePaths.swift */,
-				A60000000000000000000013 /* WatchSessionDirectoryStore.swift */,
-				A60000000000000000000014 /* WatchFileBackedLogStore.swift */,
-				A60000000000000000000015 /* WatchPackageStore.swift */,
-				A60000000000000000000016 /* WatchPackageAckStore.swift */,
-				A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */,
-			);
-			path = Storage;
-			sourceTree = "<group>";
-		};
 		6CD1FFF0E7044AE70602250A /* LucidTLR */ = {
 			isa = PBXGroup;
 			children = (
@@ -356,6 +325,52 @@
 				6CD1FFF0E7044AE70602250A /* LucidTLR */,
 			);
 			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000020 /* Runtime */ = {
+			isa = PBXGroup;
+			children = (
+				A30000000000000000000011 /* WatchRuntimePlanV3.swift */,
+				A30000000000000000000012 /* WatchPackageManifestV3.swift */,
+				A30000000000000000000013 /* WatchRuntimeEventV3.swift */,
+				A30000000000000000000014 /* WatchEpochRecordV3.swift */,
+				A30000000000000000000015 /* WatchCueRecordV3.swift */,
+				A30000000000000000000016 /* WatchMovementRecordV3.swift */,
+				A40000000000000000000011 /* WatchRuntimeState.swift */,
+				A40000000000000000000012 /* WatchRuntimeProtocols.swift */,
+				A40000000000000000000013 /* WatchRuntimeClock.swift */,
+				A40000000000000000000014 /* WatchSessionCoordinator.swift */,
+				A40000000000000000000015 /* EpochAggregator.swift */,
+				A40000000000000000000016 /* CuePolicyEngine.swift */,
+				A40000000000000000000017 /* RemProbabilityEvaluator.swift */,
+				A40000000000000000000018 /* SyntheticHeartRateProvider.swift */,
+				A40000000000000000000019 /* SyntheticMotionProvider.swift */,
+				A4000000000000000000001A /* SyntheticBatteryProvider.swift */,
+				A4000000000000000000001B /* SyntheticCueOutputProvider.swift */,
+				A4000000000000000000001C /* WatchRuntimeLogStore.swift */,
+				A4000000000000000000001D /* WatchPackageSealer.swift */,
+				A4000000000000000000001E /* WatchSyntheticRuntimeFixtures.swift */,
+				A80000000000000000000011 /* WatchRuntimeCapabilities.swift */,
+				A80000000000000000000012 /* WatchRuntimePreflight.swift */,
+				A80000000000000000000013 /* WatchRuntimeStartGate.swift */,
+				A80000000000000000000014 /* SyntheticPreflightProvider.swift */,
+				A80000000000000000000015 /* WatchRuntimePreflightFixtures.swift */,
+			);
+			path = Runtime;
+			sourceTree = "<group>";
+		};
+		A60000000000000000000020 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				A60000000000000000000011 /* WatchStorageErrors.swift */,
+				A60000000000000000000012 /* WatchStoragePaths.swift */,
+				A60000000000000000000013 /* WatchSessionDirectoryStore.swift */,
+				A60000000000000000000014 /* WatchFileBackedLogStore.swift */,
+				A60000000000000000000015 /* WatchPackageStore.swift */,
+				A60000000000000000000016 /* WatchPackageAckStore.swift */,
+				A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */,
+			);
+			path = Storage;
 			sourceTree = "<group>";
 		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
@@ -670,6 +685,11 @@
 				A4000000000000000000000C /* WatchRuntimeLogStore.swift in Sources */,
 				A4000000000000000000000D /* WatchPackageSealer.swift in Sources */,
 				A4000000000000000000000E /* WatchSyntheticRuntimeFixtures.swift in Sources */,
+				A80000000000000000000001 /* WatchRuntimeCapabilities.swift in Sources */,
+				A80000000000000000000002 /* WatchRuntimePreflight.swift in Sources */,
+				A80000000000000000000003 /* WatchRuntimeStartGate.swift in Sources */,
+				A80000000000000000000004 /* SyntheticPreflightProvider.swift in Sources */,
+				A80000000000000000000005 /* WatchRuntimePreflightFixtures.swift in Sources */,
 				A60000000000000000000001 /* WatchStorageErrors.swift in Sources */,
 				A60000000000000000000002 /* WatchStoragePaths.swift in Sources */,
 				A60000000000000000000003 /* WatchSessionDirectoryStore.swift in Sources */,

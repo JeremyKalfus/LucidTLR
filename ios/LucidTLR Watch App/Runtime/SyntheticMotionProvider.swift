@@ -6,13 +6,17 @@ enum SyntheticMotionPattern: Equatable {
   case spikeEpochs(Set<Int>)
 }
 
-struct SyntheticMotionProvider: MotionProviding {
+struct SyntheticMotionProvider: MotionProviding, MotionCapabilityProviding {
   let startDate: Date
   let sampleHz: Double
   let pattern: SyntheticMotionPattern
 
   var isAvailable: Bool {
     pattern != .missing
+  }
+
+  var motionAvailable: Bool {
+    isAvailable
   }
 
   func samples(from start: Date, to end: Date) -> [WatchMotionSample] {

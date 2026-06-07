@@ -37,10 +37,13 @@ struct WatchModeLabView: View {
         Button("Commit synthetic TLR plan") {
           viewModel.commitSyntheticTlrPlan()
         }
-        Button("Run 10-minute synthetic TLR") {
-          viewModel.runTenMinuteTlrSession()
+        Button("Run 10-minute synthetic TLR without preflight") {
+          viewModel.runTenMinuteTlrSessionWithoutPreflight()
         }
-        Button("Run synthetic sleep_log") {
+        Button("Run 10-minute synthetic TLR with preflight") {
+          viewModel.runTenMinuteTlrSessionWithPreflight()
+        }
+        Button("Run synthetic sleep_log with preflight") {
           viewModel.runTenMinuteSleepLogSession()
         }
         Button("Enter black sleep shield") {
@@ -48,6 +51,34 @@ struct WatchModeLabView: View {
         }
         Button("Force seal package") {
           viewModel.forceSealPackage()
+        }
+
+        Divider()
+
+        Text("Preflight fixtures")
+          .font(.caption2)
+          .fontWeight(.semibold)
+
+        Button("Show all-pass preflight") {
+          viewModel.showPreflight(.allPass)
+        }
+        Button("Simulate low battery") {
+          viewModel.showPreflight(.lowBattery)
+        }
+        Button("Simulate Low Power Mode") {
+          viewModel.showPreflight(.lowPowerModeOn)
+        }
+        Button("Simulate missing HealthKit") {
+          viewModel.showPreflight(.missingHealthAuthorization)
+        }
+        Button("Simulate missing motion") {
+          viewModel.showPreflight(.missingMotion)
+        }
+        Button("Simulate missing cue output") {
+          viewModel.showPreflight(.missingCueOutput)
+        }
+        Button("Simulate missing audio preflight") {
+          viewModel.showPreflight(.missingAudioPreflight)
         }
 
         Divider()

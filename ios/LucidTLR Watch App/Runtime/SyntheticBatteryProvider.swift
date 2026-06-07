@@ -1,8 +1,12 @@
 import Foundation
 
-struct SyntheticBatteryProvider: BatteryProviding {
+struct SyntheticBatteryProvider: BatteryProviding, BatteryStatusProviding {
   let startLevel: Double
   let drainPerHour: Double
+
+  func batteryStatus(at date: Date) -> WatchBatteryStatus {
+    WatchBatteryStatus(level: startLevel, evaluatedAt: date)
+  }
 
   func snapshot(at date: Date, elapsedSessionSeconds: TimeInterval) -> WatchBatterySnapshot {
     let drained = drainPerHour * (elapsedSessionSeconds / 3600.0)

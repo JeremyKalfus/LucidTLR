@@ -22,12 +22,14 @@ final class WatchModeLabViewModel: ObservableObject {
     WatchModeLabStatusRow(id: "public", label: "public Watch Mode", value: "disabled"),
     WatchModeLabStatusRow(id: "transport", label: "WatchConnectivity", value: "not used"),
   ]
+  @Published private(set) var selectedPreflightScenario: SyntheticPreflightScenario = .allPass
   @Published var sleepShieldViewModel: SleepShieldViewModel?
 
   private var coordinator: WatchSessionCoordinator?
   private var sessionStore: WatchSessionDirectoryStore?
   private var activePlan: WatchRuntimePlanV3?
   private var activeManifest: WatchPackageManifestV3?
+  private var activePreflightResult: WatchRuntimePreflightResult?
 
   func showInstructions() {
     displayMode = .instructions
@@ -43,10 +45,11 @@ final class WatchModeLabViewModel: ObservableObject {
       let plan = WatchSyntheticRuntimeFixtures.makeTlrPlanFixture(
         sessionId: uniqueSessionId(prefix: "watch-lab-tlr")
       )
-      coordinator = try makeCoordinator(plan: plan)
+      coordinator = try makeCoordinator(plan: plan, preflightScenario: .allPass)
       try coordinator?.commit(plan: plan)
       activePlan = plan
       activeManifest = nil
+      activePreflightResult = nil
       statusMessage = "Committed synthetic TLR plan locally on Watch. No phone or transport was used."
       refreshRows()
     } catch {
@@ -54,13 +57,34 @@ final class WatchModeLabViewModel: ObservableObject {
     }
   }
 
-  func runTenMinuteTlrSession() {
+  func runTenMinuteTlrSessionWithoutPreflight() {
     do {
       let plan = WatchSyntheticRuntimeFixtures.makeTlrPlanFixture(
         sessionId: uniqueSessionId(prefix: "watch-lab-tlr")
       )
-      try runTenMinuteSession(plan: plan)
-      statusMessage = "Ran synthetic TLR session with file-backed storage and sealed a package."
+      try runTenMinuteSession(
+        plan: plan,
+        preflightScenario: selectedPreflightScenario,
+        requiresStartPreflight: false
+      )
+      statusMessage = "Ran synthetic TLR session without enforcing preflight. Lab-only bypass; no real providers were used."
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func runTenMinuteTlrSessionWithPreflight() {
+    do {
+      let plan = preflightPreviewPlan(
+        prefix: "watch-lab-tlr",
+        scenario: selectedPreflightScenario
+      )
+      try runTenMinuteSession(
+        plan: plan,
+        preflightScenario: selectedPreflightScenario,
+        requiresStartPreflight: true
+      )
+      statusMessage = "Ran synthetic TLR session with \(selectedPreflightScenario.label) enforced before start."
     } catch {
       handle(error: error)
     }
@@ -71,11 +95,25 @@ final class WatchModeLabViewModel: ObservableObject {
       let plan = WatchSyntheticRuntimeFixtures.makeSleepLogPlanFixture(
         sessionId: uniqueSessionId(prefix: "watch-lab-sleep-log")
       )
-      try runTenMinuteSession(plan: plan)
-      statusMessage = "Ran synthetic sleep_log session with cueing disabled and sealed a package."
+      try runTenMinuteSession(
+        plan: plan,
+        preflightScenario: selectedPreflightScenario,
+        requiresStartPreflight: true
+      )
+      statusMessage = "Ran synthetic sleep_log session with preflight, cueing disabled, and sealed a package."
     } catch {
       handle(error: error)
     }
+  }
+
+  func showPreflight(_ scenario: SyntheticPreflightScenario) {
+    selectedPreflightScenario = scenario
+    let plan = preflightPreviewPlan(prefix: "watch-lab-preflight", scenario: scenario)
+    activePlan = plan
+    activeManifest = nil
+    activePreflightResult = WatchRuntimePreflightFixtures.result(for: scenario, plan: plan)
+    statusMessage = "\(scenario.label) evaluated in the synthetic lab. No real sensors, haptics, audio, workout runtime, or transport were started."
+    refreshRows()
   }
 
   func enterSleepShield() {
@@ -84,7 +122,7 @@ final class WatchModeLabViewModel: ObservableObject {
         let plan = WatchSyntheticRuntimeFixtures.makeTlrPlanFixture(
           sessionId: uniqueSessionId(prefix: "watch-lab-shield")
         )
-        coordinator = try makeCoordinator(plan: plan)
+        coordinator = try makeCoordinator(plan: plan, preflightScenario: .allPass)
         try coordinator?.commit(plan: plan)
         activePlan = plan
       }
@@ -112,7 +150,7 @@ final class WatchModeLabViewModel: ObservableObject {
         let plan = WatchSyntheticRuntimeFixtures.makeTlrPlanFixture(
           sessionId: uniqueSessionId(prefix: "watch-lab-force-seal")
         )
-        coordinator = try makeCoordinator(plan: plan)
+        coordinator = try makeCoordinator(plan: plan, preflightScenario: .allPass)
         try coordinator?.commit(plan: plan)
         try coordinator?.startCommittedPlan()
         activePlan = plan
@@ -132,20 +170,42 @@ final class WatchModeLabViewModel: ObservableObject {
     }
   }
 
-  private func runTenMinuteSession(plan: WatchRuntimePlanV3) throws {
-    let nextCoordinator = try makeCoordinator(plan: plan)
+  private func runTenMinuteSession(
+    plan: WatchRuntimePlanV3,
+    preflightScenario: SyntheticPreflightScenario,
+    requiresStartPreflight: Bool
+  ) throws {
+    let nextCoordinator = try makeCoordinator(
+      plan: plan,
+      preflightScenario: preflightScenario,
+      requiresStartPreflight: requiresStartPreflight
+    )
 
-    try nextCoordinator.commit(plan: plan)
-    try nextCoordinator.startCommittedPlan()
+    do {
+      try nextCoordinator.commit(plan: plan)
+      try nextCoordinator.startCommittedPlan()
+    } catch {
+      coordinator = nextCoordinator
+      activePlan = plan
+      activePreflightResult = nextCoordinator.lastPreflightResult
+      refreshRows()
+      throw error
+    }
+
     try nextCoordinator.runEpochs(20)
     activeManifest = try nextCoordinator.stopAndSeal(reason: .completed)
     coordinator = nextCoordinator
     activePlan = plan
+    activePreflightResult = nextCoordinator.lastPreflightResult
     sleepShieldViewModel = SleepShieldViewModel(coordinator: nextCoordinator)
     refreshRows()
   }
 
-  private func makeCoordinator(plan: WatchRuntimePlanV3) throws -> WatchSessionCoordinator {
+  private func makeCoordinator(
+    plan: WatchRuntimePlanV3,
+    preflightScenario: SyntheticPreflightScenario,
+    requiresStartPreflight: Bool = true
+  ) throws -> WatchSessionCoordinator {
     let startDate = WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
     let rootDirectory = try labRootDirectory()
     let nextSessionStore = try WatchSessionDirectoryStore(
@@ -167,7 +227,9 @@ final class WatchModeLabViewModel: ObservableObject {
       powerModeProvider: SyntheticPowerModeProvider(isLowPowerModeEnabled: false),
       cueOutputProvider: SyntheticCueOutputProvider(shouldDeliver: true),
       packageSealer: packageStore,
-      logStoreFactory: { _ in try WatchFileBackedLogStore(sessionStore: nextSessionStore) }
+      logStoreFactory: { _ in try WatchFileBackedLogStore(sessionStore: nextSessionStore) },
+      preflightProvider: SyntheticPreflightProvider(scenario: preflightScenario),
+      requiresStartPreflight: requiresStartPreflight
     )
   }
 
@@ -187,8 +249,9 @@ final class WatchModeLabViewModel: ObservableObject {
     let epochCount = coordinator?.epochCount ?? 0
     let manifest = activeManifest ?? coordinator?.sealedManifest
     let ackState = ackRetentionState(for: manifest)
+    let preflightResult = activePreflightResult ?? coordinator?.lastPreflightResult
 
-    statusRows = [
+    var rows = [
       WatchModeLabStatusRow(id: "scope", label: "scope", value: "synthetic only"),
       WatchModeLabStatusRow(id: "storage", label: "storage", value: "file-backed JSONL"),
       WatchModeLabStatusRow(id: "session", label: "session", value: activePlan?.sessionId ?? "none"),
@@ -202,6 +265,73 @@ final class WatchModeLabViewModel: ObservableObject {
       WatchModeLabStatusRow(id: "transport", label: "WatchConnectivity", value: "not used"),
       WatchModeLabStatusRow(id: "public", label: "public Watch Mode", value: "disabled"),
     ]
+
+    if let preflightResult {
+      rows.append(contentsOf: preflightRows(from: preflightResult))
+    } else {
+      rows.append(WatchModeLabStatusRow(id: "preflight", label: "preflight", value: "not evaluated"))
+    }
+
+    statusRows = rows
+  }
+
+  private func preflightRows(from result: WatchRuntimePreflightResult) -> [WatchModeLabStatusRow] {
+    [
+      WatchModeLabStatusRow(id: "preflight", label: "preflight", value: result.canStart ? "can start" : "blocked"),
+      WatchModeLabStatusRow(id: "preflightScenario", label: "fixture", value: selectedPreflightScenario.label),
+      WatchModeLabStatusRow(id: "preflightBlocks", label: "blocking reasons", value: blockingReasonLabel(result)),
+      WatchModeLabStatusRow(id: "preflightBattery", label: "battery", value: batteryLabel(result.batteryLevel)),
+      WatchModeLabStatusRow(id: "preflightLowPower", label: "Low Power Mode", value: result.lowPowerModeEnabled ? "on" : "off"),
+      WatchModeLabStatusRow(id: "preflightHealth", label: "HealthKit authorization", value: result.healthKitAuthorization.rawValue),
+      WatchModeLabStatusRow(id: "preflightWorkout", label: "workout runtime", value: passFail(result.workoutRuntimeAvailable)),
+      WatchModeLabStatusRow(id: "preflightMotion", label: "motion", value: passFail(result.motionAvailable)),
+      WatchModeLabStatusRow(id: "preflightHaptic", label: "haptic preflight", value: preflightLabel(required: result.hapticPreflightRequired, passed: result.hapticPreflightPassed, available: result.hapticOutputAvailable)),
+      WatchModeLabStatusRow(id: "preflightAudio", label: "audio preflight", value: preflightLabel(required: result.audioPreflightRequired, passed: result.audioPreflightPassed, available: result.audioOutputAvailable)),
+      WatchModeLabStatusRow(id: "preflightAssets", label: "assets", value: passFail(result.requiredAssetsPresent)),
+      WatchModeLabStatusRow(id: "preflightModel", label: "model", value: passFail(result.requiredModelPresent)),
+      WatchModeLabStatusRow(id: "preflightCommit", label: "plan commit", value: passFail(result.planCommitted)),
+    ]
+  }
+
+  private func preflightPreviewPlan(
+    prefix: String,
+    scenario: SyntheticPreflightScenario
+  ) -> WatchRuntimePlanV3 {
+    let plan = WatchSyntheticRuntimeFixtures.makeTlrPlanFixture(
+      sessionId: uniqueSessionId(prefix: prefix)
+    )
+
+    if scenario == .missingAudioPreflight {
+      return WatchRuntimePreflightFixtures.audioEnabledPlan(from: plan)
+    }
+
+    return plan
+  }
+
+  private func blockingReasonLabel(_ result: WatchRuntimePreflightResult) -> String {
+    result.blockingReasons.isEmpty
+      ? "none"
+      : result.blockingReasons.map(\.rawValue).joined(separator: ", ")
+  }
+
+  private func batteryLabel(_ level: Double?) -> String {
+    guard let level else {
+      return "unknown"
+    }
+
+    return "\(Int((level * 100).rounded()))%"
+  }
+
+  private func passFail(_ value: Bool) -> String {
+    value ? "pass" : "fail"
+  }
+
+  private func preflightLabel(required: Bool, passed: Bool, available: Bool) -> String {
+    if !required {
+      return available ? "not required / available" : "not required"
+    }
+
+    return passed ? "required / pass" : "required / blocked"
   }
 
   private func ackRetentionState(for manifest: WatchPackageManifestV3?) -> String {

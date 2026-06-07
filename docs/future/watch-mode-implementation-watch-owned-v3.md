@@ -66,6 +66,24 @@ sensor quality is bad/missing, during movement gates, during refractory windows,
 after recent user interaction, during cue-associated movement pauses, and until
 the REM persistence rule passes.
 
+## Preflight And Start Gate
+
+Watch Mode v3 start must pass a provider-agnostic preflight gate before any
+future real runtime can start. The gate models battery threshold, Low Power Mode
+off, HealthKit authorization, workout runtime availability, motion availability,
+cue output capability, haptic preflight, audio preflight when audio is enabled,
+required assets/model presence, and local durable plan commit presence.
+
+Low Power Mode blocks start. A workout-backed runtime is required. Cueing is
+haptic-first; audio remains optional and experimental, and audio preflight is
+required only when audio is enabled for that night. The current Phase 6B
+scaffolding is synthetic/lab-only and must not start HealthKit, workout,
+CoreMotion, WatchConnectivity, haptic, or audio behavior.
+
+Public Watch Mode must remain disabled until the preflight gate and later real
+providers pass simulator builds plus physical hardware validation. A passing
+synthetic preflight result is not hardware readiness.
+
 ## Durable Watch Storage
 
 The Watch runtime writes append-only JSONL hot-path logs for runtime events,
@@ -107,6 +125,11 @@ The lab is required before real providers so plan/runtime/storage/import
 surfaces can be inspected without implying Watch Mode is ready for overnight
 use. Lab package imports remain local-only, deterministic, idempotent, and
 transaction-wrapped; public Watch Mode remains disabled.
+
+Manual phone-lab smoke validation on iPhone passed for the dev-only synthetic
+route: plan building, fixture package import, idempotent re-import with
+`already_imported`, `ackEligible` display after import, and corrupt manifest hash
+rejection before import all worked on device.
 
 ## Implementation Sequencing
 

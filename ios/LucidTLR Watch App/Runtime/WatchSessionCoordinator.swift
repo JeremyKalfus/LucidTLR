@@ -8,6 +8,7 @@ enum WatchSessionCoordinatorError: Error, Equatable {
   case lowPowerModeEnabled
   case motionUnavailable
   case batteryTooLow
+  case preflightBlocked([WatchPreflightBlockingReason])
   case runtimeNotActive
   case missingStartDate
 }
@@ -25,6 +26,8 @@ final class WatchSessionCoordinator {
   private let cueOutputProvider: CueOutputProviding
   private let packageSealer: WatchPackageSealing
   private let logStoreFactory: (String) throws -> WatchRuntimeLogStore
+  private let preflightProvider: WatchRuntimePreflightProviding?
+  private let requiresStartPreflight: Bool
 
   private var plan: WatchRuntimePlanV3?
   private var startedAt: Date?
@@ -37,6 +40,7 @@ final class WatchSessionCoordinator {
   private var movementPauseActive = false
   private var cueAssociatedPauseActive = false
   private var tlrDeferredUntil: Date?
+  private(set) var lastPreflightResult: WatchRuntimePreflightResult?
 
   init(
     clock: AdjustableWatchClock,
@@ -46,7 +50,9 @@ final class WatchSessionCoordinator {
     powerModeProvider: PowerModeProviding,
     cueOutputProvider: CueOutputProviding,
     packageSealer: WatchPackageSealing = WatchPackageSealer(),
-    logStoreFactory: @escaping (String) throws -> WatchRuntimeLogStore = { WatchRuntimeLogStore(sessionId: $0) }
+    logStoreFactory: @escaping (String) throws -> WatchRuntimeLogStore = { WatchRuntimeLogStore(sessionId: $0) },
+    preflightProvider: WatchRuntimePreflightProviding? = nil,
+    requiresStartPreflight: Bool = true
   ) {
     self.clock = clock
     self.heartRateProvider = heartRateProvider
@@ -56,6 +62,8 @@ final class WatchSessionCoordinator {
     self.cueOutputProvider = cueOutputProvider
     self.packageSealer = packageSealer
     self.logStoreFactory = logStoreFactory
+    self.preflightProvider = preflightProvider
+    self.requiresStartPreflight = requiresStartPreflight
   }
 
   var sessionType: String? {
@@ -335,17 +343,27 @@ final class WatchSessionCoordinator {
   }
 
   private func runPreflight(plan: WatchRuntimePlanV3) throws {
-    if plan.safety.requireLowPowerModeOff && powerModeProvider.isLowPowerModeEnabled {
-      throw WatchSessionCoordinatorError.lowPowerModeEnabled
+    let provider = preflightProvider ?? WatchRuntimeProviderBackedPreflightProvider(
+      batteryProvider: batteryProvider,
+      powerModeProvider: powerModeProvider,
+      motionProvider: motionProvider,
+      cueOutputProvider: cueOutputProvider,
+      planCommitted: state == .preflight || state == .planCommitted,
+      storageAvailable: logStore != nil
+    )
+    let result = WatchRuntimeStartGate.evaluate(
+      plan: plan,
+      provider: provider,
+      at: clock.now
+    )
+    lastPreflightResult = result
+
+    guard requiresStartPreflight else {
+      return
     }
 
-    if plan.safety.requireMotion && !motionProvider.isAvailable {
-      throw WatchSessionCoordinatorError.motionUnavailable
-    }
-
-    let battery = batteryProvider.snapshot(at: clock.now, elapsedSessionSeconds: 0)
-    if battery.level < plan.safety.minimumStartBatteryLevel {
-      throw WatchSessionCoordinatorError.batteryTooLow
+    guard result.canStart else {
+      throw WatchSessionCoordinatorError.preflightBlocked(result.blockingReasons)
     }
   }
 
