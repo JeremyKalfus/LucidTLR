@@ -20,6 +20,7 @@ ENV['RCT_USE_PREBUILT_RNCORE'] ||= podfile_properties['ios.buildReactNativeFromS
 ENV['RCT_HERMES_V1_ENABLED'] ||= '1' if podfile_properties['expo.useHermesV1'] == 'true'
 ENV['EXPO_USE_PRECOMPILED_MODULES'] ||= '1' if podfile_properties['EXPO_USE_PRECOMPILED_MODULES'] != 'false'
 platform :ios, podfile_properties['ios.deploymentTarget'] || '26.0'
+project 'LucidTLR.xcodeproj'
 
 prepare_react_native_project!
 
