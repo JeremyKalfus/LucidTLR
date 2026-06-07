@@ -31,6 +31,8 @@
 		A50000000000000000000002 /* SleepShieldViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* SleepShieldViewModel.swift */; };
 		A50000000000000000000003 /* DimRuntimeControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000013 /* DimRuntimeControlsView.swift */; };
 		A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */; };
+		A70000000000000000000001 /* WatchModeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000011 /* WatchModeLabView.swift */; };
+		A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000012 /* WatchModeLabViewModel.swift */; };
 		A60000000000000000000001 /* WatchStorageErrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* WatchStorageErrors.swift */; };
 		A60000000000000000000002 /* WatchStoragePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* WatchStoragePaths.swift */; };
 		A60000000000000000000003 /* WatchSessionDirectoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000013 /* WatchSessionDirectoryStore.swift */; };
@@ -117,6 +119,8 @@
 		A50000000000000000000012 /* SleepShieldViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepShieldViewModel.swift; sourceTree = "<group>"; };
 		A50000000000000000000013 /* DimRuntimeControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimRuntimeControlsView.swift; sourceTree = "<group>"; };
 		A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeBedtimeInstructionsView.swift; sourceTree = "<group>"; };
+		A70000000000000000000011 /* WatchModeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabView.swift; sourceTree = "<group>"; };
+		A70000000000000000000012 /* WatchModeLabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabViewModel.swift; sourceTree = "<group>"; };
 		A60000000000000000000011 /* WatchStorageErrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchStorageErrors.swift; sourceTree = "<group>"; };
 		A60000000000000000000012 /* WatchStoragePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchStoragePaths.swift; sourceTree = "<group>"; };
 		A60000000000000000000013 /* WatchSessionDirectoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionDirectoryStore.swift; sourceTree = "<group>"; };
@@ -245,6 +249,8 @@
 				A50000000000000000000012 /* SleepShieldViewModel.swift */,
 				A50000000000000000000013 /* DimRuntimeControlsView.swift */,
 				A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */,
+				A70000000000000000000011 /* WatchModeLabView.swift */,
+				A70000000000000000000012 /* WatchModeLabViewModel.swift */,
 				A30000000000000000000020 /* Runtime */,
 				A60000000000000000000020 /* Storage */,
 				4AFEF0078B754B4A9CF00001 /* Assets.xcassets */,
@@ -642,6 +648,8 @@
 				A50000000000000000000002 /* SleepShieldViewModel.swift in Sources */,
 				A50000000000000000000003 /* DimRuntimeControlsView.swift in Sources */,
 				A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */,
+				A70000000000000000000001 /* WatchModeLabView.swift in Sources */,
+				A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */,
 				A30000000000000000000001 /* WatchRuntimePlanV3.swift in Sources */,
 				A30000000000000000000002 /* WatchPackageManifestV3.swift in Sources */,
 				A30000000000000000000003 /* WatchRuntimeEventV3.swift in Sources */,

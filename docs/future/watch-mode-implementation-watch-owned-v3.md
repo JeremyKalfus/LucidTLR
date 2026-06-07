@@ -94,6 +94,20 @@ package imported locally, but package deletion remains a Watch-side retention
 decision after a later matching ack path is implemented. The importer does not
 add WatchConnectivity or a native bridge.
 
+## Hidden Watch Mode Lab
+
+The hidden Watch Mode Lab is synthetic-only and is not public Watch Mode. It may
+exercise plan building, synthetic Watch-owned runtime execution, the black sleep
+shield, file-backed Watch storage, package sealing, and local phone package
+import fixtures. It must not use real Watch sensors, HealthKit, workout
+sessions, CoreMotion, WatchConnectivity, haptic/audio output, package transfer,
+or public Home/AppState Watch session creation.
+
+The lab is required before real providers so plan/runtime/storage/import
+surfaces can be inspected without implying Watch Mode is ready for overnight
+use. Lab package imports remain local-only, deterministic, idempotent, and
+transaction-wrapped; public Watch Mode remains disabled.
+
 ## Implementation Sequencing
 
 The synthetic Watch-owned runtime core with fake providers must compile and pass

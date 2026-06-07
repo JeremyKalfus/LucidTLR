@@ -731,6 +731,20 @@ export function WatchModeSettingsScreen() {
           {WATCH_MODE_DISABLED_MESSAGE}
         </SettingsNote>
       </Card>
+
+      {__DEV__ ? (
+        <Card>
+          <SettingsNote>
+            Development-only synthetic Watch Mode Lab. No real Watch sensors,
+            watch sync transport, or public Watch session start.
+          </SettingsNote>
+          <PrimaryPillButton
+            icon={Cpu}
+            label="Watch Mode Lab -- synthetic only"
+            onPress={() => router.push("/debug/watch-mode-lab")}
+          />
+        </Card>
+      ) : null}
     </Screen>
   );
 }

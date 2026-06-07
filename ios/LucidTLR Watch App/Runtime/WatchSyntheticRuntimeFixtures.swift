@@ -5,8 +5,16 @@ enum WatchSyntheticRuntimeFixtures {
     tlrPlan()
   }
 
+  static func makeTlrPlanFixture(sessionId: String) -> WatchRuntimePlanV3 {
+    basePlan(sessionId: sessionId, sessionType: "tlr", cueingEnabled: true)
+  }
+
   static func makeSleepLogPlanFixture() -> WatchRuntimePlanV3 {
     sleepLogPlan()
+  }
+
+  static func makeSleepLogPlanFixture(sessionId: String) -> WatchRuntimePlanV3 {
+    basePlan(sessionId: sessionId, sessionType: "sleep_log", cueingEnabled: false)
   }
 
   static func fixtureStartDateForStorage() -> Date {

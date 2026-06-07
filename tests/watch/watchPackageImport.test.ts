@@ -13,6 +13,7 @@ import {
   buildSyntheticTlrWatchPackageFixture,
 } from "@/src/features/watchHistory/watchPackageFixtures";
 import { validateWatchPackageForImport } from "@/src/features/watchHistory/validateWatchPackageManifest";
+import { importSyntheticWatchModeLabPackage } from "@/src/features/watchModeLab/watchModeLab";
 import {
   withWatchPackageManifestHash,
   type WatchPackageManifestV3,
@@ -488,6 +489,54 @@ describe("Watch package phone importer", () => {
     expect(db.epochs.size).toBe(2);
     expect(db.cueEvents.size).toBe(0);
     expect(packageStatus(db, sealedPackage.manifest.packageId)).toBe("imported");
+  });
+
+  it("lets the synthetic phone lab import and re-import a TLR package idempotently", async () => {
+    const db = new FakePackageImportDb();
+
+    const firstResult = await importSyntheticWatchModeLabPackage({
+      db,
+      kind: "tlr",
+    });
+
+    expect(firstResult).toMatchObject({
+      status: "imported",
+      ackEligible: true,
+      counts: {
+        events: 12,
+        epochs: 2,
+        cueEvents: 1,
+        movementEvents: 1,
+      },
+    });
+    expect(db.transactionCommits).toBe(1);
+
+    const sizesAfterFirstImport = {
+      sessions: db.sessions.size,
+      runtimeEvents: db.runtimeEvents.size,
+      epochs: db.epochs.size,
+      cueEvents: db.cueEvents.size,
+      movementEvents: db.movementEvents.size,
+    };
+    const secondResult = await importSyntheticWatchModeLabPackage({
+      db,
+      kind: "tlr",
+    });
+
+    expect(secondResult).toMatchObject({
+      status: "already_imported",
+      ackEligible: true,
+      packageId: firstResult.packageId,
+      packageHash: firstResult.packageHash,
+    });
+    expect(db.transactionCommits).toBe(1);
+    expect({
+      sessions: db.sessions.size,
+      runtimeEvents: db.runtimeEvents.size,
+      epochs: db.epochs.size,
+      cueEvents: db.cueEvents.size,
+      movementEvents: db.movementEvents.size,
+    }).toEqual(sizesAfterFirstImport);
   });
 
   it("rejects file hash mismatches before writing local session data", async () => {
