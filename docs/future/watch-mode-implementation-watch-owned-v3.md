@@ -86,6 +86,10 @@ graph, timer, progress ring, or live status screen. A tap reveals dim controls
 for a short window, logs `watch_user_interaction`, then hides controls again.
 Runtime correctness does not depend on screen visibility.
 
+The sleep shield can be compile-checked before public Watch Mode is enabled,
+but it must not create a public Watch start path. Lab or demo wiring remains
+separate from Home/AppState public session creation.
+
 Setup copy before Start Night should instruct the user to turn on Theater Mode,
 keep Low Power Mode off, keep the Watch charged before bed, and tap to reveal
 controls. The app must not attempt to programmatically toggle Theater Mode.

@@ -35,6 +35,7 @@ final class WatchSessionCoordinator {
   private var cueAssociatedMovementPauseUntil: Date?
   private var movementPauseActive = false
   private var cueAssociatedPauseActive = false
+  private var tlrDeferredUntil: Date?
 
   init(
     clock: AdjustableWatchClock,
@@ -52,6 +53,34 @@ final class WatchSessionCoordinator {
     self.powerModeProvider = powerModeProvider
     self.cueOutputProvider = cueOutputProvider
     self.packageSealer = packageSealer
+  }
+
+  var sessionType: String? {
+    plan?.sessionType
+  }
+
+  var latestBatteryLevel: Double? {
+    logStore?.epochRecords.last?.batteryLevel ?? batteryStart
+  }
+
+  var latestSensorQuality: String {
+    logStore?.epochRecords.last?.sensorQuality ?? "unknown"
+  }
+
+  var latestCueDecisionReason: String {
+    logStore?.epochRecords.last?.cueDecisionReason ?? "not_started"
+  }
+
+  var epochCount: Int {
+    logStore?.epochRecords.count ?? 0
+  }
+
+  var packageState: String {
+    sealedManifest == nil ? "not_sealed" : state.rawValue
+  }
+
+  var isTlrPaused: Bool {
+    state == .paused
   }
 
   func commit(plan: WatchRuntimePlanV3) throws {
@@ -135,6 +164,40 @@ final class WatchSessionCoordinator {
       .userInteractionLogged,
       payload: ["interactionType": .stringValue(kind)]
     )
+  }
+
+  func deferTlrInterval(by seconds: TimeInterval) throws {
+    guard plan?.sessionType == "tlr" else {
+      throw WatchSessionCoordinatorError.runtimeNotActive
+    }
+
+    let deferredUntil = clock.now.addingTimeInterval(seconds)
+    if let existingDeferredUntil = tlrDeferredUntil {
+      tlrDeferredUntil = max(existingDeferredUntil, deferredUntil)
+    } else {
+      tlrDeferredUntil = deferredUntil
+    }
+
+    if state == .tlrActive {
+      state = .waitingForTlrInterval
+    }
+  }
+
+  func pauseTlr() throws {
+    guard plan?.sessionType == "tlr",
+      state == .tlrActive || state == .waitingForTlrInterval else {
+      throw WatchSessionCoordinatorError.runtimeNotActive
+    }
+
+    state = .paused
+  }
+
+  func resumeTlr() throws {
+    guard let plan, plan.sessionType == "tlr", state == .paused else {
+      throw WatchSessionCoordinatorError.runtimeNotActive
+    }
+
+    state = isTlrIntervalActive(plan: plan, at: clock.now) ? .tlrActive : .waitingForTlrInterval
   }
 
   @discardableResult
@@ -454,6 +517,10 @@ final class WatchSessionCoordinator {
   }
 
   private func isTlrIntervalActive(plan: WatchRuntimePlanV3, at date: Date) -> Bool {
+    if let tlrDeferredUntil, date < tlrDeferredUntil {
+      return false
+    }
+
     guard plan.tlrInterval.enabled,
       let earliestCueAt = WatchRuntimeDateFormat.date(from: plan.tlrInterval.earliestCueAt),
       let latestCueAt = WatchRuntimeDateFormat.date(from: plan.tlrInterval.latestCueAt) else {

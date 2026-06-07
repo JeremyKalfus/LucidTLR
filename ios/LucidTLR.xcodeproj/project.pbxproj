@@ -27,6 +27,10 @@
 		4AFEF0048B754B4A9CF00001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEF0038B754B4A9CF00001 /* ContentView.swift */; };
 		4AFEF0088B754B4A9CF00001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEF0078B754B4A9CF00001 /* Assets.xcassets */; };
 		4AFEF00A8B754B4A9CF00001 /* LucidTLR Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4AFEF0098B754B4A9CF00001 /* LucidTLR Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A50000000000000000000001 /* SleepShieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* SleepShieldView.swift */; };
+		A50000000000000000000002 /* SleepShieldViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* SleepShieldViewModel.swift */; };
+		A50000000000000000000003 /* DimRuntimeControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000013 /* DimRuntimeControlsView.swift */; };
+		A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */; };
 		A30000000000000000000001 /* WatchRuntimePlanV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* WatchRuntimePlanV3.swift */; };
 		A30000000000000000000002 /* WatchPackageManifestV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* WatchPackageManifestV3.swift */; };
 		A30000000000000000000003 /* WatchRuntimeEventV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* WatchRuntimeEventV3.swift */; };
@@ -102,6 +106,10 @@
 		4AFEF0078B754B4A9CF00001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4AFEF0098B754B4A9CF00001 /* LucidTLR Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LucidTLR Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4AFEF00B8B754B4A9CF00001 /* LucidTLRWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LucidTLRWatch.entitlements; sourceTree = "<group>"; };
+		A50000000000000000000011 /* SleepShieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepShieldView.swift; sourceTree = "<group>"; };
+		A50000000000000000000012 /* SleepShieldViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepShieldViewModel.swift; sourceTree = "<group>"; };
+		A50000000000000000000013 /* DimRuntimeControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimRuntimeControlsView.swift; sourceTree = "<group>"; };
+		A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeBedtimeInstructionsView.swift; sourceTree = "<group>"; };
 		A30000000000000000000011 /* WatchRuntimePlanV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePlanV3.swift; sourceTree = "<group>"; };
 		A30000000000000000000012 /* WatchPackageManifestV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageManifestV3.swift; sourceTree = "<group>"; };
 		A30000000000000000000013 /* WatchRuntimeEventV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeEventV3.swift; sourceTree = "<group>"; };
@@ -219,6 +227,10 @@
 			children = (
 				4AFEF0018B754B4A9CF00001 /* LucidTLRWatchApp.swift */,
 				4AFEF0038B754B4A9CF00001 /* ContentView.swift */,
+				A50000000000000000000011 /* SleepShieldView.swift */,
+				A50000000000000000000012 /* SleepShieldViewModel.swift */,
+				A50000000000000000000013 /* DimRuntimeControlsView.swift */,
+				A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */,
 				A30000000000000000000020 /* Runtime */,
 				4AFEF0078B754B4A9CF00001 /* Assets.xcassets */,
 				4AFEF00B8B754B4A9CF00001 /* LucidTLRWatch.entitlements */,
@@ -597,6 +609,10 @@
 			files = (
 				4AFEF0028B754B4A9CF00001 /* LucidTLRWatchApp.swift in Sources */,
 				4AFEF0048B754B4A9CF00001 /* ContentView.swift in Sources */,
+				A50000000000000000000001 /* SleepShieldView.swift in Sources */,
+				A50000000000000000000002 /* SleepShieldViewModel.swift in Sources */,
+				A50000000000000000000003 /* DimRuntimeControlsView.swift in Sources */,
+				A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */,
 				A30000000000000000000001 /* WatchRuntimePlanV3.swift in Sources */,
 				A30000000000000000000002 /* WatchPackageManifestV3.swift in Sources */,
 				A30000000000000000000003 /* WatchRuntimeEventV3.swift in Sources */,
