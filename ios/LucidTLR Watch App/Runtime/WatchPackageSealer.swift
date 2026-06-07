@@ -10,7 +10,7 @@ struct WatchPackageSealer: WatchPackageSealing {
     endedAt: Date,
     batteryStart: Double,
     batteryEnd: Double
-  ) -> WatchPackageManifestV3 {
+  ) throws -> WatchPackageManifestV3 {
     let firstSequenceNumber = logStore.events.first?.sequenceNumber ?? 1
     let lastSequenceNumber = logStore.events.last?.sequenceNumber ?? firstSequenceNumber
     let eventCount = logStore.events.count
@@ -23,8 +23,8 @@ struct WatchPackageSealer: WatchPackageSealing {
     let files = [
       fileEntry(relativePath: "events.jsonl", count: logStore.events.count, seed: "events|\(packageId)"),
       fileEntry(relativePath: "epochs.jsonl", count: logStore.epochRecords.count, seed: "epochs|\(packageId)"),
-      fileEntry(relativePath: "cues.jsonl", count: logStore.cueRecords.count, seed: "cues|\(packageId)"),
-      fileEntry(relativePath: "movement.jsonl", count: logStore.movementRecords.count, seed: "movement|\(packageId)"),
+      fileEntry(relativePath: "cue_events.jsonl", count: logStore.cueRecords.count, seed: "cues|\(packageId)"),
+      fileEntry(relativePath: "movement_events.jsonl", count: logStore.movementRecords.count, seed: "movement|\(packageId)"),
     ]
     let runtimeSummary = WatchPackageRuntimeSummaryV3(
       startedAt: WatchRuntimeDateFormat.string(from: startedAt),

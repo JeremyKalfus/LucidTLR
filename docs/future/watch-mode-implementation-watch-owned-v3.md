@@ -66,12 +66,24 @@ sensor quality is bad/missing, during movement gates, during refractory windows,
 after recent user interaction, during cue-associated movement pauses, and until
 the REM persistence rule passes.
 
+## Durable Watch Storage
+
+The Watch runtime writes append-only JSONL hot-path logs for runtime events,
+30-second epochs, cue summaries, and movement summaries. Plan and commit records
+are written atomically before the night starts. Sealing creates a local package
+manifest and runtime summary without deleting unsealed logs.
+
+Sealed packages stay on the Watch until a durable ack with the matching
+`packageId` and `packageHash` is stored. Package deletion must be gated by that
+matching ack. Raw high-rate motion is not persisted by default.
+
 ## Implementation Sequencing
 
 The synthetic Watch-owned runtime core with fake providers must compile and pass
-tests before real providers are added. Real HealthKit, workout, CoreMotion,
-haptic, audio, WatchConnectivity, file-store, and package-transfer providers
-remain later phases and must stay behind the same provider protocols.
+tests before real providers are added. The file-backed Watch storage layer must
+compile and pass tests before hidden lab or real providers are added. Real HealthKit, workout, CoreMotion,
+haptic, audio, WatchConnectivity, and package-transfer providers remain later
+phases and must stay behind the same provider protocols.
 
 ## Cue Output
 

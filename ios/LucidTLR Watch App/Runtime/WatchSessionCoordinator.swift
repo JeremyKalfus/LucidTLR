@@ -24,6 +24,7 @@ final class WatchSessionCoordinator {
   private let powerModeProvider: PowerModeProviding
   private let cueOutputProvider: CueOutputProviding
   private let packageSealer: WatchPackageSealing
+  private let logStoreFactory: (String) throws -> WatchRuntimeLogStore
 
   private var plan: WatchRuntimePlanV3?
   private var startedAt: Date?
@@ -44,7 +45,8 @@ final class WatchSessionCoordinator {
     batteryProvider: BatteryProviding,
     powerModeProvider: PowerModeProviding,
     cueOutputProvider: CueOutputProviding,
-    packageSealer: WatchPackageSealing = WatchPackageSealer()
+    packageSealer: WatchPackageSealing = WatchPackageSealer(),
+    logStoreFactory: @escaping (String) throws -> WatchRuntimeLogStore = { WatchRuntimeLogStore(sessionId: $0) }
   ) {
     self.clock = clock
     self.heartRateProvider = heartRateProvider
@@ -53,6 +55,7 @@ final class WatchSessionCoordinator {
     self.powerModeProvider = powerModeProvider
     self.cueOutputProvider = cueOutputProvider
     self.packageSealer = packageSealer
+    self.logStoreFactory = logStoreFactory
   }
 
   var sessionType: String? {
@@ -94,7 +97,10 @@ final class WatchSessionCoordinator {
     }
 
     self.plan = plan
-    let logStore = WatchRuntimeLogStore(sessionId: plan.sessionId)
+    let logStore = try logStoreFactory(plan.sessionId)
+    if let planStore = logStore as? WatchRuntimePlanPersisting {
+      try planStore.persistCommittedPlan(plan, committedAt: clock.now)
+    }
     self.logStore = logStore
     state = .planCommitted
 
@@ -475,7 +481,7 @@ final class WatchSessionCoordinator {
       at: endedAt,
       elapsedSessionSeconds: endedAt.timeIntervalSince(startedAt)
     ).level
-    let manifest = packageSealer.seal(
+    let manifest = try packageSealer.seal(
       plan: plan,
       logStore: logStore,
       sealReason: reason,

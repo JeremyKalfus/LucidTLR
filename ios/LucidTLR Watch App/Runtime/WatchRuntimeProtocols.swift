@@ -76,5 +76,5 @@ protocol WatchPackageSealing {
     endedAt: Date,
     batteryStart: Double,
     batteryEnd: Double
-  ) -> WatchPackageManifestV3
+  ) throws -> WatchPackageManifestV3
 }

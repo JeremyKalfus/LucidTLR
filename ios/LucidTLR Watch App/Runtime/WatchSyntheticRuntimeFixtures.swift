@@ -1,6 +1,18 @@
 import Foundation
 
 enum WatchSyntheticRuntimeFixtures {
+  static func makeTlrPlanFixture() -> WatchRuntimePlanV3 {
+    tlrPlan()
+  }
+
+  static func makeSleepLogPlanFixture() -> WatchRuntimePlanV3 {
+    sleepLogPlan()
+  }
+
+  static func fixtureStartDateForStorage() -> Date {
+    fixtureStartDate()
+  }
+
   static func runTenMinuteTlrFixture() throws -> WatchSyntheticRunResult {
     try runTenMinuteFixture(plan: tlrPlan(), motionPattern: .lowMovement)
   }

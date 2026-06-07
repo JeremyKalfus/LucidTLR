@@ -53,7 +53,7 @@ extension WatchRuntimeJSONValue {
   }
 }
 
-final class WatchRuntimeLogStore: WatchRuntimeLogging {
+class WatchRuntimeLogStore: WatchRuntimeLogging {
   let sessionId: String
   private(set) var events: [WatchRuntimeEventV3] = []
   private(set) var epochRecords: [WatchEpochRecordV3] = []
@@ -208,5 +208,22 @@ final class WatchRuntimeLogStore: WatchRuntimeLogging {
     )
 
     movementRecords.append(record)
+  }
+
+  func restoreRecords(
+    events: [WatchRuntimeEventV3],
+    epochRecords: [WatchEpochRecordV3],
+    cueRecords: [WatchCueRecordV3],
+    movementRecords: [WatchMovementRecordV3]
+  ) {
+    self.events = events
+    self.epochRecords = epochRecords
+    self.cueRecords = cueRecords
+    self.movementRecords = movementRecords
+
+    if let lastEvent = events.max(by: { $0.sequenceNumber < $1.sequenceNumber }) {
+      nextSequenceNumber = lastEvent.sequenceNumber + 1
+      previousRecordHash = lastEvent.recordHash
+    }
   }
 }
