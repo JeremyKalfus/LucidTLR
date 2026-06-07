@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "watch-synthetic-runtime-fixture-v3",
+  "fixtureId": "watch-synthetic-sleep-log-ten-minute-v3",
+  "sessionType": "sleep_log",
+  "runtimeOwner": "watch",
+  "durationSeconds": 600,
+  "epochSeconds": 30,
+  "expectedEpochCount": 20,
+  "cueingEnabled": false,
+  "expectedCueBehavior": "cue_delivery_disabled_but_sensing_and_logging_continue",
+  "forbiddenRuntimeDependencies": [
+    "HealthKit",
+    "CoreMotion",
+    "WatchConnectivity",
+    "AVFoundation"
+  ]
+}

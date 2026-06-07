@@ -66,6 +66,13 @@ sensor quality is bad/missing, during movement gates, during refractory windows,
 after recent user interaction, during cue-associated movement pauses, and until
 the REM persistence rule passes.
 
+## Implementation Sequencing
+
+The synthetic Watch-owned runtime core with fake providers must compile and pass
+tests before real providers are added. Real HealthKit, workout, CoreMotion,
+haptic, audio, WatchConnectivity, file-store, and package-transfer providers
+remain later phases and must stay behind the same provider protocols.
+
 ## Cue Output
 
 Default cue delivery is haptic-only. Audio is optional and experimental. Audio

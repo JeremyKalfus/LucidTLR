@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "watch-synthetic-runtime-fixture-v3",
+  "fixtureId": "watch-synthetic-tlr-ten-minute-v3",
+  "sessionType": "tlr",
+  "runtimeOwner": "watch",
+  "durationSeconds": 600,
+  "epochSeconds": 30,
+  "expectedEpochCount": 20,
+  "cueingEnabled": true,
+  "defaultOutput": "haptic",
+  "expectedCueBehavior": "likely_rem_fixture_may_deliver_haptic_after_persistence",
+  "forbiddenRuntimeDependencies": [
+    "HealthKit",
+    "CoreMotion",
+    "WatchConnectivity",
+    "AVFoundation"
+  ]
+}
