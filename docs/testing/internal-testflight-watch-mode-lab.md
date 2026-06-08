@@ -29,59 +29,48 @@ Use the current EAS setup:
 
 ```sh
 npm run verify:watch-testflight-lab
-npx eas build --platform ios --profile testflight-internal-lab --non-interactive
+npx eas build --platform ios --profile testflight-internal-lab --non-interactive --wait
 ```
 
 After the build is available in App Store Connect, distribute it only through
 Internal TestFlight. Do not use this profile for external beta or public
 enablement.
 
-If CLI submission is available after the build completes:
+Submit the latest successful build with the pinned submit profile:
 
 ```sh
-npx eas submit --platform ios --latest --non-interactive
+npx eas submit --platform ios --latest --profile testflight-internal-lab --wait
 ```
 
 Do not add external/public testers for this lane.
 
 ## Current EAS CLI Status
 
-As of June 8, 2026, local simulator verification passes, but cloud build
-submission is blocked before a TestFlight archive is created.
+As of June 8, 2026, the internal lab lane is linked to the dedicated EAS project
+`@jeremykalfus/lucidtlr`:
 
-The configured EAS project ID currently resolves to the legacy Expo project slug
-`lucidcue`, while this repo's app slug is `lucidtlr`. The CLI has no exposed
-project rename command. The clean permanent fix is to rename the Expo project
-slug for project ID `1927a3da-a23c-4160-b86e-a312d9326558` from `lucidcue` to
-`lucidtlr` in Expo project settings, then rerun:
+- EAS project ID: `b5900bca-cd97-4304-ab80-560efa783e43`
+- App Store Connect app ID: `6777900695`
+- Bundle IDs:
+  - `com.jeremykalfus.lucidtlr`
+  - `com.jeremykalfus.lucidtlr.watchkitapp`
+- Submit API key: EAS-managed App Store Connect API key `KFK366A9JD`
 
-```sh
-npm run verify:watch-testflight-lab
-npx eas build --platform ios --profile testflight-internal-lab --non-interactive
-```
+Successful build:
 
-If EAS still reports credentials cannot be validated non-interactively, run the
-same build without `--non-interactive` and validate the iOS distribution
-certificate plus provisioning profiles for both native targets:
+- Build ID: `381e1d9b-4276-47db-8ea9-b23ddc46fef1`
+- EAS build URL:
+  `https://expo.dev/accounts/jeremykalfus/projects/lucidtlr/builds/381e1d9b-4276-47db-8ea9-b23ddc46fef1`
+- IPA artifact:
+  `https://expo.dev/artifacts/eas/7VVjXKta4LgJ7b44xp6Xu6.ipa`
 
-```sh
-npx eas build --platform ios --profile testflight-internal-lab
-```
+The June 8 CLI submit succeeded and Apple processing started. The build appears
+in App Store Connect after Apple finishes processing:
+`https://appstoreconnect.apple.com/apps/6777900695/testflight/ios`.
 
-Targets:
-
-- `LucidTLR` / `com.jeremykalfus.lucidtlr`
-- `LucidTLR Watch App` / `com.jeremykalfus.lucidtlr.watchkitapp`
-
-After EAS reports a successful App Store build, submit the latest build:
-
-```sh
-npx eas submit --platform ios --latest --non-interactive
-```
-
-If submit requires App Store Connect authentication, use the interactive submit
-flow and choose internal TestFlight only. Do not enable external/public testing
-for this lab build.
+Do not pass `--what-to-test` to `eas submit` for this project right now; EAS maps
+that parameter to a changelog field that is Enterprise-plan only. Paste the text
+below into the Internal TestFlight build notes manually.
 
 ## TestFlight What To Test
 

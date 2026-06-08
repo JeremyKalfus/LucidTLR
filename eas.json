@@ -21,5 +21,13 @@
         "simulator": false
       }
     }
+  },
+  "submit": {
+    "testflight-internal-lab": {
+      "ios": {
+        "ascAppId": "6777900695",
+        "bundleIdentifier": "com.jeremykalfus.lucidtlr"
+      }
+    }
   }
 }

@@ -96,6 +96,10 @@ protocol/science/session behavior changes, tasks crossing more than three major
 areas, interrupted long-running work, or work that cannot be finished in one
 clean pass. Keep it concise and update it before stopping.
 
+`.agent_work/current.md` should be a short operational handoff: current
+actionable context only, ideally under 120 lines, with no chronological logs or
+completed phase detail that already lives in committed docs/tests.
+
 Durable architectural decisions belong in `docs/decisions/`, not in the handoff
 file.
 

@@ -43,8 +43,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "1927a3da-a23c-4160-b86e-a312d9326558"
+        "projectId": "b5900bca-cd97-4304-ab80-560efa783e43"
       }
-    }
+    },
+    "owner": "jeremykalfus"
   }
 }
