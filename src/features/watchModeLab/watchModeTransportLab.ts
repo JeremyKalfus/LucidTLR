@@ -34,6 +34,12 @@ import {
   watchTransport,
   type NativeWatchTransportStatus,
 } from "@/src/native/watchTransport";
+import {
+  appendWatchModeLabDebugEvent,
+  appendWatchModeLabStateTransition,
+  appendWatchModeLabTransportMessage,
+  appendWatchModeLabTransportStatusSnapshot,
+} from "@/src/features/watchModeLab/watchModeLabDebugEvents";
 
 export interface WatchModeLabTransportSummary {
   status: NativeWatchTransportStatus;
@@ -103,6 +109,11 @@ export async function loadWatchModeLabTransportSummary(input: {
     loadRecovery(input),
   ]);
 
+  await appendWatchModeLabTransportStatusSnapshot({
+    db: input.db,
+    status,
+  });
+
   return { status, recovery };
 }
 
@@ -112,6 +123,25 @@ export async function activateWatchModeLabTransport(input: {
 }): Promise<WatchModeLabTransportSummary> {
   const status = await watchTransport.activateTransport();
   const recovery = await loadRecovery(input);
+
+  await appendWatchModeLabDebugEvent({
+    db: input.db,
+    source: "transport",
+    eventType: "transport_activated",
+    success: status.available,
+    errorMessage: status.lastError,
+    metadata: {
+      activationState: status.activationState,
+      paired: status.paired,
+      watchAppInstalled: status.watchAppInstalled,
+      reachable: status.reachable,
+      isReachableInformationalOnly: status.isReachableInformationalOnly,
+    },
+  });
+  await appendWatchModeLabTransportStatusSnapshot({
+    db: input.db,
+    status,
+  });
 
   return { status, recovery };
 }
@@ -179,9 +209,59 @@ export async function stageSyntheticWatchModeTransportPlan(input: {
     state: built,
     stagedAt: createdAt,
   });
-  const status = await watchTransport.stageSyntheticPlan(
-    buildPlanAvailableTransportMessage({ plan, createdAt }),
-  );
+  const message = buildPlanAvailableTransportMessage({ plan, createdAt });
+
+  await appendWatchModeLabStateTransition({
+    db: input.db,
+    timestamp: createdAt,
+    eventApplied: "plan_built",
+    previousState: built.status === "phone_plan_built" ? built : staged,
+    nextState: built,
+    metadata: {
+      syntheticTransportLab: true,
+    },
+  });
+  await appendWatchModeLabStateTransition({
+    db: input.db,
+    timestamp: createdAt,
+    eventApplied: "plan_staged",
+    previousState: built,
+    nextState: staged,
+    metadata: {
+      syntheticTransportLab: true,
+    },
+  });
+
+  let status: NativeWatchTransportStatus;
+
+  try {
+    status = await watchTransport.stageSyntheticPlan(message);
+    await appendWatchModeLabTransportMessage({
+      db: input.db,
+      message,
+      direction: "outbound",
+      deliveryMethod: "applicationContext+transferUserInfo",
+      metadata: {
+        planByteCount: message.planJson.length,
+        kind: input.kind,
+      },
+    });
+  } catch (error) {
+    await appendWatchModeLabTransportMessage({
+      db: input.db,
+      message,
+      direction: "outbound",
+      deliveryMethod: "applicationContext+transferUserInfo",
+      success: false,
+      errorMessage:
+        error instanceof Error ? error.message : "Synthetic plan staging failed.",
+      metadata: {
+        planByteCount: message.planJson.length,
+        kind: input.kind,
+      },
+    });
+    throw error;
+  }
 
   await saveWatchSessionSyncState({
     db: input.db,
@@ -192,6 +272,22 @@ export async function stageSyntheticWatchModeTransportPlan(input: {
         transportMessageQueuedAt: createdAt,
       },
     },
+  });
+  await appendWatchModeLabDebugEvent({
+    db: input.db,
+    timestamp: createdAt,
+    source: "phone_lab",
+    eventType: "plan_staged",
+    sessionId: plan.sessionId,
+    planHash: plan.planHash,
+    metadata: {
+      kind: input.kind,
+      deliveryMethod: "applicationContext+transferUserInfo",
+    },
+  });
+  await appendWatchModeLabTransportStatusSnapshot({
+    db: input.db,
+    status,
   });
 
   return {
@@ -211,14 +307,40 @@ export async function requestWatchModeLabTransportStatus(input: {
   });
   const state = unresolved[0] ?? null;
   const createdAt = new Date().toISOString();
-  const status = await watchTransport.requestWatchStatus(
-    buildPlanRequestTransportMessage({
-      createdAt,
-      sessionId: state?.sessionId,
-      planHash: state?.planHash,
-      sender: "phone",
-    }),
-  );
+  const message = buildPlanRequestTransportMessage({
+    createdAt,
+    sessionId: state?.sessionId,
+    planHash: state?.planHash,
+    sender: "phone",
+  });
+
+  let status: NativeWatchTransportStatus;
+
+  try {
+    status = await watchTransport.requestWatchStatus(message);
+    await appendWatchModeLabTransportMessage({
+      db: input.db,
+      message,
+      direction: "outbound",
+      deliveryMethod: "transferUserInfo",
+    });
+  } catch (error) {
+    await appendWatchModeLabTransportMessage({
+      db: input.db,
+      message,
+      direction: "outbound",
+      deliveryMethod: "transferUserInfo",
+      success: false,
+      errorMessage:
+        error instanceof Error ? error.message : "Watch status request failed.",
+    });
+    throw error;
+  }
+
+  await appendWatchModeLabTransportStatusSnapshot({
+    db: input.db,
+    status,
+  });
 
   return {
     status,
@@ -238,32 +360,104 @@ export async function importLatestReceivedSyntheticWatchPackage(input: {
     throw new Error("No received synthetic Watch package file is available.");
   }
 
-  const result = await importWatchPackage({
+  await appendWatchModeLabDebugEvent({
     db: input.db,
-    sealedPackage,
-    importedAt,
-  });
-
-  await markTransportPackageImportedInLedger({
-    db: input.db,
-    participantId: input.participantId,
-    result,
+    timestamp: importedAt,
+    source: "importer",
+    eventType: "package_import_started",
+    sessionId: sealedPackage.manifest.sessionId,
     planHash: sealedPackage.manifest.planHash,
-    importedAt,
+    packageId: sealedPackage.manifest.packageId,
+    packageHash: sealedPackage.manifest.packageHash,
+    metadata: {
+      transportLab: true,
+    },
   });
 
-  return {
-    importSummary: {
-      status: result.status,
-      ackEligible: result.ackEligible,
+  try {
+    const result = await importWatchPackage({
+      db: input.db,
+      sealedPackage,
+      importedAt,
+    });
+
+    await appendWatchModeLabDebugEvent({
+      db: input.db,
+      timestamp: importedAt,
+      source: "importer",
+      eventType: "package_import_succeeded",
+      sessionId: result.sessionId,
+      planHash: sealedPackage.manifest.planHash,
       packageId: result.packageId,
       packageHash: result.packageHash,
-      sessionId: result.sessionId,
-      counts: result.counts,
-    },
-    status: await watchTransport.getTransportStatus(),
-    recovery: await loadRecovery(input),
-  };
+      metadata: {
+        transportLab: true,
+        importStatus: result.status,
+        ackEligible: result.ackEligible,
+        duplicateImportSeen: result.status === "already_imported",
+        counts: result.counts,
+      },
+    });
+
+    if (result.ackEligible) {
+      await appendWatchModeLabDebugEvent({
+        db: input.db,
+        timestamp: importedAt,
+        source: "importer",
+        eventType: "ack_became_eligible",
+        sessionId: result.sessionId,
+        planHash: sealedPackage.manifest.planHash,
+        packageId: result.packageId,
+        packageHash: result.packageHash,
+        metadata: {
+          transportLab: true,
+        },
+      });
+    }
+
+    await markTransportPackageImportedInLedger({
+      db: input.db,
+      participantId: input.participantId,
+      result,
+      planHash: sealedPackage.manifest.planHash,
+      importedAt,
+    });
+
+    const status = await watchTransport.getTransportStatus();
+    await appendWatchModeLabTransportStatusSnapshot({
+      db: input.db,
+      status,
+    });
+
+    return {
+      importSummary: {
+        status: result.status,
+        ackEligible: result.ackEligible,
+        packageId: result.packageId,
+        packageHash: result.packageHash,
+        sessionId: result.sessionId,
+        counts: result.counts,
+      },
+      status,
+      recovery: await loadRecovery(input),
+    };
+  } catch (error) {
+    await appendWatchModeLabDebugEvent({
+      db: input.db,
+      timestamp: importedAt,
+      source: "importer",
+      eventType: "package_import_failed",
+      sessionId: sealedPackage.manifest.sessionId,
+      planHash: sealedPackage.manifest.planHash,
+      packageId: sealedPackage.manifest.packageId,
+      packageHash: sealedPackage.manifest.packageHash,
+      success: false,
+      errorMessage:
+        error instanceof Error ? error.message : "Synthetic package import failed.",
+    });
+
+    throw error;
+  }
 }
 
 export async function sendAckForLatestImportedWatchPackage(input: {
@@ -286,15 +480,36 @@ export async function sendAckForLatestImportedWatchPackage(input: {
     );
   }
 
-  const status = await watchTransport.sendAckForImportedPackage(
-    buildPackageAckTransportMessage({
-      sessionId: state.sessionId,
-      planHash: state.planHash,
-      packageId: state.packageId,
-      packageHash: state.packageHash,
-      ackedAt,
-    }),
-  );
+  const message = buildPackageAckTransportMessage({
+    sessionId: state.sessionId,
+    planHash: state.planHash,
+    packageId: state.packageId,
+    packageHash: state.packageHash,
+    ackedAt,
+  });
+
+  let status: NativeWatchTransportStatus;
+
+  try {
+    status = await watchTransport.sendAckForImportedPackage(message);
+    await appendWatchModeLabTransportMessage({
+      db: input.db,
+      message,
+      direction: "outbound",
+      deliveryMethod: "transferUserInfo",
+    });
+  } catch (error) {
+    await appendWatchModeLabTransportMessage({
+      db: input.db,
+      message,
+      direction: "outbound",
+      deliveryMethod: "transferUserInfo",
+      success: false,
+      errorMessage:
+        error instanceof Error ? error.message : "Synthetic package ack failed.",
+    });
+    throw error;
+  }
   const ackRecorded = applyAckRecorded(state, {
     packageId: state.packageId,
     packageHash: state.packageHash,
@@ -311,6 +526,37 @@ export async function sendAckForLatestImportedWatchPackage(input: {
       },
     },
   });
+  await appendWatchModeLabStateTransition({
+    db: input.db,
+    timestamp: ackedAt,
+    eventApplied: "ack_recorded",
+    previousState: state,
+    nextState: ackRecorded,
+    metadata: {
+      transportLab: true,
+    },
+  });
+  await appendWatchModeLabDebugEvent({
+    db: input.db,
+    timestamp: ackedAt,
+    source: "transport",
+    eventType: "ack_sent",
+    sessionId: state.sessionId,
+    planHash: state.planHash,
+    packageId: state.packageId,
+    packageHash: state.packageHash,
+    direction: "outbound",
+    transportMessageType: message.messageType,
+    messageId: message.messageId,
+    deliveryMethod: "transferUserInfo",
+    metadata: {
+      ackEligibleRequired: true,
+    },
+  });
+  await appendWatchModeLabTransportStatusSnapshot({
+    db: input.db,
+    status,
+  });
 
   return {
     message: "Queued matching synthetic package ack after transactional import success.",
@@ -326,6 +572,15 @@ export async function clearWatchModeLabTransportStatus(input: {
   const status = await watchTransport.clearLabTransportStatus();
   const recovery = await loadRecovery(input);
 
+  await appendWatchModeLabDebugEvent({
+    db: input.db,
+    source: "transport",
+    eventType: "clear_lab_transport_status",
+    metadata: {
+      localOnly: true,
+    },
+  });
+
   return { status, recovery };
 }
 
@@ -334,6 +589,10 @@ export async function applyWatchTransportReceiptSnapshots(input: {
   participantId: string;
 }): Promise<WatchModeLabTransportSummary> {
   const status = await watchTransport.getTransportStatus();
+  await appendWatchModeLabTransportStatusSnapshot({
+    db: input.db,
+    status,
+  });
   let state = status.latestCommitReceipt?.sessionId
     ? await loadWatchSessionSyncStateBySessionId({
         db: input.db,
@@ -342,32 +601,118 @@ export async function applyWatchTransportReceiptSnapshots(input: {
     : null;
 
   if (state && status.latestCommitReceipt) {
-    state = applyWatchCommitReceipt(state, {
-      sessionId: status.latestCommitReceipt.sessionId,
-      planHash: status.latestCommitReceipt.planHash,
-      committedAt: status.latestCommitReceipt.committedAt ?? new Date().toISOString(),
-      commitId: status.latestCommitReceipt.commitId,
-      watchState: status.latestCommitReceipt.watchState,
-    });
+    const previous = state;
+
+    try {
+      state = applyWatchCommitReceipt(state, {
+        sessionId: status.latestCommitReceipt.sessionId,
+        planHash: status.latestCommitReceipt.planHash,
+        committedAt: status.latestCommitReceipt.committedAt ?? new Date().toISOString(),
+        commitId: status.latestCommitReceipt.commitId,
+        watchState: status.latestCommitReceipt.watchState,
+      });
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        timestamp: status.latestCommitReceipt.committedAt,
+        eventApplied: "watch_commit_receipt",
+        previousState: previous,
+        nextState: state,
+        metadata: {
+          transportLab: true,
+          commitId: status.latestCommitReceipt.commitId,
+        },
+      });
+    } catch (error) {
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        eventApplied: "watch_commit_receipt",
+        previousState: previous,
+        rejected: true,
+        rejectionReason:
+          error instanceof Error ? error.message : "Watch commit receipt rejected.",
+        metadata: {
+          transportLab: true,
+          planHashCheck: "rejected",
+        },
+      });
+      throw error;
+    }
   }
 
   if (state && status.latestStatusSnapshot?.watchState) {
-    state = applyWatchRunningStatus(state, {
-      sessionId: state.sessionId,
-      planHash: state.planHash,
-      watchState: status.latestStatusSnapshot.watchState,
-      reportedAt: status.latestStatusSnapshot.createdAt ?? new Date().toISOString(),
-    });
+    const previous = state;
+
+    try {
+      state = applyWatchRunningStatus(state, {
+        sessionId: state.sessionId,
+        planHash: state.planHash,
+        watchState: status.latestStatusSnapshot.watchState,
+        reportedAt: status.latestStatusSnapshot.createdAt ?? new Date().toISOString(),
+      });
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        timestamp: status.latestStatusSnapshot.createdAt,
+        eventApplied: "watch_running_status",
+        previousState: previous,
+        nextState: state,
+        metadata: {
+          transportLab: true,
+          watchState: status.latestStatusSnapshot.watchState,
+        },
+      });
+    } catch (error) {
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        eventApplied: "watch_running_status",
+        previousState: previous,
+        rejected: true,
+        rejectionReason:
+          error instanceof Error ? error.message : "Watch running status rejected.",
+        metadata: {
+          transportLab: true,
+          planHashCheck: "rejected",
+        },
+      });
+      throw error;
+    }
   }
 
   if (state && status.latestPackageManifest) {
-    state = applyWatchSealedManifest(state, {
-      sessionId: status.latestPackageManifest.sessionId,
-      planHash: status.latestPackageManifest.planHash,
-      packageId: status.latestPackageManifest.packageId,
-      packageHash: status.latestPackageManifest.packageHash,
-      sealedAt: status.latestPackageManifest.receivedAt ?? new Date().toISOString(),
-    });
+    const previous = state;
+
+    try {
+      state = applyWatchSealedManifest(state, {
+        sessionId: status.latestPackageManifest.sessionId,
+        planHash: status.latestPackageManifest.planHash,
+        packageId: status.latestPackageManifest.packageId,
+        packageHash: status.latestPackageManifest.packageHash,
+        sealedAt: status.latestPackageManifest.receivedAt ?? new Date().toISOString(),
+      });
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        timestamp: status.latestPackageManifest.receivedAt,
+        eventApplied: "watch_sealed_manifest",
+        previousState: previous,
+        nextState: state,
+        metadata: {
+          transportLab: true,
+        },
+      });
+    } catch (error) {
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        eventApplied: "watch_sealed_manifest",
+        previousState: previous,
+        rejected: true,
+        rejectionReason:
+          error instanceof Error ? error.message : "Watch sealed manifest rejected.",
+        metadata: {
+          transportLab: true,
+          packageHashCheck: "rejected",
+        },
+      });
+      throw error;
+    }
   }
 
   if (state) {
@@ -419,4 +764,24 @@ async function markTransportPackageImportedInLedger(input: {
   });
 
   await saveWatchSessionSyncState({ db: input.db, state: imported });
+  await appendWatchModeLabStateTransition({
+    db: input.db,
+    timestamp: input.importedAt,
+    eventApplied: "watch_sealed_manifest",
+    previousState: base,
+    nextState: sealed,
+    metadata: {
+      transportLab: true,
+    },
+  });
+  await appendWatchModeLabStateTransition({
+    db: input.db,
+    timestamp: input.importedAt,
+    eventApplied: "phone_import_success",
+    previousState: sealed,
+    nextState: imported,
+    metadata: {
+      transportLab: true,
+    },
+  });
 }

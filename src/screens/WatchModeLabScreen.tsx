@@ -39,6 +39,7 @@ import {
   watchModeLabDebugBundleFileName,
   type WatchModeLabActionLogEntry,
 } from "@/src/features/watchModeLab/watchModeLabDebugExport";
+import { appendWatchModeLabDebugEvent } from "@/src/features/watchModeLab/watchModeLabDebugEvents";
 import {
   activateWatchModeLabTransport,
   applyWatchTransportReceiptSnapshots,
@@ -129,6 +130,7 @@ export function WatchModeLabScreen() {
     "Internal TestFlight Lab -- synthetic / QA only. Public Watch Mode remains disabled.",
   );
   const [actionLog, setActionLog] = React.useState<WatchModeLabActionLogEntry[]>([]);
+  const labOpenedRecordedRef = React.useRef(false);
 
   const reloadRecoveryState = React.useCallback(async () => {
     const db = await getLocalDb();
@@ -156,6 +158,31 @@ export function WatchModeLabScreen() {
     void reloadTransportState();
   }, [reloadRecoveryState, reloadTransportState]);
 
+  React.useEffect(() => {
+    if (labOpenedRecordedRef.current) {
+      return;
+    }
+
+    labOpenedRecordedRef.current = true;
+
+    void getLocalDb()
+      .then((db) =>
+        appendWatchModeLabDebugEvent({
+          db,
+          source: "phone_lab",
+          eventType: "phone_lab_opened",
+          metadata: {
+            lane: buildInfo.lane,
+            labAvailable: buildInfo.labAvailable,
+            publicWatchModeDisabled: true,
+          },
+        }),
+      )
+      .catch(() => {
+        // The visible lab still works if durable debug recording is unavailable.
+      });
+  }, [buildInfo.labAvailable, buildInfo.lane]);
+
   function recordLabAction(input: {
     action: string;
     result: WatchModeLabActionLogEntry["result"];
@@ -172,6 +199,41 @@ export function WatchModeLabScreen() {
 
     setActionLog((current) => [...current, entry].slice(-80));
     setMessage(input.message);
+
+    void getLocalDb()
+      .then((db) =>
+        appendWatchModeLabDebugEvent({
+          db,
+          timestamp: entry.at,
+          source: "phone_lab",
+          eventType: input.action,
+          sessionId:
+            typeof input.details?.sessionId === "string"
+              ? input.details.sessionId
+              : undefined,
+          planHash:
+            typeof input.details?.planHash === "string"
+              ? input.details.planHash
+              : undefined,
+          packageId:
+            typeof input.details?.packageId === "string"
+              ? input.details.packageId
+              : undefined,
+          packageHash:
+            typeof input.details?.packageHash === "string"
+              ? input.details.packageHash
+              : undefined,
+          success: input.result === "ok",
+          errorMessage: input.result === "error" ? input.message : undefined,
+          metadata: {
+            message: input.message,
+            ...input.details,
+          },
+        }),
+      )
+      .catch(() => {
+        // Keep lab actions usable even if debug-event persistence fails.
+      });
   }
 
   async function runTransportAction(
@@ -318,6 +380,46 @@ export function WatchModeLabScreen() {
       result: "ok",
       message: "Cleared lab status. Local imported fixture rows were not deleted.",
     });
+  }
+
+  async function markPhoneReloadRecoveryTested() {
+    setBusyLabel("Marking reload recovery...");
+
+    try {
+      const db = await getLocalDb();
+      const summary = await loadWatchModeLabRecoverySummary({
+        db,
+        participantId,
+      });
+
+      setRecoverySummary(summary);
+      recordLabAction({
+        action: "phone_reload_recovery_tested",
+        result: "ok",
+        message:
+          "Marked phone reload recovery tested from the current DB-backed recovery state.",
+        details: {
+          unresolvedCount: summary.unresolvedCount,
+          startupRecovery: summary.startupRecovery,
+          blocksFutureWatchStart: summary.blocksFutureWatchStart,
+          sessionId: summary.states[0]?.sessionId,
+          planHash: summary.states[0]?.planHash,
+          packageId: summary.states[0]?.packageId,
+          packageHash: summary.states[0]?.packageHash,
+        },
+      });
+    } catch (error) {
+      recordLabAction({
+        action: "phone_reload_recovery_tested",
+        result: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not mark phone reload recovery tested.",
+      });
+    } finally {
+      setBusyLabel(null);
+    }
   }
 
   async function copyDebugBundleFallback(
@@ -807,6 +909,14 @@ export function WatchModeLabScreen() {
           state after app reload; they do not start transport, sensors, haptics,
           audio, or public Watch Mode.
         </LabNote>
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={CheckCircle2}
+          label="Mark phone reload recovery tested"
+          onPress={() => {
+            void markPhoneReloadRecoveryTested();
+          }}
+        />
         {(
           [
             "watch_committed",
@@ -854,9 +964,9 @@ export function WatchModeLabScreen() {
         <InfoRow label="content" value="Excludes dream journal content" />
         <InfoRow label="scope" value="Synthetic/internal lab only" />
         <LabNote>
-          Export a local JSON bundle after the TestFlight transport drill so
-          Codex can inspect transport status, DB-backed recovery state, package
-          import status, ack eligibility, and idempotency hints.
+          Includes lab action timeline, transport messages, sync-state
+          transitions, package/import/ack summaries, and pass/fail hints. No
+          uploads.
         </LabNote>
         <PrimaryPillButton
           disabled={busyLabel !== null}

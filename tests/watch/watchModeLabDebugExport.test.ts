@@ -15,6 +15,7 @@ function fileExists(relativePath: string): boolean {
 }
 
 const helperPath = "src/features/watchModeLab/watchModeLabDebugExport.ts";
+const eventHelperPath = "src/features/watchModeLab/watchModeLabDebugEvents.ts";
 const screenPath = "src/screens/WatchModeLabScreen.tsx";
 
 describe("Watch Mode Lab debug export", () => {
@@ -31,6 +32,11 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("syncLedger:");
     expect(helper).toContain("imports:");
     expect(helper).toContain("diagnostics:");
+    expect(helper).toContain("timeline:");
+    expect(helper).toContain("stateTransitions:");
+    expect(helper).toContain("transportMessages:");
+    expect(helper).toContain("packageFlow:");
+    expect(helper).toContain("drillAssessment:");
   });
 
   it("exports recovery, transport, import, and ack diagnosis data", () => {
@@ -50,6 +56,39 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("failureReasons");
     expect(helper).toContain("transportErrorSeen");
     expect(helper).toContain("hasRegressedImportedState");
+    expect(helper).toContain("stateRegressionDetected");
+    expect(helper).toContain("finalUnresolvedStateBlocksStart");
+    expect(helper).toContain("mismatchedHashDetected");
+  });
+
+  it("exports a bounded postmortem timeline, transitions, messages, and package flow", () => {
+    const helper = readSource(helperPath);
+    const eventHelper = readSource(eventHelperPath);
+    const migration = readSource(
+      "src/data/local/migrations/010_watch_lab_debug_events.sql",
+    );
+    const schema = readSource("src/data/local/schema.ts");
+    const runtimeMigrations = readSource("src/data/local/runtimeMigrations.ts");
+
+    expect(fileExists(eventHelperPath)).toBe(true);
+    expect(fileExists("src/data/local/migrations/010_watch_lab_debug_events.sql")).toBe(true);
+    expect(migration).toContain("watch_lab_debug_events");
+    expect(schema).toContain("010_watch_lab_debug_events");
+    expect(runtimeMigrations).toContain("010_watch_lab_debug_events");
+    expect(eventHelper).toContain("WATCH_MODE_LAB_DEBUG_EVENT_LIMIT = 100");
+    expect(eventHelper).toContain("appendWatchModeLabStateTransition");
+    expect(eventHelper).toContain("appendWatchModeLabTransportMessage");
+    expect(eventHelper).toContain("appendWatchModeLabTransportStatusSnapshot");
+    expect(helper).toContain("buildTimeline");
+    expect(helper).toContain("buildStateTransitions");
+    expect(helper).toContain("buildTransportMessages");
+    expect(helper).toContain("buildPackageFlow");
+    expect(helper).toContain("buildDrillAssessment");
+    expect(helper).toContain("raw:");
+    expect(helper).toContain("currentUnresolvedStates");
+    expect(helper).toContain("currentRecentStates");
+    expect(helper).toContain("WATCH_MODE_LAB_DEBUG_EVENT_LIMIT");
+    expect(helper).toContain("PACKAGE_IMPORT_RECORD_LIMIT");
   });
 
   it("documents export warnings and limitations inside the bundle", () => {
@@ -63,6 +102,7 @@ describe("Watch Mode Lab debug export", () => {
       "No overnight validation.",
       "Dream journal content is excluded.",
       "Raw high-rate motion is excluded.",
+      "Supabase tokens, Apple credentials, API keys, and raw device identifiers are excluded.",
       "Public Watch Mode remains disabled.",
     ]) {
       expect(helper).toContain(expected);
@@ -80,13 +120,22 @@ describe("Watch Mode Lab debug export", () => {
     expect(screen).toContain("createWatchModeLabDebugBundle");
     expect(screen).toContain("actionLog");
     expect(screen).toContain("recordLabAction");
+    expect(screen).toContain("phone_lab_opened");
+    expect(screen).toContain("Mark phone reload recovery tested");
+    expect(screen).toContain("phone_reload_recovery_tested");
+    expect(screen).toContain("Includes lab action timeline");
+    expect(screen).toContain("sync-state");
+    expect(screen).toContain("transitions");
+    expect(screen).toContain("package/import/ack summaries");
     expect(screen).toContain("FileSystem.writeAsStringAsync");
     expect(screen).toContain("Share.share");
     expect(screen).toContain('import("expo-clipboard")');
   });
 
   it("keeps the export local-only and out of research or dream-content upload paths", () => {
-    const combined = [helperPath, screenPath].map(readSource).join("\n");
+    const combined = [helperPath, eventHelperPath, screenPath]
+      .map(readSource)
+      .join("\n");
 
     for (const forbidden of [
       "@supabase/supabase-js",
@@ -99,9 +148,14 @@ describe("Watch Mode Lab debug export", () => {
       "journalText",
       "audioUri",
       "transcript",
+      "SUPABASE_URL",
+      "SUPABASE_ANON_KEY",
+      "appleDeveloper",
     ]) {
       expect(combined).not.toContain(forbidden);
     }
+
+    expect(combined).toContain("[redacted]");
   });
 
   it("keeps Watch Mode public-disabled and the internal lab gate intact", () => {
@@ -122,7 +176,9 @@ describe("Watch Mode Lab debug export", () => {
   });
 
   it("does not add real sensor, audio, haptic, or transport-runtime behavior", () => {
-    const combined = [helperPath, screenPath].map(readSource).join("\n");
+    const combined = [helperPath, eventHelperPath, screenPath]
+      .map(readSource)
+      .join("\n");
 
     for (const forbidden of [
       "import HealthKit",

@@ -36,6 +36,10 @@ import {
   withWatchPackageManifestHash,
   type WatchRuntimePlanV3,
 } from "@/src/native/watchRuntime";
+import {
+  appendWatchModeLabDebugEvent,
+  appendWatchModeLabStateTransition,
+} from "@/src/features/watchModeLab/watchModeLabDebugEvents";
 
 export type WatchModeLabKind = "tlr" | "sleep_log";
 export type WatchModeLabRecoveryAction =
@@ -168,29 +172,96 @@ export async function importSyntheticWatchModeLabPackage(input: {
 }): Promise<WatchModeLabPackageImportSummary> {
   const sealedPackage = buildSyntheticWatchModeLabPackage(input.kind);
   const importedAt = input.importedAt ?? WATCH_PACKAGE_FIXTURE_IMPORTED_AT;
-  const result = await importWatchPackage({
+
+  await appendWatchModeLabDebugEvent({
     db: input.db,
-    sealedPackage,
-    importedAt,
+    timestamp: importedAt,
+    source: "importer",
+    eventType: "package_import_started",
+    sessionId: sealedPackage.manifest.sessionId,
+    planHash: sealedPackage.manifest.planHash,
+    packageId: sealedPackage.manifest.packageId,
+    packageHash: sealedPackage.manifest.packageHash,
+    metadata: {
+      syntheticFixture: true,
+      kind: input.kind,
+    },
   });
 
-  if (input.participantId) {
-    await markSyntheticImportInRecoveryLedger({
+  try {
+    const result = await importWatchPackage({
       db: input.db,
-      participantId: input.participantId,
       sealedPackage,
       importedAt,
     });
-  }
 
-  return {
-    status: result.status,
-    ackEligible: result.ackEligible,
-    packageId: result.packageId,
-    packageHash: result.packageHash,
-    sessionId: result.sessionId,
-    counts: result.counts,
-  };
+    await appendWatchModeLabDebugEvent({
+      db: input.db,
+      timestamp: importedAt,
+      source: "importer",
+      eventType: "package_import_succeeded",
+      sessionId: result.sessionId,
+      planHash: sealedPackage.manifest.planHash,
+      packageId: result.packageId,
+      packageHash: result.packageHash,
+      metadata: {
+        importStatus: result.status,
+        ackEligible: result.ackEligible,
+        duplicateImportSeen: result.status === "already_imported",
+        counts: result.counts,
+      },
+    });
+
+    if (result.ackEligible) {
+      await appendWatchModeLabDebugEvent({
+        db: input.db,
+        timestamp: importedAt,
+        source: "importer",
+        eventType: "ack_became_eligible",
+        sessionId: result.sessionId,
+        planHash: sealedPackage.manifest.planHash,
+        packageId: result.packageId,
+        packageHash: result.packageHash,
+        metadata: {
+          importStatus: result.status,
+        },
+      });
+    }
+
+    if (input.participantId) {
+      await markSyntheticImportInRecoveryLedger({
+        db: input.db,
+        participantId: input.participantId,
+        sealedPackage,
+        importedAt,
+      });
+    }
+
+    return {
+      status: result.status,
+      ackEligible: result.ackEligible,
+      packageId: result.packageId,
+      packageHash: result.packageHash,
+      sessionId: result.sessionId,
+      counts: result.counts,
+    };
+  } catch (error) {
+    await appendWatchModeLabDebugEvent({
+      db: input.db,
+      timestamp: importedAt,
+      source: "importer",
+      eventType: "package_import_failed",
+      sessionId: sealedPackage.manifest.sessionId,
+      planHash: sealedPackage.manifest.planHash,
+      packageId: sealedPackage.manifest.packageId,
+      packageHash: sealedPackage.manifest.packageHash,
+      success: false,
+      errorMessage:
+        error instanceof Error ? error.message : "Synthetic package import failed.",
+    });
+
+    throw error;
+  }
 }
 
 export function validateCorruptSyntheticWatchModeLabPackage(
@@ -245,6 +316,17 @@ export async function applyWatchModeLabRecoveryAction(input: {
   const existing = existingStates[0] ?? null;
 
   if (input.action === "reload") {
+    await appendWatchModeLabDebugEvent({
+      db: input.db,
+      timestamp: now,
+      source: "phone_lab",
+      eventType: "phone_reload_recovery_simulated",
+      success: true,
+      metadata: {
+        unresolvedCount: existingStates.length,
+      },
+    });
+
     return {
       message: "Reloaded local recovery state from the phone database.",
       recovery: summarizeRecovery(existingStates),
@@ -266,6 +348,17 @@ export async function applyWatchModeLabRecoveryAction(input: {
     });
 
     await saveWatchSessionSyncState({ db: input.db, state: abandoned });
+    await appendWatchModeLabStateTransition({
+      db: input.db,
+      timestamp: now,
+      eventApplied: "user_abandon_local_only",
+      previousState: existing,
+      nextState: abandoned,
+      metadata: {
+        explicit: true,
+        localOnly: true,
+      },
+    });
 
     return {
       message: "Marked unresolved Watch lab state abandoned_local_only. This does not delete user session data or Watch packages.",
@@ -280,6 +373,16 @@ export async function applyWatchModeLabRecoveryAction(input: {
   const next = reduceSyntheticRecoveryAction(base, input.action, now);
 
   await saveWatchSessionSyncState({ db: input.db, state: next });
+  await appendWatchModeLabStateTransition({
+    db: input.db,
+    timestamp: now,
+    eventApplied: input.action,
+    previousState: base,
+    nextState: next,
+    metadata: {
+      syntheticRecoveryAction: true,
+    },
+  });
 
   return {
     message: recoveryActionMessage(input.action, next),
@@ -424,6 +527,26 @@ async function markSyntheticImportInRecoveryLedger(input: {
   });
 
   await saveWatchSessionSyncState({ db: input.db, state: imported });
+  await appendWatchModeLabStateTransition({
+    db: input.db,
+    timestamp: input.importedAt,
+    eventApplied: "watch_sealed_manifest",
+    previousState: base,
+    nextState: sealed,
+    metadata: {
+      syntheticFixtureImport: true,
+    },
+  });
+  await appendWatchModeLabStateTransition({
+    db: input.db,
+    timestamp: input.importedAt,
+    eventApplied: "phone_import_success",
+    previousState: sealed,
+    nextState: imported,
+    metadata: {
+      syntheticFixtureImport: true,
+    },
+  });
 }
 
 function recoveryActionMessage(
