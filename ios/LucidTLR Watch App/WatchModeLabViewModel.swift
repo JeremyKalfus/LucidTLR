@@ -1,4 +1,4 @@
-#if DEBUG || EXPO_CONFIGURATION_DEBUG
+#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB
 import Combine
 import Foundation
 
@@ -16,7 +16,7 @@ struct WatchModeLabStatusRow: Identifiable, Equatable {
 
 final class WatchModeLabViewModel: ObservableObject {
   @Published var displayMode: WatchModeLabDisplayMode = .menu
-  @Published private(set) var statusMessage = "Watch Mode Lab -- synthetic only."
+  @Published private(set) var statusMessage = "Internal TestFlight Lab -- synthetic only."
   @Published private(set) var statusRows: [WatchModeLabStatusRow] = [
     WatchModeLabStatusRow(id: "scope", label: "scope", value: "synthetic only"),
     WatchModeLabStatusRow(id: "public", label: "public Watch Mode", value: "disabled"),
@@ -27,6 +27,7 @@ final class WatchModeLabViewModel: ObservableObject {
 
   private var coordinator: WatchSessionCoordinator?
   private var sessionStore: WatchSessionDirectoryStore?
+  private var currentSessionIndex: WatchCurrentSessionIndex?
   private var activePlan: WatchRuntimePlanV3?
   private var activeManifest: WatchPackageManifestV3?
   private var activePreflightResult: WatchRuntimePreflightResult?
@@ -47,6 +48,11 @@ final class WatchModeLabViewModel: ObservableObject {
       )
       coordinator = try makeCoordinator(plan: plan, preflightScenario: .allPass)
       try coordinator?.commit(plan: plan)
+      try currentSessionIndex?.recordCommit(
+        plan: plan,
+        runtimeState: .planCommitted,
+        updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      )
       activePlan = plan
       activeManifest = nil
       activePreflightResult = nil
@@ -129,6 +135,13 @@ final class WatchModeLabViewModel: ObservableObject {
 
       if coordinator?.state == .planCommitted {
         try coordinator?.startCommittedPlan()
+        if let activePlan {
+          try currentSessionIndex?.recordRuntimeState(
+            sessionId: activePlan.sessionId,
+            runtimeState: coordinator?.state ?? .training,
+            updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+          )
+        }
       }
 
       guard let coordinator else {
@@ -163,7 +176,95 @@ final class WatchModeLabViewModel: ObservableObject {
       }
 
       activeManifest = try coordinator.stopAndSeal(reason: .userWake)
+      try currentSessionIndex?.recordSealedPackage(
+        manifest: activeManifest!,
+        runtimeState: coordinator.state,
+        updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      )
       statusMessage = "Force sealed synthetic package. Package is retained until a matching ack exists; no deletion was performed."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func recoverCurrentSyntheticSession() {
+    do {
+      let index = try labIndex()
+      guard let entry = try index.load() else {
+        statusMessage = "No current synthetic Watch session index exists."
+        refreshRows()
+        return
+      }
+
+      currentSessionIndex = index
+      statusMessage = "Recovered current synthetic session index \(entry.activeSessionId) in state \(entry.runtimeState.rawValue). No transport or sensor runtime was started."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func sealCurrentSyntheticSession() {
+    forceSealPackage()
+  }
+
+  func recordSyntheticAck() {
+    do {
+      let index = try labIndex()
+      let entry = try index.load()
+      let manifest = activeManifest ?? coordinator?.sealedManifest
+      let packageId = manifest?.packageId ?? entry?.sealedPackageId
+      let packageHash = manifest?.packageHash ?? entry?.sealedPackageHash
+
+      guard let packageId, let packageHash else {
+        throw WatchCurrentSessionIndexError.missingCurrentSession
+      }
+
+      let rootDirectory = try labRootDirectory()
+      let sessionId = manifest?.sessionId ?? entry?.activeSessionId ?? activePlan?.sessionId
+      guard let sessionId else {
+        throw WatchCurrentSessionIndexError.missingCurrentSession
+      }
+
+      let store = try WatchSessionDirectoryStore(
+        rootDirectory: rootDirectory,
+        sessionId: sessionId
+      )
+      let ackDate = WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      try WatchPackageAckStore(sessionStore: store).recordAck(
+        packageId: packageId,
+        packageHash: packageHash,
+        acknowledgedAt: ackDate
+      )
+      try index.recordAck(
+        packageId: packageId,
+        packageHash: packageHash,
+        updatedAt: ackDate
+      )
+      currentSessionIndex = index
+      statusMessage = "Recorded synthetic ack for current package. This unlocks retention but does not delete package files."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func discardCurrentSyntheticSessionWithExplicitConfirmation() {
+    do {
+      let index = try labIndex()
+      try index.discardSyntheticLabSession(
+        explicitConfirmation: true,
+        discardedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      )
+      currentSessionIndex = index
+      coordinator = nil
+      sessionStore = nil
+      activePlan = nil
+      activeManifest = nil
+      activePreflightResult = nil
+      sleepShieldViewModel = nil
+      statusMessage = "Discarded synthetic lab session with explicit local-only confirmation. No Watch package deletion was performed."
       refreshRows()
     } catch {
       handle(error: error)
@@ -183,7 +284,17 @@ final class WatchModeLabViewModel: ObservableObject {
 
     do {
       try nextCoordinator.commit(plan: plan)
+      try currentSessionIndex?.recordCommit(
+        plan: plan,
+        runtimeState: .planCommitted,
+        updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      )
       try nextCoordinator.startCommittedPlan()
+      try currentSessionIndex?.recordRuntimeState(
+        sessionId: plan.sessionId,
+        runtimeState: nextCoordinator.state,
+        updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      )
     } catch {
       coordinator = nextCoordinator
       activePlan = plan
@@ -194,6 +305,13 @@ final class WatchModeLabViewModel: ObservableObject {
 
     try nextCoordinator.runEpochs(20)
     activeManifest = try nextCoordinator.stopAndSeal(reason: .completed)
+    if let activeManifest {
+      try currentSessionIndex?.recordSealedPackage(
+        manifest: activeManifest,
+        runtimeState: nextCoordinator.state,
+        updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      )
+    }
     coordinator = nextCoordinator
     activePlan = plan
     activePreflightResult = nextCoordinator.lastPreflightResult
@@ -208,12 +326,15 @@ final class WatchModeLabViewModel: ObservableObject {
   ) throws -> WatchSessionCoordinator {
     let startDate = WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
     let rootDirectory = try labRootDirectory()
+    let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
+    try index.requireCanStartSession(sessionId: plan.sessionId)
     let nextSessionStore = try WatchSessionDirectoryStore(
       rootDirectory: rootDirectory,
       sessionId: plan.sessionId
     )
     let packageStore = WatchPackageStore(sessionStore: nextSessionStore)
     sessionStore = nextSessionStore
+    currentSessionIndex = index
 
     return WatchSessionCoordinator(
       clock: DeterministicWatchClock(start: startDate),
@@ -244,17 +365,32 @@ final class WatchModeLabViewModel: ObservableObject {
     return root
   }
 
+  private func labIndex() throws -> WatchCurrentSessionIndex {
+    let index = WatchCurrentSessionIndex(rootDirectory: try labRootDirectory())
+    currentSessionIndex = index
+    return index
+  }
+
   private func refreshRows() {
     let state = coordinator?.state.rawValue ?? "idle"
     let epochCount = coordinator?.epochCount ?? 0
     let manifest = activeManifest ?? coordinator?.sealedManifest
     let ackState = ackRetentionState(for: manifest)
     let preflightResult = activePreflightResult ?? coordinator?.lastPreflightResult
+    let currentIndexEntry: WatchCurrentSessionIndexEntry?
+    if let currentSessionIndex {
+      currentIndexEntry = try? currentSessionIndex.load()
+    } else {
+      currentIndexEntry = nil
+    }
 
     var rows = [
       WatchModeLabStatusRow(id: "scope", label: "scope", value: "synthetic only"),
       WatchModeLabStatusRow(id: "storage", label: "storage", value: "file-backed JSONL"),
       WatchModeLabStatusRow(id: "session", label: "session", value: activePlan?.sessionId ?? "none"),
+      WatchModeLabStatusRow(id: "currentIndexSession", label: "current index", value: currentIndexEntry?.activeSessionId ?? "none"),
+      WatchModeLabStatusRow(id: "currentIndexState", label: "current index state", value: currentIndexEntry?.runtimeState.rawValue ?? "none"),
+      WatchModeLabStatusRow(id: "currentIndexUnacked", label: "active/unacked", value: currentIndexEntry?.isActiveUnacked == true ? "yes" : "no"),
       WatchModeLabStatusRow(id: "state", label: "runtime state", value: state),
       WatchModeLabStatusRow(id: "epochs", label: "epoch count", value: "\(epochCount)"),
       WatchModeLabStatusRow(id: "packageId", label: "packageId", value: manifest?.packageId ?? "not sealed"),

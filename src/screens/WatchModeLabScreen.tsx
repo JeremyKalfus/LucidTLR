@@ -20,14 +20,22 @@ import {
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
 import {
   buildSyntheticWatchModeLabPlan,
+  applyWatchModeLabRecoveryAction,
   importSyntheticWatchModeLabPackage,
+  loadWatchModeLabRecoverySummary,
   summarizeWatchModeLabPlan,
   validateCorruptSyntheticWatchModeLabPackage,
+  type WatchModeLabRecoveryAction,
+  type WatchModeLabRecoverySummary,
   type WatchModeLabKind,
   type WatchModeLabPackageImportSummary,
   type WatchModeLabPackageValidationSummary,
   type WatchModeLabPlanSummary,
 } from "@/src/features/watchModeLab/watchModeLab";
+import {
+  internalLabBuildInfo,
+  isWatchModeLabAvailable,
+} from "@/src/features/internalBuild/internalBuildFlags";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -59,22 +67,58 @@ function resultCounts(summary: WatchModeLabPackageImportSummary): string {
   ].join(" / ");
 }
 
+function recoveryActionLabel(action: WatchModeLabRecoveryAction): string {
+  switch (action) {
+    case "watch_committed":
+      return "Simulate watch committed";
+    case "watch_running_last_known":
+      return "Simulate watch running last-known";
+    case "watch_sealed_waiting_import":
+      return "Simulate watch sealed waiting import";
+    case "phone_import_success_ack_eligible":
+      return "Simulate phone import success / ack eligible";
+    case "ack_recorded":
+      return "Simulate ack recorded";
+    case "abandon_local_only":
+      return "Mark lab session abandoned local-only";
+    case "reload":
+      return "Reload recovery state";
+  }
+}
+
 export function WatchModeLabScreen() {
-  if (!__DEV__) {
+  if (!isWatchModeLabAvailable()) {
     return <Redirect href="/" />;
   }
 
   const { engineSettings, participantId, tlrOptions } = useAppState();
+  const buildInfo = React.useMemo(() => internalLabBuildInfo(), []);
   const [planSummary, setPlanSummary] =
     React.useState<WatchModeLabPlanSummary | null>(null);
   const [importSummary, setImportSummary] =
     React.useState<WatchModeLabPackageImportSummary | null>(null);
   const [validationSummary, setValidationSummary] =
     React.useState<WatchModeLabPackageValidationSummary | null>(null);
+  const [recoverySummary, setRecoverySummary] =
+    React.useState<WatchModeLabRecoverySummary | null>(null);
   const [busyLabel, setBusyLabel] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState<string>(
-    "Watch Mode Lab -- synthetic only. Public Watch Mode remains disabled.",
+    "Internal TestFlight Lab -- synthetic / QA only. Public Watch Mode remains disabled.",
   );
+
+  const reloadRecoveryState = React.useCallback(async () => {
+    const db = await getLocalDb();
+    const summary = await loadWatchModeLabRecoverySummary({
+      db,
+      participantId,
+    });
+
+    setRecoverySummary(summary);
+  }, [participantId]);
+
+  React.useEffect(() => {
+    void reloadRecoveryState();
+  }, [reloadRecoveryState]);
 
   function buildPlan(kind: WatchModeLabKind) {
     const plan = buildSyntheticWatchModeLabPlan({
@@ -94,16 +138,43 @@ export function WatchModeLabScreen() {
 
     try {
       const db = await getLocalDb();
-      const result = await importSyntheticWatchModeLabPackage({ db, kind });
+      const result = await importSyntheticWatchModeLabPackage({
+        db,
+        kind,
+        participantId,
+      });
 
       setImportSummary(result);
       setValidationSummary(null);
       setMessage(
         `${reimport ? "Re-imported" : "Imported"} synthetic ${kind} package with status ${result.status}.`,
       );
+      await reloadRecoveryState();
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Synthetic package import failed.",
+      );
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
+  async function runRecoveryAction(action: WatchModeLabRecoveryAction) {
+    setBusyLabel("Updating recovery...");
+
+    try {
+      const db = await getLocalDb();
+      const result = await applyWatchModeLabRecoveryAction({
+        db,
+        participantId,
+        action,
+      });
+
+      setRecoverySummary(result.recovery);
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Recovery action failed.",
       );
     } finally {
       setBusyLabel(null);
@@ -139,15 +210,20 @@ export function WatchModeLabScreen() {
       <SectionTitle>Watch Mode Lab</SectionTitle>
 
       <Card>
+        <InfoRow label="lane" value={buildInfo.lane} />
+        <InfoRow label="app version" value={buildInfo.version} />
+        <InfoRow label="build" value={buildInfo.build} />
         <InfoRow label="scope" value="synthetic only" />
+        <InfoRow label="QA label" value="Internal TestFlight Lab" />
         <InfoRow label="public Watch Mode" value="disabled" />
+        <InfoRow label="real overnight Watch Mode" value="not available" />
         <InfoRow label="real Watch sensors" value="not used" />
         <InfoRow label="WatchConnectivity" value="not used" />
         <InfoRow label="uploads" value="none" />
         <LabNote>
-          Watch Mode Lab -- synthetic only. This does not start an overnight
-          Watch session, does not use real Watch sensors or WatchConnectivity,
-          keeps data local, and does not upload anything.
+          Internal TestFlight Lab -- synthetic / QA only. This does not start an
+          overnight Watch session, does not use real Watch sensors or
+          WatchConnectivity, keeps data local, and does not upload anything.
         </LabNote>
       </Card>
 
@@ -246,6 +322,70 @@ export function WatchModeLabScreen() {
             </LabNote>
           </View>
         ) : null}
+      </Card>
+
+      <Card>
+        <InfoRow label="recovery state" value="synthetic only" />
+        <InfoRow
+          label="startup recovery"
+          value={recoverySummary?.startupRecovery ?? "not loaded"}
+        />
+        <InfoRow
+          label="unresolved states"
+          value={String(recoverySummary?.unresolvedCount ?? 0)}
+        />
+        <InfoRow
+          label="future Watch start"
+          value={
+            recoverySummary?.blocksFutureWatchStart
+              ? "blocked by unresolved state"
+              : "not blocked"
+          }
+        />
+        <LabNote>
+          Recovery state -- synthetic only. These actions model durable mailbox
+          state after app reload; they do not start transport, sensors, haptics,
+          audio, or public Watch Mode.
+        </LabNote>
+        {(
+          [
+            "watch_committed",
+            "watch_running_last_known",
+            "watch_sealed_waiting_import",
+            "phone_import_success_ack_eligible",
+            "ack_recorded",
+            "abandon_local_only",
+            "reload",
+          ] satisfies WatchModeLabRecoveryAction[]
+        ).map((action) => (
+          <PrimaryPillButton
+            key={action}
+            disabled={busyLabel !== null}
+            icon={action === "reload" ? RefreshCw : ShieldAlert}
+            label={recoveryActionLabel(action)}
+            onPress={() => {
+              void runRecoveryAction(action);
+            }}
+          />
+        ))}
+        {recoverySummary?.states.map((state) => (
+          <View key={state.sessionId} style={{ gap: 8 }}>
+            <InfoRow label="session" value={state.sessionId} />
+            <InfoRow label="status" value={state.status} />
+            <InfoRow
+              label="watch state"
+              value={state.lastKnownWatchState ?? "unknown"}
+            />
+            <InfoRow
+              label="package"
+              value={state.packageId ?? "not sealed"}
+            />
+            <InfoRow
+              label="package hash"
+              value={state.packageHash?.slice(0, 24) ?? "not sealed"}
+            />
+          </View>
+        ))}
       </Card>
 
       <Card>

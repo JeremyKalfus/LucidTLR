@@ -56,6 +56,7 @@ describe("deleteLocalSession", () => {
       ["delete from movement_events where session_id = ?", ["session-delete"]],
       ["delete from watch_epochs where session_id = ?", ["session-delete"]],
       ["delete from watch_runtime_events where session_id = ?", ["session-delete"]],
+      ["delete from watch_session_sync_states where session_id = ?", ["session-delete"]],
       ["delete from watch_sync_packages where session_id = ?", ["session-delete"]],
       ["delete from morning_reports where session_id = ?", ["session-delete"]],
       ["delete from dream_journals where session_id = ?", ["session-delete"]],

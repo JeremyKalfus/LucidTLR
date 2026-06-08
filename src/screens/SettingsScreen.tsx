@@ -46,6 +46,7 @@ import {
   WATCH_MODE_DISABLED_MESSAGE,
   WATCH_MODE_DISABLED_STATUS,
 } from "@/src/features/watchMode/watchModeAvailability";
+import { isWatchModeLabAvailable } from "@/src/features/internalBuild/internalBuildFlags";
 import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
@@ -732,15 +733,16 @@ export function WatchModeSettingsScreen() {
         </SettingsNote>
       </Card>
 
-      {__DEV__ ? (
+      {isWatchModeLabAvailable() ? (
         <Card>
           <SettingsNote>
-            Development-only synthetic Watch Mode Lab. No real Watch sensors,
-            watch sync transport, or public Watch session start.
+            Internal TestFlight Lab -- synthetic / QA only. No real Watch
+            sensors, watch sync transport, uploads, or public Watch session
+            start.
           </SettingsNote>
           <PrimaryPillButton
             icon={Cpu}
-            label="Watch Mode Lab -- synthetic only"
+            label="Internal Watch Mode Lab"
             onPress={() => router.push("/debug/watch-mode-lab")}
           />
         </Card>

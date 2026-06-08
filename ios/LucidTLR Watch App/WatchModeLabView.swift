@@ -1,4 +1,4 @@
-#if DEBUG || EXPO_CONFIGURATION_DEBUG
+#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB
 import SwiftUI
 
 struct WatchModeLabView: View {
@@ -22,7 +22,7 @@ struct WatchModeLabView: View {
   private var labMenu: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 8) {
-        Text("Watch Mode Lab -- synthetic only")
+        Text("Internal TestFlight Lab -- synthetic only")
           .font(.caption)
           .fontWeight(.semibold)
           .accessibilityAddTraits(.isHeader)
@@ -51,6 +51,25 @@ struct WatchModeLabView: View {
         }
         Button("Force seal package") {
           viewModel.forceSealPackage()
+        }
+
+        Divider()
+
+        Text("Recovery actions")
+          .font(.caption2)
+          .fontWeight(.semibold)
+
+        Button("Recover current synthetic session") {
+          viewModel.recoverCurrentSyntheticSession()
+        }
+        Button("Seal current synthetic session") {
+          viewModel.sealCurrentSyntheticSession()
+        }
+        Button("Record synthetic ack") {
+          viewModel.recordSyntheticAck()
+        }
+        Button("Discard synthetic lab session with explicit confirmation") {
+          viewModel.discardCurrentSyntheticSessionWithExplicitConfirmation()
         }
 
         Divider()

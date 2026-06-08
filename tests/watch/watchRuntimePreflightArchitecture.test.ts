@@ -145,8 +145,12 @@ describe("Watch Mode v3 preflight architecture", () => {
     const contentView = readSource("ios/LucidTLR Watch App/ContentView.swift");
     const combined = `${labView}\n${labModel}`;
 
-    expect(labView).toContain("#if DEBUG || EXPO_CONFIGURATION_DEBUG");
-    expect(contentView).toContain("#if DEBUG || EXPO_CONFIGURATION_DEBUG");
+    expect(labView).toContain(
+      "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
+    );
+    expect(contentView).toContain(
+      "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
+    );
     expect(combined).toContain("Show all-pass preflight");
     expect(combined).toContain("Simulate low battery");
     expect(combined).toContain("Simulate Low Power Mode");
@@ -204,7 +208,7 @@ describe("Watch Mode v3 preflight architecture", () => {
     const importer = readSource("src/features/watchHistory/importWatchPackage.ts");
     const localDb = readSource("src/data/local/localDb.ts");
 
-    expect(screen).toContain("Watch Mode Lab -- synthetic only");
+    expect(screen).toContain("Internal TestFlight Lab -- synthetic / QA only");
     expect(screen).toContain("Public Watch Mode remains disabled");
     expect(screen).toContain("real Watch sensors");
     expect(screen).toContain("ack eligible");

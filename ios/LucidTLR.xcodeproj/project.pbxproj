@@ -67,6 +67,7 @@
 		A60000000000000000000005 /* WatchPackageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000015 /* WatchPackageStore.swift */; };
 		A60000000000000000000006 /* WatchPackageAckStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000016 /* WatchPackageAckStore.swift */; };
 		A60000000000000000000007 /* WatchSyntheticStorageFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */; };
+		A90000000000000000000001 /* WatchCurrentSessionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000011 /* WatchCurrentSessionIndex.swift */; };
 		A70000000000000000000001 /* WatchModeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000011 /* WatchModeLabView.swift */; };
 		A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000012 /* WatchModeLabViewModel.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
@@ -160,6 +161,7 @@
 		A60000000000000000000015 /* WatchPackageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageStore.swift; sourceTree = "<group>"; };
 		A60000000000000000000016 /* WatchPackageAckStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageAckStore.swift; sourceTree = "<group>"; };
 		A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyntheticStorageFixtures.swift; sourceTree = "<group>"; };
+		A90000000000000000000011 /* WatchCurrentSessionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCurrentSessionIndex.swift; sourceTree = "<group>"; };
 		A70000000000000000000011 /* WatchModeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabView.swift; sourceTree = "<group>"; };
 		A70000000000000000000012 /* WatchModeLabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabViewModel.swift; sourceTree = "<group>"; };
 		A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = LucidTLR/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -368,6 +370,7 @@
 				A60000000000000000000014 /* WatchFileBackedLogStore.swift */,
 				A60000000000000000000015 /* WatchPackageStore.swift */,
 				A60000000000000000000016 /* WatchPackageAckStore.swift */,
+				A90000000000000000000011 /* WatchCurrentSessionIndex.swift */,
 				A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */,
 			);
 			path = Storage;
@@ -696,6 +699,7 @@
 				A60000000000000000000004 /* WatchFileBackedLogStore.swift in Sources */,
 				A60000000000000000000005 /* WatchPackageStore.swift in Sources */,
 				A60000000000000000000006 /* WatchPackageAckStore.swift in Sources */,
+				A90000000000000000000001 /* WatchCurrentSessionIndex.swift in Sources */,
 				A60000000000000000000007 /* WatchSyntheticStorageFixtures.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -739,7 +743,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG $(LUCIDTLR_INTERNAL_TESTFLIGHT_SWIFT_FLAGS)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.jeremykalfus.lucidtlr;
 				PRODUCT_NAME = LucidTLR;
 				SWIFT_OBJC_BRIDGING_HEADER = "LucidTLR/LucidTLR-Bridging-Header.h";
@@ -773,7 +777,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE $(LUCIDTLR_INTERNAL_TESTFLIGHT_SWIFT_FLAGS)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.jeremykalfus.lucidtlr;
 				PRODUCT_NAME = LucidTLR;
 				SWIFT_OBJC_BRIDGING_HEADER = "LucidTLR/LucidTLR-Bridging-Header.h";
@@ -802,7 +806,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG $(LUCIDTLR_INTERNAL_TESTFLIGHT_SWIFT_FLAGS)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.jeremykalfus.lucidtlr.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
@@ -834,7 +838,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE $(LUCIDTLR_INTERNAL_TESTFLIGHT_SWIFT_FLAGS)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.jeremykalfus.lucidtlr.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;

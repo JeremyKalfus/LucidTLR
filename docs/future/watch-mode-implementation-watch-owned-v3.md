@@ -38,6 +38,18 @@ not durable history. `transferUserInfo` is queued but not real-time.
 opportunistic. Overnight correctness must not depend on the iPhone staying
 reachable, unlocked, foregrounded, alive, paired, or nearby.
 
+## Why Watch-Owned Alone Was Not Enough In v2
+
+v2 proved that moving overnight cue timing to the Watch was necessary but not
+sufficient. Reliability still failed when phone/watch sync advanced past each
+other, the phone lost active Watch-session state after reloads, the phone could
+not reliably know whether Watch Mode was running, and starting again could
+overwrite or bypass the current Watch-owned session.
+
+v3 therefore treats durable session identity, no-overwrite behavior, reload
+reconciliation, and idempotent sync-state transitions as prerequisites before
+real WatchConnectivity or real sensors are reintroduced.
+
 ## Runtime Contract
 
 The phone builds a `watch-runtime-plan-v3` plan with explicit protocol,
@@ -95,6 +107,17 @@ Sealed packages stay on the Watch until a durable ack with the matching
 `packageId` and `packageHash` is stored. Package deletion must be gated by that
 matching ack. Raw high-rate motion is not persisted by default.
 
+## Watch Current Session Index
+
+The Watch keeps a file-backed `current_session_index.json` for the active
+synthetic session. It records active `sessionId`, `planHash`, `commitId`,
+runtime state, sealed package identity, ack state, and update time.
+
+The synthetic Watch lab must not silently overwrite an active/unacked current
+session. Lab recovery actions may recover, seal, record a synthetic ack, or
+discard only with an explicit synthetic/local-only confirmation. This does not
+delete sealed packages.
+
 ## Phone Package Import
 
 The iPhone morning importer validates the sealed package manifest, plan hash,
@@ -112,6 +135,52 @@ package imported locally, but package deletion remains a Watch-side retention
 decision after a later matching ack path is implemented. The importer does not
 add WatchConnectivity or a native bridge.
 
+## Durable Phone Watch Session Ledger
+
+The phone keeps a local `watch_session_sync_states` ledger keyed by stable
+Watch `sessionId`. It records plan identity, package identity, last-known Watch
+state, import/ack timestamps, unresolved reasons, and synthetic lab metadata.
+Unresolved rows block any future public Watch start until they become
+`ack_recorded`, `completed`, or `abandoned_local_only`.
+
+The public start path is still disabled, but the guard exists now so future
+enablement cannot ignore old running, sealed, importing, or ack-pending Watch
+state.
+
+## No-Overwrite Rule
+
+A future public Watch start must be denied while any unresolved phone Watch sync
+state exists. Internal labs may continue to simulate states, but they must show
+the unresolved condition and require explicit local-only abandon/discard before
+clearing synthetic recovery state.
+
+## Sync Gates Are Durable Mailbox States, Not Same-Screen Rendezvous
+
+Sync progress is modeled as persisted mailbox states: staged plan, Watch commit,
+Watch running last-known/unconfirmed, sealed package waiting import, phone
+import ack-eligible, ack recorded, completed, abandoned, or error. The phone and
+Watch do not need to be visible on the same screen at the same moment for the
+state machine to remain correct.
+
+## Phone Reload Recovery
+
+On app reload, the phone recomputes recovery UI from the local ledger:
+
+- no unresolved row: normal disabled placeholder,
+- Watch running last-known/unconfirmed: recover running state,
+- sealed waiting import: prompt/import recovery,
+- phone imported ack-eligible: pending ack,
+- error: recovery/error,
+- abandoned local-only: no block.
+
+## Out-Of-Order Messages Are Idempotent
+
+Future transport events must be safe to replay and safe to receive out of
+order. Duplicate commit receipts are no-ops, a sealed manifest can arrive before
+a running receipt when `sessionId` and `planHash` match, stale plan hashes are
+rejected, package identity is preserved, import success marks ack-eligible but
+not ack-sent, and ack recording completes only for a matching package hash.
+
 ## Hidden Watch Mode Lab
 
 The hidden Watch Mode Lab is synthetic-only and is not public Watch Mode. It may
@@ -126,10 +195,24 @@ surfaces can be inspected without implying Watch Mode is ready for overnight
 use. Lab package imports remain local-only, deterministic, idempotent, and
 transaction-wrapped; public Watch Mode remains disabled.
 
+The lab is available in development builds and in the internal TestFlight lab
+lane. Normal production builds must keep the hidden phone route unavailable and
+the Watch app on the rebuild placeholder. Lab access never changes
+`WATCH_MODE_ENABLED`.
+
 Manual phone-lab smoke validation on iPhone passed for the dev-only synthetic
 route: plan building, fixture package import, idempotent re-import with
 `already_imported`, `ackEligible` display after import, and corrupt manifest hash
 rejection before import all worked on device.
+
+## Internal TestFlight Lab Lane
+
+Jeremy-based real-device reliability testing should use Internal TestFlight Lab
+builds rather than only dev builds, because TestFlight removes Metro,
+dev-client, and Xcode-run state from the lifecycle and is closer to eventual
+distribution. The lane enables only synthetic lab surfaces; public Watch Mode,
+real WatchConnectivity, real HealthKit/workout, real CoreMotion, real haptics,
+real audio, uploads, and package deletion remain disabled.
 
 ## Implementation Sequencing
 

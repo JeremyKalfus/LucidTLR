@@ -4,7 +4,7 @@ struct ContentView: View {
   @State private var showingSyntheticLab = false
 
   var body: some View {
-    #if DEBUG || EXPO_CONFIGURATION_DEBUG
+    #if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB
     if showingSyntheticLab {
       WatchModeLabView()
     } else {
@@ -27,7 +27,7 @@ struct ContentView: View {
         .font(.caption2)
         .foregroundStyle(.secondary)
 
-      #if DEBUG || EXPO_CONFIGURATION_DEBUG
+      #if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB
       Button("Synthetic Lab") {
         showingSyntheticLab = true
       }

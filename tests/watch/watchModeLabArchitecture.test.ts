@@ -20,21 +20,25 @@ const watchLabSwiftFiles = [
 ];
 
 describe("Watch Mode v3 hidden synthetic lab architecture", () => {
-  it("adds a dev-only phone lab route and hidden settings affordance", () => {
+  it("adds a gated phone lab route and hidden settings affordance", () => {
     const route = readSource("app/debug/watch-mode-lab.tsx");
     const screen = readSource("src/screens/WatchModeLabScreen.tsx");
     const settings = readSource("src/screens/SettingsScreen.tsx");
+    const flags = readSource("src/features/internalBuild/internalBuildFlags.ts");
 
     expect(route).toContain("WatchModeLabScreen");
-    expect(screen).toContain("if (!__DEV__)");
+    expect(screen).toContain("if (!isWatchModeLabAvailable())");
     expect(screen).toContain("<Redirect href=\"/\" />");
-    expect(screen).toContain("Watch Mode Lab -- synthetic only");
+    expect(screen).toContain("Internal TestFlight Lab -- synthetic / QA only");
     expect(screen).toContain("Public Watch Mode remains disabled");
     expect(screen).toContain("real Watch sensors");
     expect(screen).toContain("WatchConnectivity");
-    expect(settings).toContain("__DEV__");
+    expect(screen).toContain("real overnight Watch Mode");
+    expect(settings).toContain("isWatchModeLabAvailable()");
     expect(settings).toContain("/debug/watch-mode-lab");
-    expect(settings).toContain("Watch Mode Lab -- synthetic only");
+    expect(settings).toContain("Internal TestFlight Lab -- synthetic / QA only");
+    expect(flags).toContain("EXPO_PUBLIC_WATCH_MODE_LAB_ENABLED");
+    expect(flags).toContain("WATCH_MODE_PUBLIC_ENABLED = WATCH_MODE_ENABLED");
   });
 
   it("uses the existing plan builder, fixtures, and transaction-wrapped importer", () => {
@@ -93,12 +97,16 @@ describe("Watch Mode v3 hidden synthetic lab architecture", () => {
 
     expect(contentView).toContain("Watch Mode is being rebuilt.");
     expect(contentView).toContain("Use Phone Mode on iPhone for tonight.");
-    expect(contentView).toContain("#if DEBUG || EXPO_CONFIGURATION_DEBUG");
+    expect(contentView).toContain(
+      "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
+    );
     expect(contentView).toContain("WatchModeLabView()");
     expect(contentView).toContain("Synthetic Lab");
-    expect(contentView.indexOf("#if DEBUG || EXPO_CONFIGURATION_DEBUG")).toBeLessThan(
-      contentView.indexOf("WatchModeLabView()"),
-    );
+    expect(
+      contentView.indexOf(
+        "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
+      ),
+    ).toBeLessThan(contentView.indexOf("WatchModeLabView()"));
   });
 
   it("documents the hidden lab as synthetic-only and required before real providers", () => {
@@ -122,7 +130,6 @@ describe("Watch Mode v3 hidden synthetic lab architecture", () => {
       "src/screens/PresleepTrainingScreen.tsx",
       "src/screens/MorningReviewScreen.tsx",
       "src/screens/DataScreen.tsx",
-      "src/screens/SettingsScreen.tsx",
     ].map(readSource).join("\n");
 
     expect(availability).toContain("WATCH_MODE_ENABLED = false");
@@ -147,5 +154,18 @@ describe("Watch Mode v3 hidden synthetic lab architecture", () => {
     expect(combined).not.toContain("NativeModules");
     expect(combined).not.toContain("watchRuntimeClient");
     expect(fileExists("src/native/watchRuntime/watchRuntimeClient.ts")).toBe(false);
+  });
+
+  it("shows phone recovery state as synthetic-only", () => {
+    const screen = readSource("src/screens/WatchModeLabScreen.tsx");
+
+    expect(screen).toContain("Recovery state -- synthetic only");
+    expect(screen).toContain("Simulate watch committed");
+    expect(screen).toContain("Simulate watch running last-known");
+    expect(screen).toContain("Simulate watch sealed waiting import");
+    expect(screen).toContain("Simulate phone import success / ack eligible");
+    expect(screen).toContain("Simulate ack recorded");
+    expect(screen).toContain("Mark lab session abandoned local-only");
+    expect(screen).toContain("Reload recovery state");
   });
 });
