@@ -55,6 +55,7 @@ import {
   internalLabBuildInfo,
   isWatchModeLabAvailable,
 } from "@/src/features/internalBuild/internalBuildFlags";
+import type { NativeWatchPackageTransferStatus } from "@/src/native/watchTransport";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -84,6 +85,26 @@ function resultCounts(summary: WatchModeLabPackageImportSummary): string {
     `${summary.counts.cueEvents} cues`,
     `${summary.counts.movementEvents} movements`,
   ].join(" / ");
+}
+
+function packageTransferBytesLabel(
+  transfer?: NativeWatchPackageTransferStatus,
+): string {
+  if (!transfer) {
+    return "none";
+  }
+
+  return `manifest ${transfer.manifestJsonByteCount}, file ${transfer.packageFileByteCount}`;
+}
+
+function packageTransferOutstandingLabel(
+  transfer?: NativeWatchPackageTransferStatus,
+): string {
+  if (!transfer) {
+    return "none";
+  }
+
+  return `userInfo ${transfer.outstandingUserInfoTransferCount}, file ${transfer.outstandingFileTransferCount}`;
 }
 
 function recoveryActionLabel(action: WatchModeLabRecoveryAction): string {
@@ -809,6 +830,39 @@ export function WatchModeLabScreen() {
           label="latest package"
           value={
             transportSummary?.status.latestReceivedPackage?.packageId ?? "none"
+          }
+        />
+        <InfoRow
+          label="package transfer stage"
+          value={
+            transportSummary?.status.latestPackageTransfer?.stage ??
+            transportSummary?.status.latestStatusSnapshot?.packageTransfer
+              ?.stage ??
+            "none"
+          }
+        />
+        <InfoRow
+          label="package transfer bytes"
+          value={packageTransferBytesLabel(
+            transportSummary?.status.latestPackageTransfer ??
+              transportSummary?.status.latestStatusSnapshot?.packageTransfer,
+          )}
+        />
+        <InfoRow
+          label="package transfer outstanding"
+          value={packageTransferOutstandingLabel(
+            transportSummary?.status.latestPackageTransfer ??
+              transportSummary?.status.latestStatusSnapshot?.packageTransfer,
+          )}
+        />
+        <InfoRow
+          label="package transfer error"
+          value={
+            transportSummary?.status.latestPackageTransfer?.errorMessage ??
+            transportSummary?.status.latestStatusSnapshot?.packageTransfer
+              ?.errorMessage ??
+            transportSummary?.status.lastError ??
+            "none"
           }
         />
         <InfoRow

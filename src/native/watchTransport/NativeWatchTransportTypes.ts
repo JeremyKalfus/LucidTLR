@@ -7,6 +7,24 @@ import type {
   WatchTransportPlanRequestMessage,
 } from "./WatchTransportMessages";
 
+export interface NativeWatchPackageTransferStatus {
+  attemptId: string;
+  sessionId: string;
+  planHash: string;
+  packageId: string;
+  packageHash: string;
+  stage: string;
+  startedAt: string;
+  queuedAt?: string;
+  finishedAt?: string;
+  manifestJsonByteCount: number;
+  packageFileByteCount: number;
+  fileExists: boolean;
+  outstandingUserInfoTransferCount: number;
+  outstandingFileTransferCount: number;
+  errorMessage?: string;
+}
+
 export interface NativeWatchTransportStatus {
   available: boolean;
   unavailableReason?: string;
@@ -34,7 +52,9 @@ export interface NativeWatchTransportStatus {
     packageId?: string;
     packageHash?: string;
     createdAt?: string;
+    packageTransfer?: NativeWatchPackageTransferStatus;
   };
+  latestPackageTransfer?: NativeWatchPackageTransferStatus;
   latestPackageManifest?: {
     sessionId: string;
     planHash: string;

@@ -17,7 +17,8 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     latestPackageHash: nil,
     latestAckPackageId: nil,
     latestAckRecorded: false,
-    lastError: nil
+    lastError: nil,
+    latestPackageTransfer: nil
   )
 
   private let defaults = UserDefaults.standard
@@ -28,6 +29,7 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
   private let latestAckPackageIdKey = "lucidtlr.watchTransportLab.latestAckPackageId.v1"
   private let latestAckPackageHashKey = "lucidtlr.watchTransportLab.latestAckPackageHash.v1"
   private let latestAckedAtKey = "lucidtlr.watchTransportLab.latestAckedAt.v1"
+  private let latestPackageTransferJsonKey = "lucidtlr.watchTransportLab.latestPackageTransferJson.v1"
 
   private override init() {
     super.init()
@@ -61,7 +63,8 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       latestPackageHash: defaults.string(forKey: "lucidtlr.watchTransportLab.latestPackageHash.v1"),
       latestAckPackageId: ack?.packageId,
       latestAckRecorded: defaults.bool(forKey: "lucidtlr.watchTransportLab.latestAckRecorded.v1"),
-      lastError: defaults.string(forKey: "lucidtlr.watchTransportLab.lastError.v1")
+      lastError: defaults.string(forKey: "lucidtlr.watchTransportLab.lastError.v1"),
+      latestPackageTransfer: latestPackageTransferStatus()
     )
 
     DispatchQueue.main.async {
@@ -109,16 +112,32 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     packageHash: String?,
     createdAt: Date
   ) throws {
+    let latestTransfer = latestPackageTransferStatus()
     let payload = WatchTransportMessageFactory.statusSnapshot(
       sessionId: sessionId,
       planHash: planHash,
       watchState: watchState,
       packageId: packageId,
       packageHash: packageHash,
-      createdAt: createdAt
+      createdAt: createdAt,
+      packageTransfer: latestTransfer
     )
     try transferUserInfo(payload)
     recordLastMessage(type: WatchTransportMessageType.statusSnapshot.rawValue, at: createdAt)
+  }
+
+  func sendTransportError(
+    errorCode: String,
+    errorMessage: String,
+    createdAt: Date
+  ) throws {
+    let payload = WatchTransportMessageFactory.transportError(
+      errorCode: errorCode,
+      errorMessage: errorMessage,
+      createdAt: createdAt
+    )
+    recordError(errorMessage)
+    try transferUserInfo(payload)
   }
 
   func transferPackage(
@@ -127,21 +146,66 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     createdAt: Date
   ) throws {
     let manifestJson = try WatchTransportPackageBuilder.manifestJson(package.manifest)
+    let fileByteCount = try packageFileByteCount(fileURL)
+    let startedAt = WatchRuntimeDateFormat.string(from: createdAt)
+    let attemptId = "watch-package-transfer-\(String(WatchRuntimeStructuralHash.placeholderHex("\(package.manifest.sessionId)|\(package.manifest.packageId)|\(startedAt)").prefix(24)))"
+    let startingStatus = WatchTransportPackageTransferStatus(
+      attemptId: attemptId,
+      sessionId: package.manifest.sessionId,
+      planHash: package.manifest.planHash,
+      packageId: package.manifest.packageId,
+      packageHash: package.manifest.packageHash,
+      stage: "started",
+      startedAt: startedAt,
+      queuedAt: nil,
+      finishedAt: nil,
+      manifestJsonByteCount: Array(manifestJson.utf8).count,
+      packageFileByteCount: fileByteCount,
+      fileExists: FileManager.default.fileExists(atPath: fileURL.path),
+      outstandingUserInfoTransferCount: outstandingUserInfoTransferCount(),
+      outstandingFileTransferCount: outstandingFileTransferCount(),
+      errorMessage: nil
+    )
+    persistPackageTransferStatus(startingStatus)
+
     let manifestPayload = WatchTransportMessageFactory.packageManifest(
       manifest: package.manifest,
       manifestJson: manifestJson,
       createdAt: createdAt
     )
     try transferUserInfo(manifestPayload)
+    persistPackageTransferStatus(
+      packageTransferStatus(
+        from: startingStatus,
+        stage: "manifestQueued",
+        queuedAt: WatchRuntimeDateFormat.string(from: Date()),
+        errorMessage: nil
+      )
+    )
 
     let metadata = WatchTransportMessageFactory.packageFileMetadata(
       manifest: package.manifest,
       createdAt: createdAt
     )
-    try transferFile(fileURL, metadata: metadata)
+    _ = try transferFile(fileURL, metadata: metadata)
+    let queuedStatus = packageTransferStatus(
+      from: latestPackageTransferStatus() ?? startingStatus,
+      stage: "fileQueued",
+      queuedAt: WatchRuntimeDateFormat.string(from: Date()),
+      errorMessage: nil
+    )
+    persistPackageTransferStatus(queuedStatus)
     defaults.set(package.manifest.packageId, forKey: "lucidtlr.watchTransportLab.latestPackageId.v1")
     defaults.set(package.manifest.packageHash, forKey: "lucidtlr.watchTransportLab.latestPackageHash.v1")
     recordLastMessage(type: WatchTransportMessageType.packageFile.rawValue, at: createdAt)
+    try sendStatusSnapshot(
+      sessionId: package.manifest.sessionId,
+      planHash: package.manifest.planHash,
+      watchState: .sealedWaitingForPhone,
+      packageId: package.manifest.packageId,
+      packageHash: package.manifest.packageHash,
+      createdAt: Date()
+    )
   }
 
   @discardableResult
@@ -191,6 +255,7 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       latestAckPackageIdKey,
       latestAckPackageHashKey,
       latestAckedAtKey,
+      latestPackageTransferJsonKey,
       "lucidtlr.watchTransportLab.lastMessageType.v1",
       "lucidtlr.watchTransportLab.lastMessageAt.v1",
       "lucidtlr.watchTransportLab.latestCommitReceiptSessionId.v1",
@@ -217,6 +282,52 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
 
   func sessionReachabilityDidChange(_ session: WCSession) {
     recordLastMessage(type: "transport.reachability.changed", at: Date())
+  }
+
+  func session(
+    _ session: WCSession,
+    didFinish userInfoTransfer: WCSessionUserInfoTransfer,
+    error: Error?
+  ) {
+    guard let type = userInfoTransfer.userInfo["messageType"] as? String,
+      type == WatchTransportMessageType.packageManifest.rawValue ||
+        type == WatchTransportMessageType.statusSnapshot.rawValue else {
+      return
+    }
+
+    if let error {
+      recordError("Watch userInfo transfer failed for \(type): \(error.localizedDescription)")
+      updateLatestPackageTransfer(
+        stage: "\(type).failed",
+        errorMessage: error.localizedDescription
+      )
+      return
+    }
+
+    updateLatestPackageTransfer(stage: "\(type).finished", errorMessage: nil)
+  }
+
+  func session(
+    _ session: WCSession,
+    didFinish fileTransfer: WCSessionFileTransfer,
+    error: Error?
+  ) {
+    let metadata = fileTransfer.file.metadata ?? [:]
+    guard let type = metadata["messageType"] as? String,
+      type == WatchTransportMessageType.packageFile.rawValue else {
+      return
+    }
+
+    if let error {
+      recordError("Watch package file transfer failed: \(error.localizedDescription)")
+      updateLatestPackageTransfer(
+        stage: "packageFile.failed",
+        errorMessage: error.localizedDescription
+      )
+      return
+    }
+
+    updateLatestPackageTransfer(stage: "packageFile.finished", errorMessage: nil)
   }
 
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
@@ -286,7 +397,7 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     refreshStatus()
   }
 
-  private func transferFile(_ fileURL: URL, metadata: [String: Any]) throws {
+  private func transferFile(_ fileURL: URL, metadata: [String: Any]) throws -> WCSessionFileTransfer {
     guard WCSession.isSupported() else {
       throw WatchTransportError.watchConnectivityUnsupported
     }
@@ -296,8 +407,9 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       session.delegate = self
       session.activate()
     }
-    session.transferFile(fileURL, metadata: metadata)
+    let transfer = session.transferFile(fileURL, metadata: metadata)
     refreshStatus()
+    return transfer
   }
 
   private func persist(_ stagedPlan: WatchTransportStagedPlan) throws {
@@ -336,6 +448,87 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       packageHash: packageHash,
       ackedAt: defaults.string(forKey: latestAckedAtKey) ?? WatchRuntimeDateFormat.string(from: Date())
     )
+  }
+
+  private func latestPackageTransferStatus() -> WatchTransportPackageTransferStatus? {
+    guard let json = defaults.string(forKey: latestPackageTransferJsonKey),
+      let data = json.data(using: .utf8) else {
+      return nil
+    }
+
+    return try? JSONDecoder().decode(WatchTransportPackageTransferStatus.self, from: data)
+  }
+
+  private func persistPackageTransferStatus(_ status: WatchTransportPackageTransferStatus) {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    if let data = try? encoder.encode(status),
+      let json = String(data: data, encoding: .utf8) {
+      defaults.set(json, forKey: latestPackageTransferJsonKey)
+    }
+    refreshStatus()
+  }
+
+  private func packageTransferStatus(
+    from status: WatchTransportPackageTransferStatus,
+    stage: String,
+    queuedAt: String? = nil,
+    finishedAt: String? = nil,
+    errorMessage: String?
+  ) -> WatchTransportPackageTransferStatus {
+    WatchTransportPackageTransferStatus(
+      attemptId: status.attemptId,
+      sessionId: status.sessionId,
+      planHash: status.planHash,
+      packageId: status.packageId,
+      packageHash: status.packageHash,
+      stage: stage,
+      startedAt: status.startedAt,
+      queuedAt: queuedAt ?? status.queuedAt,
+      finishedAt: finishedAt,
+      manifestJsonByteCount: status.manifestJsonByteCount,
+      packageFileByteCount: status.packageFileByteCount,
+      fileExists: status.fileExists,
+      outstandingUserInfoTransferCount: outstandingUserInfoTransferCount(),
+      outstandingFileTransferCount: outstandingFileTransferCount(),
+      errorMessage: errorMessage
+    )
+  }
+
+  private func updateLatestPackageTransfer(stage: String, errorMessage: String?) {
+    guard let latest = latestPackageTransferStatus() else {
+      return
+    }
+
+    persistPackageTransferStatus(
+      packageTransferStatus(
+        from: latest,
+        stage: stage,
+        finishedAt: WatchRuntimeDateFormat.string(from: Date()),
+        errorMessage: errorMessage
+      )
+    )
+  }
+
+  private func packageFileByteCount(_ fileURL: URL) throws -> Int {
+    let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+    return attributes[.size] as? Int ?? 0
+  }
+
+  private func outstandingUserInfoTransferCount() -> Int {
+    guard WCSession.isSupported() else {
+      return 0
+    }
+
+    return WCSession.default.outstandingUserInfoTransfers.count
+  }
+
+  private func outstandingFileTransferCount() -> Int {
+    guard WCSession.isSupported() else {
+      return 0
+    }
+
+    return WCSession.default.outstandingFileTransfers.count
   }
 
   private func recordLastMessage(type: String, at: Date) {

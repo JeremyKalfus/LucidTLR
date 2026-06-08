@@ -49,6 +49,54 @@ struct WatchTransportStatusSnapshot: Equatable {
   let latestAckPackageId: String?
   let latestAckRecorded: Bool
   let lastError: String?
+  let latestPackageTransfer: WatchTransportPackageTransferStatus?
+}
+
+struct WatchTransportPackageTransferStatus: Codable, Equatable {
+  let attemptId: String
+  let sessionId: String
+  let planHash: String
+  let packageId: String
+  let packageHash: String
+  let stage: String
+  let startedAt: String
+  let queuedAt: String?
+  let finishedAt: String?
+  let manifestJsonByteCount: Int
+  let packageFileByteCount: Int
+  let fileExists: Bool
+  let outstandingUserInfoTransferCount: Int
+  let outstandingFileTransferCount: Int
+  let errorMessage: String?
+
+  var dictionary: [String: Any] {
+    var payload: [String: Any] = [
+      "attemptId": attemptId,
+      "sessionId": sessionId,
+      "planHash": planHash,
+      "packageId": packageId,
+      "packageHash": packageHash,
+      "stage": stage,
+      "startedAt": startedAt,
+      "manifestJsonByteCount": manifestJsonByteCount,
+      "packageFileByteCount": packageFileByteCount,
+      "fileExists": fileExists,
+      "outstandingUserInfoTransferCount": outstandingUserInfoTransferCount,
+      "outstandingFileTransferCount": outstandingFileTransferCount,
+    ]
+
+    if let queuedAt {
+      payload["queuedAt"] = queuedAt
+    }
+    if let finishedAt {
+      payload["finishedAt"] = finishedAt
+    }
+    if let errorMessage {
+      payload["errorMessage"] = errorMessage
+    }
+
+    return payload
+  }
 }
 
 enum WatchTransportMessageFactory {
@@ -124,7 +172,8 @@ enum WatchTransportMessageFactory {
     watchState: WatchRuntimeState,
     packageId: String?,
     packageHash: String?,
-    createdAt: Date
+    createdAt: Date,
+    packageTransfer: WatchTransportPackageTransferStatus? = nil
   ) -> [String: Any] {
     var payload = base(
       type: .statusSnapshot,
@@ -136,6 +185,9 @@ enum WatchTransportMessageFactory {
       packageHash: packageHash
     )
     payload["watchState"] = watchState.rawValue
+    if let packageTransfer {
+      payload["packageTransfer"] = packageTransfer.dictionary
+    }
     return payload
   }
 

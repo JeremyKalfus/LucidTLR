@@ -151,6 +151,10 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(combined).toContain("import WatchConnectivity");
     expect(combined).toContain("transferUserInfo");
     expect(combined).toContain("transferFile");
+    expect(combined).toContain("WatchTransportPackageTransferStatus");
+    expect(combined).toContain("outstandingUserInfoTransferCount");
+    expect(combined).toContain("outstandingFileTransferCount");
+    expect(combined).toContain("packageFileByteCount");
   });
 
   it("labels phone and Watch transport surfaces as synthetic/internal", () => {
@@ -193,6 +197,8 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(labTransport).toContain("applyPhoneImportSuccess");
     expect(labTransport).toContain("applyAckRecorded");
     expect(labTransport).toContain("status.latestAck");
+    expect(labTransport).toContain("watch_status_sealed_package");
+    expect(labTransport).toContain("status.latestStatusSnapshot?.packageId");
     expect(labTransport).toContain("observedWatchAck");
     expect(labTransport).toContain("findUnresolvedConflictingActiveWatchSyncState");
   });

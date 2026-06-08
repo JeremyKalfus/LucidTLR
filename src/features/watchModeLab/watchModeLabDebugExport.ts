@@ -145,6 +145,13 @@ export interface WatchModeLabDrillAssessment {
   ackRecordedSeen: boolean;
   duplicateRetrySeen: boolean;
   recoverySimulationSeen: boolean;
+  currentTransportSessionId?: string;
+  currentSessionImportedPackageSeen: boolean;
+  currentSessionAckEligibleSeen: boolean;
+  currentSessionAckRecordedSeen: boolean;
+  watchPackageTransferAttemptSeen: boolean;
+  watchPackageTransferQueued: boolean;
+  watchPackageTransferErrorSeen: boolean;
   stateRegressionDetected: boolean;
   mismatchedHashDetected: boolean;
   finalUnresolvedStateBlocksStart: boolean;
@@ -217,6 +224,13 @@ export interface WatchModeLabDebugBundle {
       transportPackageReceivedSeen: boolean;
       fixtureImportSeen: boolean;
       recoverySimulationSeen: boolean;
+      currentTransportSessionId?: string;
+      currentSessionImportedPackageSeen: boolean;
+      currentSessionAckEligibleSeen: boolean;
+      currentSessionAckRecordedSeen: boolean;
+      watchPackageTransferAttemptSeen: boolean;
+      watchPackageTransferQueued: boolean;
+      watchPackageTransferErrorSeen: boolean;
       stateRegressionDetected: boolean;
     };
     unresolvedCount: number;
@@ -594,7 +608,11 @@ function packageKey(input: {
   sessionId?: string;
   packageHash?: string;
 }): string {
-  return input.packageId ?? input.packageHash ?? input.sessionId ?? "unknown";
+  return [
+    input.sessionId ?? "no-session",
+    input.packageId ?? "no-package",
+    input.packageHash ?? "no-package-hash",
+  ].join("|");
 }
 
 function ensurePackageFlow(
@@ -929,6 +947,93 @@ function isRecoverySimulationEvent(event: WatchModeLabTimelineEvent): boolean {
   );
 }
 
+function isWatchPackageTransferStatusEvent(
+  event: WatchModeLabTimelineEvent,
+): boolean {
+  return event.eventType === "watch_package_transfer_status";
+}
+
+function currentTransportSessionId(input: {
+  unresolvedStates: WatchSessionSyncState[];
+  recentStates: WatchSessionSyncState[];
+  transportStatus?: NativeWatchTransportStatus | null;
+  timeline: WatchModeLabTimelineEvent[];
+}): string | undefined {
+  return (
+    input.transportStatus?.latestReceivedPackage?.sessionId ||
+    input.transportStatus?.latestPackageManifest?.sessionId ||
+    input.transportStatus?.latestPackageTransfer?.sessionId ||
+    input.transportStatus?.latestStatusSnapshot?.packageTransfer?.sessionId ||
+    input.transportStatus?.latestCommitReceipt?.sessionId ||
+    input.transportStatus?.latestStatusSnapshot?.sessionId ||
+    input.transportStatus?.latestStagedPlanId ||
+    input.unresolvedStates[0]?.sessionId ||
+    input.timeline
+      .slice()
+      .reverse()
+      .find((event) => event.sessionId)?.sessionId ||
+    input.recentStates[0]?.sessionId
+  );
+}
+
+function matchesSession(
+  sessionId: string | undefined,
+  currentSessionId: string | undefined,
+): boolean {
+  return !currentSessionId || sessionId === currentSessionId;
+}
+
+function packageTransferQueued(input: {
+  timeline: WatchModeLabTimelineEvent[];
+  transportStatus?: NativeWatchTransportStatus | null;
+  currentSessionId?: string;
+}): boolean {
+  const queuedStages = [
+    "manifestQueued",
+    "fileQueued",
+    "lucidtlr.watch.package.manifest.finished",
+    "lucidtlr.watch.status.snapshot.finished",
+    "packageFile.finished",
+  ];
+  const latestTransfer =
+    input.transportStatus?.latestPackageTransfer ??
+    input.transportStatus?.latestStatusSnapshot?.packageTransfer;
+
+  return (
+    (latestTransfer !== undefined &&
+      matchesSession(latestTransfer.sessionId, input.currentSessionId) &&
+      queuedStages.includes(latestTransfer.stage)) ||
+    input.timeline.some(
+      (event) =>
+        isWatchPackageTransferStatusEvent(event) &&
+        matchesSession(event.sessionId, input.currentSessionId) &&
+        queuedStages.includes(metadataString(event.metadata, "stage") ?? ""),
+    )
+  );
+}
+
+function packageTransferErrorSeen(input: {
+  timeline: WatchModeLabTimelineEvent[];
+  transportStatus?: NativeWatchTransportStatus | null;
+  currentSessionId?: string;
+}): boolean {
+  const latestTransfer =
+    input.transportStatus?.latestPackageTransfer ??
+    input.transportStatus?.latestStatusSnapshot?.packageTransfer;
+
+  return (
+    (latestTransfer !== undefined &&
+      matchesSession(latestTransfer.sessionId, input.currentSessionId) &&
+      Boolean(latestTransfer.errorMessage)) ||
+    input.timeline.some(
+      (event) =>
+        isWatchPackageTransferStatusEvent(event) &&
+        matchesSession(event.sessionId, input.currentSessionId) &&
+        (!event.success || Boolean(event.errorMessage)),
+    )
+  );
+}
+
 function failureReasons(input: {
   publicWatchModeDisabled: boolean;
   unresolvedStates: WatchSessionSyncState[];
@@ -938,6 +1043,9 @@ function failureReasons(input: {
   transportErrorSeen: boolean;
   transportCommitReceiptSeen: boolean;
   transportPackageReceivedSeen: boolean;
+  watchPackageTransferAttemptSeen: boolean;
+  watchPackageTransferQueued: boolean;
+  watchPackageTransferErrorSeen: boolean;
   fixtureImportSeen: boolean;
   recoverySimulationSeen: boolean;
   stateRegressionDetected: boolean;
@@ -964,6 +1072,23 @@ function failureReasons(input: {
 
   if (!input.transportPackageReceivedSeen) {
     reasons.push("No real WatchConnectivity package manifest/file receipt was observed.");
+  }
+
+  if (input.transportCommitReceiptSeen && !input.watchPackageTransferAttemptSeen) {
+    reasons.push(
+      "Watch commit receipt arrived, but no Watch package transfer attempt/status was observed.",
+    );
+  }
+
+  if (
+    input.watchPackageTransferAttemptSeen &&
+    !input.watchPackageTransferQueued
+  ) {
+    reasons.push("Watch package transfer status was observed, but file queueing was not confirmed.");
+  }
+
+  if (input.watchPackageTransferErrorSeen) {
+    reasons.push("Watch package transfer diagnostics reported an error.");
   }
 
   if (!input.importedPackagePresent) {
@@ -1026,6 +1151,7 @@ function finalDrillStatus(input: {
   transportErrorSeen: boolean;
   transportCommitReceiptSeen: boolean;
   transportPackageReceivedSeen: boolean;
+  watchPackageTransferErrorSeen: boolean;
   stateRegressionDetected: boolean;
 }): WatchModeLabFinalDrillStatus {
   const regressedStateSeen = input.unresolvedStates.some(
@@ -1034,6 +1160,7 @@ function finalDrillStatus(input: {
   const hardFailureSeen =
     !input.publicWatchModeDisabled ||
     input.transportErrorSeen ||
+    input.watchPackageTransferErrorSeen ||
     input.stateRegressionDetected ||
     regressedStateSeen ||
     (input.ackRecordedSeen && input.unresolvedStates.length > 0);
@@ -1072,6 +1199,13 @@ function buildDrillAssessment(input: {
   transportPackageReceivedSeen: boolean;
   fixtureImportSeen: boolean;
   recoverySimulationSeen: boolean;
+  currentTransportSessionId?: string;
+  currentSessionImportedPackageSeen: boolean;
+  currentSessionAckEligibleSeen: boolean;
+  currentSessionAckRecordedSeen: boolean;
+  watchPackageTransferAttemptSeen: boolean;
+  watchPackageTransferQueued: boolean;
+  watchPackageTransferErrorSeen: boolean;
   stateRegressionDetected: boolean;
   transportStatus?: NativeWatchTransportStatus | null;
   drillFailureReasons: string[];
@@ -1123,6 +1257,13 @@ function buildDrillAssessment(input: {
     ackRecordedSeen: input.ackRecordedSeen,
     duplicateRetrySeen,
     recoverySimulationSeen: input.recoverySimulationSeen,
+    currentTransportSessionId: input.currentTransportSessionId,
+    currentSessionImportedPackageSeen: input.currentSessionImportedPackageSeen,
+    currentSessionAckEligibleSeen: input.currentSessionAckEligibleSeen,
+    currentSessionAckRecordedSeen: input.currentSessionAckRecordedSeen,
+    watchPackageTransferAttemptSeen: input.watchPackageTransferAttemptSeen,
+    watchPackageTransferQueued: input.watchPackageTransferQueued,
+    watchPackageTransferErrorSeen: input.watchPackageTransferErrorSeen,
     stateRegressionDetected: input.stateRegressionDetected,
     mismatchedHashDetected: hashMismatchSeen({
       timeline: input.timeline,
@@ -1148,36 +1289,113 @@ export function buildWatchModeLabDebugBundle(
     timeline,
     recentStates: input.recentStates,
   });
-  const importedPackagePresent = packages.some(
+  const currentSessionId = currentTransportSessionId({
+    unresolvedStates: input.unresolvedStates,
+    recentStates: input.recentStates,
+    transportStatus: input.transportStatus,
+    timeline,
+  });
+  const currentRecentStates = input.recentStates.filter((state) =>
+    matchesSession(state.sessionId, currentSessionId),
+  );
+  const currentPackages = packages.filter((record) =>
+    matchesSession(record.sessionId, currentSessionId),
+  );
+  const currentPackageFlow = packageFlow.filter((record) =>
+    matchesSession(record.sessionId, currentSessionId),
+  );
+  const currentSessionImportedPackageSeen = currentPackages.some(
     (record) => record.importStatus === "imported",
-  ) || packageFlow.some(
+  ) || currentPackageFlow.some(
     (record) =>
       record.importStatus === "imported" ||
       record.importStatus === "already_imported",
   );
-  const transportCommitReceiptSeen =
-    timeline.some(isTransportCommitReceiptEvent) ||
-    Boolean(input.transportStatus?.latestCommitReceipt);
-  const transportPackageReceivedSeen =
-    timeline.some(isTransportPackageReceivedEvent) ||
-    Boolean(input.transportStatus?.latestReceivedPackage) ||
-    Boolean(input.transportStatus?.latestPackageManifest);
-  const fixtureImportSeen = timeline.some(isFixtureImportEvent);
-  const recoverySimulationSeen = timeline.some(isRecoverySimulationEvent);
-  const ackEligibleSeen =
-    input.latestImportSummary?.ackEligible === true ||
-    input.recentStates.some(
+  const importedPackagePresent = currentSessionImportedPackageSeen;
+  const currentSessionAckEligibleSeen =
+    (input.latestImportSummary?.sessionId === currentSessionId &&
+      input.latestImportSummary?.ackEligible === true) ||
+    currentRecentStates.some(
       (state) =>
         state.status === "phone_imported_ack_eligible" ||
         state.status === "ack_recorded",
     ) ||
-    packageFlow.some((record) => Boolean(record.ackEligibleAt)) ||
-    timeline.some((event) => event.eventType === "ack_became_eligible");
-  const ackRecordedSeen =
-    input.recentStates.some((state) => state.status === "ack_recorded") ||
-    Boolean(input.transportStatus?.latestAck) ||
-    packageFlow.some((record) => Boolean(record.ackRecordedAt)) ||
-    timeline.some((event) => event.eventType === "ack_recorded");
+    currentPackageFlow.some((record) => Boolean(record.ackEligibleAt)) ||
+    timeline.some(
+      (event) =>
+        event.eventType === "ack_became_eligible" &&
+        matchesSession(event.sessionId, currentSessionId),
+  );
+  const transportCommitReceiptSeen =
+    timeline.some(
+      (event) =>
+        isTransportCommitReceiptEvent(event) &&
+        matchesSession(event.sessionId, currentSessionId),
+    ) ||
+    (Boolean(input.transportStatus?.latestCommitReceipt) &&
+      matchesSession(
+        input.transportStatus?.latestCommitReceipt?.sessionId,
+        currentSessionId,
+      ));
+  const transportPackageReceivedSeen =
+    timeline.some(
+      (event) =>
+        isTransportPackageReceivedEvent(event) &&
+        matchesSession(event.sessionId, currentSessionId),
+    ) ||
+    (Boolean(input.transportStatus?.latestReceivedPackage) &&
+      matchesSession(
+        input.transportStatus?.latestReceivedPackage?.sessionId,
+        currentSessionId,
+      )) ||
+    (Boolean(input.transportStatus?.latestPackageManifest) &&
+      matchesSession(
+        input.transportStatus?.latestPackageManifest?.sessionId,
+        currentSessionId,
+      ));
+  const watchPackageTransferAttemptSeen =
+    timeline.some(
+      (event) =>
+        isWatchPackageTransferStatusEvent(event) &&
+        matchesSession(event.sessionId, currentSessionId),
+    ) ||
+    (Boolean(input.transportStatus?.latestPackageTransfer) &&
+      matchesSession(
+        input.transportStatus?.latestPackageTransfer?.sessionId,
+        currentSessionId,
+      )) ||
+    (Boolean(input.transportStatus?.latestStatusSnapshot?.packageTransfer) &&
+      matchesSession(
+        input.transportStatus?.latestStatusSnapshot?.packageTransfer?.sessionId,
+        currentSessionId,
+      ));
+  const watchPackageTransferQueued = packageTransferQueued({
+    timeline,
+    transportStatus: input.transportStatus,
+    currentSessionId,
+  });
+  const watchPackageTransferErrorSeen = packageTransferErrorSeen({
+    timeline,
+    transportStatus: input.transportStatus,
+    currentSessionId,
+  });
+  const fixtureImportSeen = timeline.some(isFixtureImportEvent);
+  const recoverySimulationSeen = timeline.some(isRecoverySimulationEvent);
+  const ackEligibleSeen = currentSessionAckEligibleSeen;
+  const currentSessionAckRecordedSeen =
+    currentRecentStates.some((state) => state.status === "ack_recorded") ||
+    (Boolean(input.transportStatus?.latestAck) &&
+      matchesSession(
+        input.transportStatus?.latestAck?.sessionId,
+        currentSessionId,
+      )) ||
+    currentPackageFlow.some((record) => Boolean(record.ackRecordedAt)) ||
+    timeline.some(
+      (event) =>
+        event.eventType === "ack_recorded" &&
+        matchesSession(event.sessionId, currentSessionId),
+    );
+  const ackRecordedSeen = currentSessionAckRecordedSeen;
   const transportErrorSeen = Boolean(input.transportStatus?.lastError);
   const publicWatchModeDisabled = WATCH_MODE_ENABLED === false;
   const stateRegressionDetected =
@@ -1198,6 +1416,9 @@ export function buildWatchModeLabDebugBundle(
     transportErrorSeen,
     transportCommitReceiptSeen,
     transportPackageReceivedSeen,
+    watchPackageTransferAttemptSeen,
+    watchPackageTransferQueued,
+    watchPackageTransferErrorSeen,
     fixtureImportSeen,
     recoverySimulationSeen,
     stateRegressionDetected,
@@ -1211,6 +1432,7 @@ export function buildWatchModeLabDebugBundle(
     transportErrorSeen,
     transportCommitReceiptSeen,
     transportPackageReceivedSeen,
+    watchPackageTransferErrorSeen,
     stateRegressionDetected,
   });
   const drillAssessment = buildDrillAssessment({
@@ -1228,6 +1450,13 @@ export function buildWatchModeLabDebugBundle(
     transportPackageReceivedSeen,
     fixtureImportSeen,
     recoverySimulationSeen,
+    currentTransportSessionId: currentSessionId,
+    currentSessionImportedPackageSeen,
+    currentSessionAckEligibleSeen,
+    currentSessionAckRecordedSeen,
+    watchPackageTransferAttemptSeen,
+    watchPackageTransferQueued,
+    watchPackageTransferErrorSeen,
     stateRegressionDetected,
     transportStatus: input.transportStatus,
     drillFailureReasons,
@@ -1300,6 +1529,13 @@ export function buildWatchModeLabDebugBundle(
         transportPackageReceivedSeen,
         fixtureImportSeen,
         recoverySimulationSeen,
+        currentTransportSessionId: currentSessionId,
+        currentSessionImportedPackageSeen,
+        currentSessionAckEligibleSeen,
+        currentSessionAckRecordedSeen,
+        watchPackageTransferAttemptSeen,
+        watchPackageTransferQueued,
+        watchPackageTransferErrorSeen,
         stateRegressionDetected,
       },
       unresolvedCount: input.unresolvedStates.length,

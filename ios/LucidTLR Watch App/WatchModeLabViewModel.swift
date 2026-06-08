@@ -360,6 +360,7 @@ final class WatchModeLabViewModel: ObservableObject {
       statusMessage = "Queued sealed synthetic package manifest and file transfer. Package remains on Watch until matching ack."
       refreshRows()
     } catch {
+      reportTransportPackageError(error)
       handle(error: error)
     }
   }
@@ -370,6 +371,7 @@ final class WatchModeLabViewModel: ObservableObject {
       statusMessage = "Retried sealed synthetic package transfer with the same session/package identity."
       refreshRows()
     } catch {
+      reportTransportPackageError(error)
       handle(error: error)
     }
   }
@@ -636,6 +638,10 @@ final class WatchModeLabViewModel: ObservableObject {
       WatchModeLabStatusRow(id: "transportStagedPlan", label: "staged plan", value: transportStatus.latestStagedPlanSessionId ?? "none"),
       WatchModeLabStatusRow(id: "transportCommit", label: "commit receipt", value: transportStatus.latestCommitReceiptSessionId ?? "not sent"),
       WatchModeLabStatusRow(id: "transportPackage", label: "package transfer", value: transportStatus.latestPackageId ?? "not transferred"),
+      WatchModeLabStatusRow(id: "transportPackageStage", label: "package stage", value: transportStatus.latestPackageTransfer?.stage ?? "none"),
+      WatchModeLabStatusRow(id: "transportPackageBytes", label: "package bytes", value: packageTransferBytesLabel(transportStatus.latestPackageTransfer)),
+      WatchModeLabStatusRow(id: "transportOutstanding", label: "WC outstanding", value: packageTransferOutstandingLabel(transportStatus.latestPackageTransfer)),
+      WatchModeLabStatusRow(id: "transportPackageError", label: "package error", value: transportStatus.latestPackageTransfer?.errorMessage ?? transportStatus.lastError ?? "none"),
       WatchModeLabStatusRow(id: "transportAck", label: "ack status", value: transportStatus.latestAckRecorded ? "matching ack recorded" : transportStatus.latestAckPackageId ?? "no ack"),
       WatchModeLabStatusRow(id: "public", label: "public Watch Mode", value: "disabled"),
     ]
@@ -700,6 +706,26 @@ final class WatchModeLabViewModel: ObservableObject {
     value ? "pass" : "fail"
   }
 
+  private func packageTransferBytesLabel(
+    _ status: WatchTransportPackageTransferStatus?
+  ) -> String {
+    guard let status else {
+      return "none"
+    }
+
+    return "manifest \(status.manifestJsonByteCount), file \(status.packageFileByteCount)"
+  }
+
+  private func packageTransferOutstandingLabel(
+    _ status: WatchTransportPackageTransferStatus?
+  ) -> String {
+    guard let status else {
+      return "none"
+    }
+
+    return "userInfo \(status.outstandingUserInfoTransferCount), file \(status.outstandingFileTransferCount)"
+  }
+
   private func preflightLabel(required: Bool, passed: Bool, available: Bool) -> String {
     if !required {
       return available ? "not required / available" : "not required"
@@ -726,6 +752,14 @@ final class WatchModeLabViewModel: ObservableObject {
   private func handle(error: Error) {
     statusMessage = "Lab error: \(String(describing: error))"
     refreshRows()
+  }
+
+  private func reportTransportPackageError(_ error: Error) {
+    try? transportCoordinator.sendTransportError(
+      errorCode: "watch_package_transfer_failed_before_queue",
+      errorMessage: String(describing: error),
+      createdAt: Date()
+    )
   }
 }
 #endif

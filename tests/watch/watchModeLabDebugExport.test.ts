@@ -63,9 +63,20 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("transportPackageReceivedSeen");
     expect(helper).toContain("fixtureImportSeen");
     expect(helper).toContain("recoverySimulationSeen");
+    expect(helper).toContain("currentTransportSessionId");
+    expect(helper).toContain("currentSessionImportedPackageSeen");
+    expect(helper).toContain("currentSessionAckEligibleSeen");
+    expect(helper).toContain("currentSessionAckRecordedSeen");
+    expect(helper).toContain("watchPackageTransferAttemptSeen");
+    expect(helper).toContain("watchPackageTransferQueued");
+    expect(helper).toContain("watchPackageTransferErrorSeen");
     expect(helper).toContain("terminalThenUnresolvedStateSeen");
     expect(helper).toContain("isTransportCommitReceiptEvent");
     expect(helper).toContain("isTransportPackageReceivedEvent");
+    expect(helper).toContain("isWatchPackageTransferStatusEvent");
+    expect(helper).toContain("Watch commit receipt arrived, but no Watch package transfer attempt/status was observed.");
+    expect(helper).toContain("Watch package transfer diagnostics reported an error.");
+    expect(helper).toContain("sessionId ?? \"no-session\"");
   });
 
   it("exports a bounded postmortem timeline, transitions, messages, and package flow", () => {
@@ -140,6 +151,10 @@ describe("Watch Mode Lab debug export", () => {
     expect(screen).toContain("sync-state");
     expect(screen).toContain("transitions");
     expect(screen).toContain("package/import/ack summaries");
+    expect(screen).toContain("package transfer stage");
+    expect(screen).toContain("package transfer bytes");
+    expect(screen).toContain("package transfer outstanding");
+    expect(screen).toContain("package transfer error");
     expect(screen).toContain("FileSystem.writeAsStringAsync");
     expect(screen).toContain("Share.share");
     expect(screen).toContain('import("expo-clipboard")');

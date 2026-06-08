@@ -418,6 +418,46 @@ export async function appendWatchModeLabTransportStatusSnapshot(input: {
       deliveryMethod: "transferUserInfo",
       metadata: {
         watchState: status.latestStatusSnapshot.watchState,
+        packageTransfer: status.latestStatusSnapshot.packageTransfer,
+      },
+    });
+  }
+
+  const packageTransfer =
+    status.latestPackageTransfer ?? status.latestStatusSnapshot?.packageTransfer;
+
+  if (packageTransfer) {
+    await appendWatchModeLabDebugEvent({
+      db: input.db,
+      timestamp:
+        packageTransfer.finishedAt ??
+        packageTransfer.queuedAt ??
+        packageTransfer.startedAt ??
+        timestamp,
+      source: "watch_lab",
+      eventType: "watch_package_transfer_status",
+      sessionId: packageTransfer.sessionId,
+      planHash: packageTransfer.planHash,
+      packageId: packageTransfer.packageId,
+      packageHash: packageTransfer.packageHash,
+      success: !packageTransfer.errorMessage,
+      errorMessage: packageTransfer.errorMessage,
+      direction: "inbound",
+      transportMessageType: "lucidtlr.watch.status.snapshot",
+      deliveryMethod: "transferUserInfo",
+      metadata: {
+        attemptId: packageTransfer.attemptId,
+        stage: packageTransfer.stage,
+        startedAt: packageTransfer.startedAt,
+        queuedAt: packageTransfer.queuedAt,
+        finishedAt: packageTransfer.finishedAt,
+        manifestJsonByteCount: packageTransfer.manifestJsonByteCount,
+        packageFileByteCount: packageTransfer.packageFileByteCount,
+        fileExists: packageTransfer.fileExists,
+        outstandingUserInfoTransferCount:
+          packageTransfer.outstandingUserInfoTransferCount,
+        outstandingFileTransferCount:
+          packageTransfer.outstandingFileTransferCount,
       },
     });
   }

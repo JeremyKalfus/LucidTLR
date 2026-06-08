@@ -326,7 +326,7 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
 
   private func recordStatusSnapshot(_ payload: [String: Any]) {
     mutateStatus { status in
-      status["latestStatusSnapshot"] = [
+      var snapshot: [String: Any] = [
         "sessionId": self.stringValue(payload["sessionId"]) ?? "",
         "planHash": self.stringValue(payload["planHash"]) ?? "",
         "watchState": self.stringValue(payload["watchState"]) ?? "",
@@ -334,6 +334,11 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
         "packageHash": self.stringValue(payload["packageHash"]) ?? "",
         "createdAt": self.stringValue(payload["createdAt"]) ?? "",
       ]
+      if let packageTransfer = payload["packageTransfer"] as? [String: Any] {
+        snapshot["packageTransfer"] = self.propertyListDictionary(packageTransfer)
+        status["latestPackageTransfer"] = self.propertyListDictionary(packageTransfer)
+      }
+      status["latestStatusSnapshot"] = snapshot
     }
   }
 

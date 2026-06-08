@@ -683,6 +683,52 @@ export async function applyWatchTransportReceiptSnapshots(input: {
     }
   }
 
+  if (
+    state &&
+    status.latestStatusSnapshot?.packageId &&
+    status.latestStatusSnapshot.packageHash &&
+    !status.latestPackageManifest
+  ) {
+    const previous = state;
+
+    try {
+      state = applyWatchSealedManifest(state, {
+        sessionId: status.latestStatusSnapshot.sessionId ?? state.sessionId,
+        planHash: status.latestStatusSnapshot.planHash ?? state.planHash,
+        packageId: status.latestStatusSnapshot.packageId,
+        packageHash: status.latestStatusSnapshot.packageHash,
+        sealedAt: status.latestStatusSnapshot.createdAt ?? new Date().toISOString(),
+      });
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        timestamp: status.latestStatusSnapshot.createdAt,
+        eventApplied: "watch_status_sealed_package",
+        previousState: previous,
+        nextState: state,
+        metadata: {
+          transportLab: true,
+          source: "status_snapshot",
+        },
+      });
+    } catch (error) {
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        eventApplied: "watch_status_sealed_package",
+        previousState: previous,
+        rejected: true,
+        rejectionReason:
+          error instanceof Error
+            ? error.message
+            : "Watch status sealed package rejected.",
+        metadata: {
+          transportLab: true,
+          packageHashCheck: "rejected",
+        },
+      });
+      throw error;
+    }
+  }
+
   if (state && status.latestPackageManifest) {
     const previous = state;
 
