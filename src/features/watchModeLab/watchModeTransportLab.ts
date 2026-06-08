@@ -593,10 +593,16 @@ export async function applyWatchTransportReceiptSnapshots(input: {
     db: input.db,
     status,
   });
-  let state = status.latestCommitReceipt?.sessionId
+  const sessionId =
+    status.latestCommitReceipt?.sessionId ??
+    status.latestPackageManifest?.sessionId ??
+    status.latestReceivedPackage?.sessionId ??
+    status.latestAck?.sessionId ??
+    status.latestStatusSnapshot?.sessionId;
+  let state = sessionId
     ? await loadWatchSessionSyncStateBySessionId({
         db: input.db,
-        sessionId: status.latestCommitReceipt.sessionId,
+        sessionId,
       })
     : null;
 
@@ -706,6 +712,43 @@ export async function applyWatchTransportReceiptSnapshots(input: {
         rejected: true,
         rejectionReason:
           error instanceof Error ? error.message : "Watch sealed manifest rejected.",
+        metadata: {
+          transportLab: true,
+          packageHashCheck: "rejected",
+        },
+      });
+      throw error;
+    }
+  }
+
+  if (state && status.latestAck) {
+    const previous = state;
+
+    try {
+      state = applyAckRecorded(state, {
+        packageId: status.latestAck.packageId,
+        packageHash: status.latestAck.packageHash,
+        ackRecordedAt: status.latestAck.ackedAt ?? new Date().toISOString(),
+      });
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        timestamp: status.latestAck.ackedAt,
+        eventApplied: "ack_recorded",
+        previousState: previous,
+        nextState: state,
+        metadata: {
+          transportLab: true,
+          observedWatchAck: true,
+        },
+      });
+    } catch (error) {
+      await appendWatchModeLabStateTransition({
+        db: input.db,
+        eventApplied: "ack_recorded",
+        previousState: previous,
+        rejected: true,
+        rejectionReason:
+          error instanceof Error ? error.message : "Watch ack rejected.",
         metadata: {
           transportLab: true,
           packageHashCheck: "rejected",

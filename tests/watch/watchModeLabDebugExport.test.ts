@@ -59,6 +59,13 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("stateRegressionDetected");
     expect(helper).toContain("finalUnresolvedStateBlocksStart");
     expect(helper).toContain("mismatchedHashDetected");
+    expect(helper).toContain("transportCommitReceiptSeen");
+    expect(helper).toContain("transportPackageReceivedSeen");
+    expect(helper).toContain("fixtureImportSeen");
+    expect(helper).toContain("recoverySimulationSeen");
+    expect(helper).toContain("terminalThenUnresolvedStateSeen");
+    expect(helper).toContain("isTransportCommitReceiptEvent");
+    expect(helper).toContain("isTransportPackageReceivedEvent");
   });
 
   it("exports a bounded postmortem timeline, transitions, messages, and package flow", () => {
@@ -123,6 +130,12 @@ describe("Watch Mode Lab debug export", () => {
     expect(screen).toContain("phone_lab_opened");
     expect(screen).toContain("Mark phone reload recovery tested");
     expect(screen).toContain("phone_reload_recovery_tested");
+    expect(screen).toContain("Run Transport Drill");
+    expect(screen).toContain("guided_transport_drill_started");
+    expect(screen).toContain("guided_transport_drill_step_completed");
+    expect(screen).toContain("Mark current guided step complete");
+    expect(screen).toContain("do not prove");
+    expect(screen).toContain("WatchConnectivity");
     expect(screen).toContain("Includes lab action timeline");
     expect(screen).toContain("sync-state");
     expect(screen).toContain("transitions");

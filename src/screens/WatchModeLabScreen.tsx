@@ -105,6 +105,18 @@ function recoveryActionLabel(action: WatchModeLabRecoveryAction): string {
   }
 }
 
+const GUIDED_TRANSPORT_DRILL_STEPS = [
+  "Activate transport on phone and Watch.",
+  "Stage synthetic TLR plan from phone.",
+  "Commit staged plan on Watch and send receipt.",
+  "Force-quit/reopen phone, then reload recovery from DB.",
+  "Seal and transfer synthetic package from Watch.",
+  "Import latest received synthetic package on phone.",
+  "Send ack and confirm Watch records it.",
+  "Retry package transfer/import/ack to check idempotency.",
+  "Export Watch Lab Debug Bundle.",
+] as const;
+
 export function WatchModeLabScreen() {
   if (!isWatchModeLabAvailable()) {
     return <Redirect href="/" />;
@@ -130,6 +142,8 @@ export function WatchModeLabScreen() {
     "Internal TestFlight Lab -- synthetic / QA only. Public Watch Mode remains disabled.",
   );
   const [actionLog, setActionLog] = React.useState<WatchModeLabActionLogEntry[]>([]);
+  const [guidedDrillActive, setGuidedDrillActive] = React.useState(false);
+  const [guidedStepIndex, setGuidedStepIndex] = React.useState(0);
   const labOpenedRecordedRef = React.useRef(false);
 
   const reloadRecoveryState = React.useCallback(async () => {
@@ -234,6 +248,47 @@ export function WatchModeLabScreen() {
       .catch(() => {
         // Keep lab actions usable even if debug-event persistence fails.
       });
+  }
+
+  function startGuidedTransportDrill() {
+    setGuidedDrillActive(true);
+    setGuidedStepIndex(0);
+    recordLabAction({
+      action: "guided_transport_drill_started",
+      result: "ok",
+      message:
+        "Started guided synthetic WatchConnectivity transport drill. Fixture import and recovery simulation buttons are separate QA tools.",
+      details: {
+        stepCount: GUIDED_TRANSPORT_DRILL_STEPS.length,
+      },
+    });
+  }
+
+  function markGuidedStepComplete() {
+    const step = GUIDED_TRANSPORT_DRILL_STEPS[guidedStepIndex];
+    const nextIndex = Math.min(
+      guidedStepIndex + 1,
+      GUIDED_TRANSPORT_DRILL_STEPS.length - 1,
+    );
+    const completed = guidedStepIndex >= GUIDED_TRANSPORT_DRILL_STEPS.length - 1;
+
+    setGuidedDrillActive(!completed);
+    setGuidedStepIndex(nextIndex);
+    recordLabAction({
+      action: completed
+        ? "guided_transport_drill_completed"
+        : "guided_transport_drill_step_completed",
+      result: "ok",
+      message: completed
+        ? "Completed guided transport drill checklist. Export the bundle for analysis."
+        : `Completed guided drill step ${guidedStepIndex + 1}; next: ${GUIDED_TRANSPORT_DRILL_STEPS[nextIndex]}`,
+      details: {
+        completedStepNumber: guidedStepIndex + 1,
+        completedStep: step,
+        nextStepNumber: completed ? undefined : nextIndex + 1,
+        nextStep: completed ? undefined : GUIDED_TRANSPORT_DRILL_STEPS[nextIndex],
+      },
+    });
   }
 
   async function runTransportAction(
@@ -551,6 +606,54 @@ export function WatchModeLabScreen() {
           overnight Watch session, does not use real Watch sensors or
           live Watch cue timing, keeps data local, and does not upload anything.
         </LabNote>
+      </Card>
+
+      <Card>
+        <InfoRow label="guided drill" value="synthetic transport checklist" />
+        <InfoRow
+          label="current step"
+          value={
+            guidedDrillActive
+              ? `${guidedStepIndex + 1}/${GUIDED_TRANSPORT_DRILL_STEPS.length}`
+              : "not started"
+          }
+        />
+        <LabNote>
+          Run Transport Drill keeps the TestFlight path ordered. Use the
+          Transport section and Watch lab controls for proof; fixture import and
+          recovery simulation controls are separate QA checks and do not prove
+          WatchConnectivity.
+        </LabNote>
+        <View style={{ gap: 6 }}>
+          {GUIDED_TRANSPORT_DRILL_STEPS.map((step, index) => (
+            <Text
+              key={step}
+              selectable
+              style={{
+                color:
+                  guidedDrillActive && index === guidedStepIndex
+                    ? colors.textPrimary
+                    : colors.textSecondary,
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+              }}
+            >
+              {`${index + 1}. ${step}`}
+            </Text>
+          ))}
+        </View>
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={Watch}
+          label={guidedDrillActive ? "Restart Transport Drill" : "Run Transport Drill"}
+          onPress={startGuidedTransportDrill}
+        />
+        <PrimaryPillButton
+          disabled={busyLabel !== null || !guidedDrillActive}
+          icon={CheckCircle2}
+          label="Mark current guided step complete"
+          onPress={markGuidedStepComplete}
+        />
       </Card>
 
       <Card>
@@ -907,7 +1010,8 @@ export function WatchModeLabScreen() {
         <LabNote>
           Recovery state -- synthetic only. These actions model durable mailbox
           state after app reload; they do not start transport, sensors, haptics,
-          audio, or public Watch Mode.
+          audio, or public Watch Mode. They are not part of the guided
+          transport proof path.
         </LabNote>
         <PrimaryPillButton
           disabled={busyLabel !== null}

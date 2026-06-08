@@ -192,6 +192,8 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(labTransport).toContain("applyWatchSealedManifest");
     expect(labTransport).toContain("applyPhoneImportSuccess");
     expect(labTransport).toContain("applyAckRecorded");
+    expect(labTransport).toContain("status.latestAck");
+    expect(labTransport).toContain("observedWatchAck");
     expect(labTransport).toContain("findUnresolvedConflictingActiveWatchSyncState");
   });
 

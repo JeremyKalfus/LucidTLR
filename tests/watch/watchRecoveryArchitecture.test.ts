@@ -193,6 +193,16 @@ describe("Watch Mode v3 recovery and internal lab architecture", () => {
     expect(lab).toContain("applyPhoneImportSuccess");
   });
 
+  it("preserves terminal fixture sync state during lab recovery simulations", () => {
+    const lab = readSource("src/features/watchModeLab/watchModeLab.ts");
+
+    expect(lab).toContain("loadWatchSessionSyncStateBySessionId");
+    expect(lab).toContain("loadSyntheticFixtureSyncState");
+    expect(lab).toContain("fixtureState ??");
+    expect(lab).toContain("matching ??");
+    expect(lab).toContain("sessionId: input.sealedPackage.manifest.sessionId");
+  });
+
   it("documents internal lab wording on phone and Watch", () => {
     const phoneLab = readSource("src/screens/WatchModeLabScreen.tsx");
     const watchLab = readSource("ios/LucidTLR Watch App/WatchModeLabView.swift");

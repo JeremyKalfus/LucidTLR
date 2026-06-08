@@ -26,6 +26,7 @@ import {
   applyUserAbandonLocalOnly,
   computeWatchStartupRecoveryState,
   createDraftWatchSessionSyncState,
+  loadWatchSessionSyncStateBySessionId,
   loadUnresolvedWatchSessionSyncStates,
   saveWatchSessionSyncState,
   type WatchSessionSyncState,
@@ -314,6 +315,9 @@ export async function applyWatchModeLabRecoveryAction(input: {
     participantId: input.participantId,
   });
   const existing = existingStates[0] ?? null;
+  const fixtureState = await loadSyntheticFixtureSyncState({
+    db: input.db,
+  });
 
   if (input.action === "reload") {
     await appendWatchModeLabDebugEvent({
@@ -369,7 +373,10 @@ export async function applyWatchModeLabRecoveryAction(input: {
     };
   }
 
-  const base = existing ?? syntheticBaseSyncState(input.participantId, now);
+  const base =
+    existing ??
+    fixtureState ??
+    syntheticBaseSyncState(input.participantId, now);
   const next = reduceSyntheticRecoveryAction(base, input.action, now);
 
   await saveWatchSessionSyncState({ db: input.db, state: next });
@@ -436,6 +443,17 @@ function syntheticBaseSyncState(
 
   return applyPlanStaged(applyPlanBuilt(draft, { builtAt: createdAt }), {
     stagedAt: createdAt,
+  });
+}
+
+async function loadSyntheticFixtureSyncState(input: {
+  db: LocalDb;
+}): Promise<WatchSessionSyncState | null> {
+  const sealedPackage = buildSyntheticTlrWatchPackageFixture();
+
+  return loadWatchSessionSyncStateBySessionId({
+    db: input.db,
+    sessionId: sealedPackage.manifest.sessionId,
   });
 }
 
@@ -511,8 +529,14 @@ async function markSyntheticImportInRecoveryLedger(input: {
     unresolved.find(
       (state) => state.sessionId === input.sealedPackage.manifest.sessionId,
     ) ?? null;
+  const existing =
+    matching ??
+    (await loadWatchSessionSyncStateBySessionId({
+      db: input.db,
+      sessionId: input.sealedPackage.manifest.sessionId,
+    }));
   const base =
-    matching ?? syntheticBaseSyncState(input.participantId, input.importedAt);
+    existing ?? syntheticBaseSyncState(input.participantId, input.importedAt);
   const sealed = applyWatchSealedManifest(base, {
     sessionId: base.sessionId,
     planHash: base.planHash,

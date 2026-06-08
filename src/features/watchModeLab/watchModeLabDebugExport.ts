@@ -74,6 +74,8 @@ export interface WatchModeLabTimelineEvent {
 export interface WatchModeLabStateTransition {
   timestamp: string;
   sessionId?: string;
+  packageId?: string;
+  packageHash?: string;
   eventApplied: string;
   previousStatus?: string;
   nextStatus?: string;
@@ -133,12 +135,16 @@ export interface WatchModeLabDrillAssessment {
   transportActivated: boolean;
   planStagedSeen: boolean;
   commitReceiptSeen: boolean;
+  transportCommitReceiptSeen: boolean;
   phoneReloadRecoverySeen: boolean;
   packageReceivedSeen: boolean;
+  transportPackageReceivedSeen: boolean;
   packageImportedSeen: boolean;
+  fixtureImportSeen: boolean;
   ackEligibleSeen: boolean;
   ackRecordedSeen: boolean;
   duplicateRetrySeen: boolean;
+  recoverySimulationSeen: boolean;
   stateRegressionDetected: boolean;
   mismatchedHashDetected: boolean;
   finalUnresolvedStateBlocksStart: boolean;
@@ -207,6 +213,11 @@ export interface WatchModeLabDebugBundle {
       ackEligibleSeen: boolean;
       ackRecordedSeen: boolean;
       transportErrorSeen: boolean;
+      transportCommitReceiptSeen: boolean;
+      transportPackageReceivedSeen: boolean;
+      fixtureImportSeen: boolean;
+      recoverySimulationSeen: boolean;
+      stateRegressionDetected: boolean;
     };
     unresolvedCount: number;
     ackRecordedSeen: boolean;
@@ -480,8 +491,26 @@ function buildTimeline(input: {
     ...input.debugEvents.map(debugEventToTimelineEvent),
     ...(input.actionLog ?? []).map(actionLogEvent),
   ].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const uniqueEvents = new Map<string, WatchModeLabTimelineEvent>();
 
-  return bounded(events, WATCH_MODE_LAB_DEBUG_EVENT_LIMIT);
+  for (const event of events) {
+    const key = [
+      event.timestamp,
+      event.source,
+      event.eventType,
+      event.sessionId ?? "",
+      event.packageId ?? "",
+      event.previousStatus ?? "",
+      event.nextStatus ?? "",
+      event.success ? "ok" : "error",
+    ].join("|");
+
+    if (!uniqueEvents.has(key)) {
+      uniqueEvents.set(key, event);
+    }
+  }
+
+  return bounded(Array.from(uniqueEvents.values()), WATCH_MODE_LAB_DEBUG_EVENT_LIMIT);
 }
 
 function metadataString(
@@ -513,6 +542,8 @@ function buildStateTransitions(
       .map((event) => ({
         timestamp: event.timestamp,
         sessionId: event.sessionId,
+        packageId: event.packageId,
+        packageHash: event.packageHash,
         eventApplied:
           metadataString(event.metadata, "eventApplied") ?? event.eventType,
         previousStatus: event.previousStatus,
@@ -785,6 +816,119 @@ function hasRegressedAckState(state: WatchSessionSyncState): boolean {
   );
 }
 
+function isTerminalExportStatus(status?: string): boolean {
+  return (
+    status === "ack_recorded" ||
+    status === "completed" ||
+    status === "abandoned_local_only"
+  );
+}
+
+function isUnresolvedExportStatus(status?: string): boolean {
+  return Boolean(
+    knownStatus(status) &&
+      status !== "ack_recorded" &&
+      status !== "completed" &&
+      status !== "abandoned_local_only",
+  );
+}
+
+function transitionPackageKey(input: {
+  sessionId?: string;
+  packageId?: string;
+  packageHash?: string;
+}): string | null {
+  if (!input.sessionId) {
+    return null;
+  }
+
+  return [
+    input.sessionId,
+    input.packageId ?? input.packageHash ?? "no-package",
+  ].join("|");
+}
+
+function statePackageKey(state: WatchSessionSyncState): string {
+  return [
+    state.sessionId,
+    state.packageId ?? state.packageHash ?? "no-package",
+  ].join("|");
+}
+
+function terminalThenUnresolvedStateSeen(input: {
+  stateTransitions: WatchModeLabStateTransition[];
+  unresolvedStates: WatchSessionSyncState[];
+}): boolean {
+  const terminalKeys = new Set<string>();
+  const transitions = [...input.stateTransitions].sort((a, b) =>
+    a.timestamp.localeCompare(b.timestamp),
+  );
+
+  for (const transition of transitions) {
+    const key = transitionPackageKey(transition);
+
+    if (!key || transition.rejected) {
+      continue;
+    }
+
+    if (isTerminalExportStatus(transition.nextStatus)) {
+      terminalKeys.add(key);
+      continue;
+    }
+
+    if (
+      terminalKeys.has(key) &&
+      isUnresolvedExportStatus(transition.nextStatus)
+    ) {
+      return true;
+    }
+  }
+
+  return input.unresolvedStates.some((state) =>
+    terminalKeys.has(statePackageKey(state)),
+  );
+}
+
+function isTransportCommitReceiptEvent(
+  event: WatchModeLabTimelineEvent,
+): boolean {
+  return (
+    event.source === "transport" &&
+    event.direction === "inbound" &&
+    (event.eventType === "watch_commit_receipt_received" ||
+      event.transportMessageType === "lucidtlr.watch.plan.commit.receipt")
+  );
+}
+
+function isTransportPackageReceivedEvent(
+  event: WatchModeLabTimelineEvent,
+): boolean {
+  return (
+    event.source === "transport" &&
+    event.direction === "inbound" &&
+    (event.eventType === "sealed_manifest_received" ||
+      event.eventType === "package_file_received" ||
+      event.transportMessageType === "lucidtlr.watch.package.manifest" ||
+      event.transportMessageType === "lucidtlr.watch.package.file")
+  );
+}
+
+function isFixtureImportEvent(event: WatchModeLabTimelineEvent): boolean {
+  return (
+    metadataBoolean(event.metadata, "syntheticFixture") ||
+    event.eventType.startsWith("import_fixture:") ||
+    event.eventType.startsWith("reimport_fixture:")
+  );
+}
+
+function isRecoverySimulationEvent(event: WatchModeLabTimelineEvent): boolean {
+  return (
+    event.eventType.startsWith("recovery:") ||
+    event.eventType === "phone_reload_recovery_simulated" ||
+    metadataBoolean(event.metadata, "syntheticRecoveryAction")
+  );
+}
+
 function failureReasons(input: {
   publicWatchModeDisabled: boolean;
   unresolvedStates: WatchSessionSyncState[];
@@ -792,6 +936,11 @@ function failureReasons(input: {
   ackEligibleSeen: boolean;
   ackRecordedSeen: boolean;
   transportErrorSeen: boolean;
+  transportCommitReceiptSeen: boolean;
+  transportPackageReceivedSeen: boolean;
+  fixtureImportSeen: boolean;
+  recoverySimulationSeen: boolean;
+  stateRegressionDetected: boolean;
 }): string[] {
   const reasons: string[] = [];
 
@@ -801,6 +950,20 @@ function failureReasons(input: {
 
   if (input.transportErrorSeen) {
     reasons.push("Transport error was reported.");
+  }
+
+  if (input.stateRegressionDetected) {
+    reasons.push(
+      "A terminal ack/completed state was followed by an unresolved state for the same Watch package/session.",
+    );
+  }
+
+  if (!input.transportCommitReceiptSeen) {
+    reasons.push("No real WatchConnectivity commit receipt was observed.");
+  }
+
+  if (!input.transportPackageReceivedSeen) {
+    reasons.push("No real WatchConnectivity package manifest/file receipt was observed.");
   }
 
   if (!input.importedPackagePresent) {
@@ -817,6 +980,24 @@ function failureReasons(input: {
 
   if (input.unresolvedStates.length > 0) {
     reasons.push("Unresolved Watch sync state remains on the phone ledger.");
+  }
+
+  if (
+    input.fixtureImportSeen &&
+    (!input.transportCommitReceiptSeen || !input.transportPackageReceivedSeen)
+  ) {
+    reasons.push(
+      "Fixture import tests were observed, but they do not prove the real WatchConnectivity loop.",
+    );
+  }
+
+  if (
+    input.recoverySimulationSeen &&
+    (!input.transportCommitReceiptSeen || !input.transportPackageReceivedSeen)
+  ) {
+    reasons.push(
+      "Recovery simulation controls were used, but they do not prove real WatchConnectivity transport.",
+    );
   }
 
   for (const state of input.unresolvedStates) {
@@ -843,6 +1024,9 @@ function finalDrillStatus(input: {
   ackEligibleSeen: boolean;
   ackRecordedSeen: boolean;
   transportErrorSeen: boolean;
+  transportCommitReceiptSeen: boolean;
+  transportPackageReceivedSeen: boolean;
+  stateRegressionDetected: boolean;
 }): WatchModeLabFinalDrillStatus {
   const regressedStateSeen = input.unresolvedStates.some(
     (state) => hasRegressedImportedState(state) || hasRegressedAckState(state),
@@ -850,6 +1034,7 @@ function finalDrillStatus(input: {
   const hardFailureSeen =
     !input.publicWatchModeDisabled ||
     input.transportErrorSeen ||
+    input.stateRegressionDetected ||
     regressedStateSeen ||
     (input.ackRecordedSeen && input.unresolvedStates.length > 0);
 
@@ -862,7 +1047,9 @@ function finalDrillStatus(input: {
     input.unresolvedStates.length === 0 &&
     input.importedPackagePresent &&
     input.ackEligibleSeen &&
-    input.ackRecordedSeen
+    input.ackRecordedSeen &&
+    input.transportCommitReceiptSeen &&
+    input.transportPackageReceivedSeen
   ) {
     return "pass";
   }
@@ -881,6 +1068,11 @@ function buildDrillAssessment(input: {
   ackEligibleSeen: boolean;
   ackRecordedSeen: boolean;
   transportErrorSeen: boolean;
+  transportCommitReceiptSeen: boolean;
+  transportPackageReceivedSeen: boolean;
+  fixtureImportSeen: boolean;
+  recoverySimulationSeen: boolean;
+  stateRegressionDetected: boolean;
   transportStatus?: NativeWatchTransportStatus | null;
   drillFailureReasons: string[];
   drillStatus: WatchModeLabFinalDrillStatus;
@@ -896,11 +1088,6 @@ function buildDrillAssessment(input: {
       metadataBoolean(event.metadata, "duplicateImportSeen") ||
       metadataString(event.metadata, "importStatus") === "already_imported",
   );
-  const stateRegressionDetected =
-    input.stateTransitions.some(transitionRegressed) ||
-    input.unresolvedStates.some(
-      (state) => hasRegressedImportedState(state) || hasRegressedAckState(state),
-    );
 
   return {
     finalDrillStatus: input.drillStatus,
@@ -919,10 +1106,8 @@ function buildDrillAssessment(input: {
           WATCH_SESSION_SYNC_STATUS_PRECEDENCE[state.status] >=
           WATCH_SESSION_SYNC_STATUS_PRECEDENCE.plan_staged,
       ),
-    commitReceiptSeen:
-      eventTypes.has("watch_commit_receipt_received") ||
-      transitionEvents.has("watch_commit_receipt") ||
-      Boolean(input.transportStatus?.latestCommitReceipt),
+    commitReceiptSeen: input.transportCommitReceiptSeen,
+    transportCommitReceiptSeen: input.transportCommitReceiptSeen,
     phoneReloadRecoverySeen:
       eventTypes.has("phone_reload_recovery_tested") ||
       eventTypes.has("phone_reload_recovery_simulated") ||
@@ -930,15 +1115,15 @@ function buildDrillAssessment(input: {
       input.timeline.some((event) =>
         event.eventType.toLowerCase().includes("reload"),
       ),
-    packageReceivedSeen:
-      eventTypes.has("sealed_manifest_received") ||
-      eventTypes.has("package_file_received") ||
-      Boolean(input.transportStatus?.latestReceivedPackage),
+    packageReceivedSeen: input.transportPackageReceivedSeen,
+    transportPackageReceivedSeen: input.transportPackageReceivedSeen,
     packageImportedSeen: input.importedPackagePresent,
+    fixtureImportSeen: input.fixtureImportSeen,
     ackEligibleSeen: input.ackEligibleSeen,
     ackRecordedSeen: input.ackRecordedSeen,
     duplicateRetrySeen,
-    stateRegressionDetected,
+    recoverySimulationSeen: input.recoverySimulationSeen,
+    stateRegressionDetected: input.stateRegressionDetected,
     mismatchedHashDetected: hashMismatchSeen({
       timeline: input.timeline,
       stateTransitions: input.stateTransitions,
@@ -970,10 +1155,21 @@ export function buildWatchModeLabDebugBundle(
       record.importStatus === "imported" ||
       record.importStatus === "already_imported",
   );
+  const transportCommitReceiptSeen =
+    timeline.some(isTransportCommitReceiptEvent) ||
+    Boolean(input.transportStatus?.latestCommitReceipt);
+  const transportPackageReceivedSeen =
+    timeline.some(isTransportPackageReceivedEvent) ||
+    Boolean(input.transportStatus?.latestReceivedPackage) ||
+    Boolean(input.transportStatus?.latestPackageManifest);
+  const fixtureImportSeen = timeline.some(isFixtureImportEvent);
+  const recoverySimulationSeen = timeline.some(isRecoverySimulationEvent);
   const ackEligibleSeen =
     input.latestImportSummary?.ackEligible === true ||
     input.recentStates.some(
-      (state) => state.status === "phone_imported_ack_eligible",
+      (state) =>
+        state.status === "phone_imported_ack_eligible" ||
+        state.status === "ack_recorded",
     ) ||
     packageFlow.some((record) => Boolean(record.ackEligibleAt)) ||
     timeline.some((event) => event.eventType === "ack_became_eligible");
@@ -984,6 +1180,15 @@ export function buildWatchModeLabDebugBundle(
     timeline.some((event) => event.eventType === "ack_recorded");
   const transportErrorSeen = Boolean(input.transportStatus?.lastError);
   const publicWatchModeDisabled = WATCH_MODE_ENABLED === false;
+  const stateRegressionDetected =
+    stateTransitions.some(transitionRegressed) ||
+    terminalThenUnresolvedStateSeen({
+      stateTransitions,
+      unresolvedStates: input.unresolvedStates,
+    }) ||
+    input.unresolvedStates.some(
+      (state) => hasRegressedImportedState(state) || hasRegressedAckState(state),
+    );
   const drillFailureReasons = failureReasons({
     publicWatchModeDisabled,
     unresolvedStates: input.unresolvedStates,
@@ -991,6 +1196,11 @@ export function buildWatchModeLabDebugBundle(
     ackEligibleSeen,
     ackRecordedSeen,
     transportErrorSeen,
+    transportCommitReceiptSeen,
+    transportPackageReceivedSeen,
+    fixtureImportSeen,
+    recoverySimulationSeen,
+    stateRegressionDetected,
   });
   const drillStatus = finalDrillStatus({
     publicWatchModeDisabled,
@@ -999,6 +1209,9 @@ export function buildWatchModeLabDebugBundle(
     ackEligibleSeen,
     ackRecordedSeen,
     transportErrorSeen,
+    transportCommitReceiptSeen,
+    transportPackageReceivedSeen,
+    stateRegressionDetected,
   });
   const drillAssessment = buildDrillAssessment({
     buildInfo: input.buildInfo,
@@ -1011,6 +1224,11 @@ export function buildWatchModeLabDebugBundle(
     ackEligibleSeen,
     ackRecordedSeen,
     transportErrorSeen,
+    transportCommitReceiptSeen,
+    transportPackageReceivedSeen,
+    fixtureImportSeen,
+    recoverySimulationSeen,
+    stateRegressionDetected,
     transportStatus: input.transportStatus,
     drillFailureReasons,
     drillStatus,
@@ -1078,6 +1296,11 @@ export function buildWatchModeLabDebugBundle(
         ackEligibleSeen,
         ackRecordedSeen,
         transportErrorSeen,
+        transportCommitReceiptSeen,
+        transportPackageReceivedSeen,
+        fixtureImportSeen,
+        recoverySimulationSeen,
+        stateRegressionDetected,
       },
       unresolvedCount: input.unresolvedStates.length,
       ackRecordedSeen,
