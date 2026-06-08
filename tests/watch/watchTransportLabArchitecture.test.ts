@@ -157,6 +157,27 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(combined).toContain("packageFileByteCount");
   });
 
+  it("persists received package files before queued phone status updates", () => {
+    const phoneBridge = readSource("ios/LucidTLR/LucidTLRWatchTransport.swift");
+    const receiveMethodIndex = phoneBridge.indexOf(
+      "func session(_ session: WCSession, didReceive file: WCSessionFile)",
+    );
+    const immediatePersistIndex = phoneBridge.indexOf(
+      "let persistedFile = attemptPersistReceivedPackageFile(file)",
+      receiveMethodIndex,
+    );
+    const queuedStatusIndex = phoneBridge.indexOf("queue.async", receiveMethodIndex);
+
+    expect(receiveMethodIndex).toBeGreaterThan(-1);
+    expect(immediatePersistIndex).toBeGreaterThan(receiveMethodIndex);
+    expect(immediatePersistIndex).toBeLessThan(queuedStatusIndex);
+    expect(phoneBridge).toContain("attemptPersistReceivedPackageFile");
+    expect(phoneBridge).toContain("sourceExistsBeforeCopy");
+    expect(phoneBridge).toContain("fileByteCount");
+    expect(phoneBridge).toContain("latestPackageFile");
+    expect(phoneBridge).toContain("Package file receive failed before queued status update");
+  });
+
   it("labels phone and Watch transport surfaces as synthetic/internal", () => {
     const phoneLab = readSource("src/screens/WatchModeLabScreen.tsx");
     const watchLab = readSource("ios/LucidTLR Watch App/WatchModeLabView.swift");

@@ -4,6 +4,21 @@ import WatchConnectivity
 
 @objc(LucidTLRWatchTransport)
 final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
+  private struct ReceivedPackageFile {
+    let metadata: [String: Any]
+    let targetPath: String
+    let receivedAt: String
+    let fileByteCount: Int
+    let sourceExistsBeforeCopy: Bool
+  }
+
+  private struct PackageFileReceiveFailure: Error {
+    let metadata: [String: Any]
+    let receivedAt: String
+    let sourceExistsBeforeCopy: Bool
+    let errorMessage: String
+  }
+
   private let queue = DispatchQueue(label: "com.lucidtlr.watch-transport-lab")
   private let defaults = UserDefaults.standard
   private let statusKey = "lucidtlr.watchTransportLab.status.v1"
@@ -208,24 +223,24 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
   }
 
   func session(_ session: WCSession, didReceive file: WCSessionFile) {
+    let persistedFile = attemptPersistReceivedPackageFile(file)
+
     queue.async {
-      do {
-        let metadata = self.propertyListDictionary(file.metadata ?? [:])
-        let targetURL = try self.receivedPackageURL(
-          packageId: self.stringValue(metadata["packageId"]) ?? "unknown-package"
-        )
-        if FileManager.default.fileExists(atPath: targetURL.path) {
-          try FileManager.default.removeItem(at: targetURL)
-        }
-        try FileManager.default.copyItem(at: file.fileURL, to: targetURL)
-        self.defaults.set(targetURL.path, forKey: self.packageFilePathKey)
-        self.recordPackageFile(metadata, receivedAt: self.nowString())
+      switch persistedFile {
+      case .success(let packageFile):
+        self.defaults.set(packageFile.targetPath, forKey: self.packageFilePathKey)
+        self.recordPackageFile(packageFile)
         self.recordLastMessage(
-          type: self.stringValue(metadata["messageType"]) ?? "lucidtlr.watch.package.file",
-          at: self.stringValue(metadata["createdAt"]) ?? self.nowString()
+          type: self.stringValue(packageFile.metadata["messageType"]) ?? "lucidtlr.watch.package.file",
+          at: self.stringValue(packageFile.metadata["createdAt"]) ?? packageFile.receivedAt
         )
-      } catch {
-        self.recordError("Package file receive failed: \(error.localizedDescription)")
+      case .failure(let failure):
+        self.recordPackageFileReceiveFailure(
+          metadata: failure.metadata,
+          receivedAt: failure.receivedAt,
+          sourceExistsBeforeCopy: failure.sourceExistsBeforeCopy,
+          errorMessage: failure.errorMessage
+        )
       }
     }
   }
@@ -354,15 +369,45 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     }
   }
 
-  private func recordPackageFile(_ payload: [String: Any], receivedAt: String) {
+  private func recordPackageFile(_ packageFile: ReceivedPackageFile) {
     mutateStatus { status in
-      status["latestReceivedPackage"] = [
+      let payload = packageFile.metadata
+      let record: [String: Any] = [
         "sessionId": self.stringValue(payload["sessionId"]) ?? "",
         "planHash": self.stringValue(payload["planHash"]) ?? "",
         "packageId": self.stringValue(payload["packageId"]) ?? "",
         "packageHash": self.stringValue(payload["packageHash"]) ?? "",
-        "receivedAt": receivedAt,
+        "receivedAt": packageFile.receivedAt,
+        "fileByteCount": packageFile.fileByteCount,
+        "sourceExistsBeforeCopy": packageFile.sourceExistsBeforeCopy,
+        "persisted": true,
       ]
+      status["latestReceivedPackage"] = record
+      status["latestPackageFile"] = record
+      status.removeValue(forKey: "lastError")
+    }
+  }
+
+  private func recordPackageFileReceiveFailure(
+    metadata: [String: Any],
+    receivedAt: String,
+    sourceExistsBeforeCopy: Bool,
+    errorMessage: String
+  ) {
+    mutateStatus { status in
+      status["latestPackageFile"] = [
+        "sessionId": self.stringValue(metadata["sessionId"]) ?? "",
+        "planHash": self.stringValue(metadata["planHash"]) ?? "",
+        "packageId": self.stringValue(metadata["packageId"]) ?? "",
+        "packageHash": self.stringValue(metadata["packageHash"]) ?? "",
+        "receivedAt": receivedAt,
+        "sourceExistsBeforeCopy": sourceExistsBeforeCopy,
+        "persisted": false,
+        "errorMessage": errorMessage,
+      ]
+      status["lastError"] = errorMessage
+      status["lastMessageType"] = "lucidtlr.watch.transport.error"
+      status["lastMessageAt"] = receivedAt
     }
   }
 
@@ -446,6 +491,50 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     }
   }
 
+  private func attemptPersistReceivedPackageFile(
+    _ file: WCSessionFile
+  ) -> Result<ReceivedPackageFile, PackageFileReceiveFailure> {
+    let metadata = propertyListDictionary(file.metadata ?? [:])
+    let sourceExistsBeforeCopy = FileManager.default.fileExists(atPath: file.fileURL.path)
+    let receivedAt = Self.immediateNowString()
+
+    do {
+      let targetURL = try receivedPackageURL(
+        packageId: stringValue(metadata["packageId"]) ?? "unknown-package"
+      )
+
+      if FileManager.default.fileExists(atPath: targetURL.path) {
+        try FileManager.default.removeItem(at: targetURL)
+      }
+
+      try FileManager.default.copyItem(at: file.fileURL, to: targetURL)
+
+      return .success(
+        ReceivedPackageFile(
+          metadata: metadata,
+          targetPath: targetURL.path,
+          receivedAt: receivedAt,
+          fileByteCount: try fileByteCount(at: targetURL),
+          sourceExistsBeforeCopy: sourceExistsBeforeCopy
+        )
+      )
+    } catch {
+      return .failure(
+        PackageFileReceiveFailure(
+          metadata: metadata,
+          receivedAt: receivedAt,
+          sourceExistsBeforeCopy: sourceExistsBeforeCopy,
+          errorMessage: "Package file receive failed before queued status update: \(error.localizedDescription)"
+        )
+      )
+    }
+  }
+
+  private func fileByteCount(at url: URL) throws -> Int {
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    return (attributes[.size] as? NSNumber)?.intValue ?? 0
+  }
+
   private func receivedPackageURL(packageId: String) throws -> URL {
     let caches = try FileManager.default.url(
       for: .cachesDirectory,
@@ -485,5 +574,11 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
 
   private func nowString() -> String {
     isoFormatter.string(from: Date())
+  }
+
+  private static func immediateNowString() -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: Date())
   }
 }

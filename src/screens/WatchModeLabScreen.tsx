@@ -55,7 +55,10 @@ import {
   internalLabBuildInfo,
   isWatchModeLabAvailable,
 } from "@/src/features/internalBuild/internalBuildFlags";
-import type { NativeWatchPackageTransferStatus } from "@/src/native/watchTransport";
+import type {
+  NativeWatchPackageTransferStatus,
+  NativeWatchTransportStatus,
+} from "@/src/native/watchTransport";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -105,6 +108,28 @@ function packageTransferOutstandingLabel(
   }
 
   return `userInfo ${transfer.outstandingUserInfoTransferCount}, file ${transfer.outstandingFileTransferCount}`;
+}
+
+function packageFilePersistenceLabel(
+  file?:
+    | NativeWatchTransportStatus["latestPackageFile"]
+    | NativeWatchTransportStatus["latestReceivedPackage"],
+): string {
+  if (!file) {
+    return "none";
+  }
+
+  const persisted = file.persisted === false ? "not persisted" : "persisted";
+  const byteCount =
+    typeof file.fileByteCount === "number"
+      ? `${file.fileByteCount} bytes`
+      : "unknown bytes";
+  const sourceExists =
+    typeof file.sourceExistsBeforeCopy === "boolean"
+      ? `source existed: ${file.sourceExistsBeforeCopy ? "yes" : "no"}`
+      : "source existed: unknown";
+
+  return `${persisted}, ${byteCount}, ${sourceExists}`;
 }
 
 function recoveryActionLabel(action: WatchModeLabRecoveryAction): string {
@@ -834,6 +859,13 @@ export function WatchModeLabScreen() {
           }
         />
         <InfoRow
+          label="latest package file"
+          value={packageFilePersistenceLabel(
+            transportSummary?.status.latestPackageFile ??
+              transportSummary?.status.latestReceivedPackage,
+          )}
+        />
+        <InfoRow
           label="package transfer stage"
           value={
             transportSummary?.status.latestPackageTransfer?.stage ??
@@ -859,6 +891,7 @@ export function WatchModeLabScreen() {
         <InfoRow
           label="package transfer error"
           value={
+            transportSummary?.status.latestPackageFile?.errorMessage ??
             transportSummary?.status.latestPackageTransfer?.errorMessage ??
             transportSummary?.status.latestStatusSnapshot?.packageTransfer
               ?.errorMessage ??

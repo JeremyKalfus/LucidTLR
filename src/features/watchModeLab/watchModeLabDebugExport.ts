@@ -139,6 +139,8 @@ export interface WatchModeLabDrillAssessment {
   phoneReloadRecoverySeen: boolean;
   packageReceivedSeen: boolean;
   transportPackageReceivedSeen: boolean;
+  transportPackageFileReceivedSeen: boolean;
+  packageFilePersistedSeen: boolean;
   packageImportedSeen: boolean;
   fixtureImportSeen: boolean;
   ackEligibleSeen: boolean;
@@ -222,6 +224,8 @@ export interface WatchModeLabDebugBundle {
       transportErrorSeen: boolean;
       transportCommitReceiptSeen: boolean;
       transportPackageReceivedSeen: boolean;
+      transportPackageFileReceivedSeen: boolean;
+      packageFilePersistedSeen: boolean;
       fixtureImportSeen: boolean;
       recoverySimulationSeen: boolean;
       currentTransportSessionId?: string;
@@ -1043,6 +1047,8 @@ function failureReasons(input: {
   transportErrorSeen: boolean;
   transportCommitReceiptSeen: boolean;
   transportPackageReceivedSeen: boolean;
+  transportPackageFileReceivedSeen: boolean;
+  packageFilePersistedSeen: boolean;
   watchPackageTransferAttemptSeen: boolean;
   watchPackageTransferQueued: boolean;
   watchPackageTransferErrorSeen: boolean;
@@ -1072,6 +1078,20 @@ function failureReasons(input: {
 
   if (!input.transportPackageReceivedSeen) {
     reasons.push("No real WatchConnectivity package manifest/file receipt was observed.");
+  }
+
+  if (
+    input.transportPackageReceivedSeen &&
+    !input.transportPackageFileReceivedSeen
+  ) {
+    reasons.push("Package manifest/status was observed, but no package file receipt was recorded on the phone.");
+  }
+
+  if (
+    input.transportPackageFileReceivedSeen &&
+    !input.packageFilePersistedSeen
+  ) {
+    reasons.push("Package file receipt was observed, but the phone did not persist a readable package file.");
   }
 
   if (input.transportCommitReceiptSeen && !input.watchPackageTransferAttemptSeen) {
@@ -1151,6 +1171,8 @@ function finalDrillStatus(input: {
   transportErrorSeen: boolean;
   transportCommitReceiptSeen: boolean;
   transportPackageReceivedSeen: boolean;
+  transportPackageFileReceivedSeen: boolean;
+  packageFilePersistedSeen: boolean;
   watchPackageTransferErrorSeen: boolean;
   stateRegressionDetected: boolean;
 }): WatchModeLabFinalDrillStatus {
@@ -1176,7 +1198,9 @@ function finalDrillStatus(input: {
     input.ackEligibleSeen &&
     input.ackRecordedSeen &&
     input.transportCommitReceiptSeen &&
-    input.transportPackageReceivedSeen
+    input.transportPackageReceivedSeen &&
+    input.transportPackageFileReceivedSeen &&
+    input.packageFilePersistedSeen
   ) {
     return "pass";
   }
@@ -1197,6 +1221,8 @@ function buildDrillAssessment(input: {
   transportErrorSeen: boolean;
   transportCommitReceiptSeen: boolean;
   transportPackageReceivedSeen: boolean;
+  transportPackageFileReceivedSeen: boolean;
+  packageFilePersistedSeen: boolean;
   fixtureImportSeen: boolean;
   recoverySimulationSeen: boolean;
   currentTransportSessionId?: string;
@@ -1251,6 +1277,8 @@ function buildDrillAssessment(input: {
       ),
     packageReceivedSeen: input.transportPackageReceivedSeen,
     transportPackageReceivedSeen: input.transportPackageReceivedSeen,
+    transportPackageFileReceivedSeen: input.transportPackageFileReceivedSeen,
+    packageFilePersistedSeen: input.packageFilePersistedSeen,
     packageImportedSeen: input.importedPackagePresent,
     fixtureImportSeen: input.fixtureImportSeen,
     ackEligibleSeen: input.ackEligibleSeen,
@@ -1353,6 +1381,29 @@ export function buildWatchModeLabDebugBundle(
         input.transportStatus?.latestPackageManifest?.sessionId,
         currentSessionId,
       ));
+  const transportPackageFileReceivedSeen =
+    timeline.some(
+      (event) =>
+        event.eventType === "package_file_received" &&
+        matchesSession(event.sessionId, currentSessionId),
+    ) ||
+    (Boolean(input.transportStatus?.latestReceivedPackage) &&
+      matchesSession(
+        input.transportStatus?.latestReceivedPackage?.sessionId,
+        currentSessionId,
+      ));
+  const packageFilePersistedSeen =
+    (Boolean(input.transportStatus?.latestReceivedPackage) &&
+      input.transportStatus?.latestReceivedPackage?.persisted !== false &&
+      matchesSession(
+        input.transportStatus?.latestReceivedPackage?.sessionId,
+        currentSessionId,
+      )) ||
+    (input.transportStatus?.latestPackageFile?.persisted === true &&
+      matchesSession(
+        input.transportStatus?.latestPackageFile?.sessionId,
+        currentSessionId,
+      ));
   const watchPackageTransferAttemptSeen =
     timeline.some(
       (event) =>
@@ -1416,6 +1467,8 @@ export function buildWatchModeLabDebugBundle(
     transportErrorSeen,
     transportCommitReceiptSeen,
     transportPackageReceivedSeen,
+    transportPackageFileReceivedSeen,
+    packageFilePersistedSeen,
     watchPackageTransferAttemptSeen,
     watchPackageTransferQueued,
     watchPackageTransferErrorSeen,
@@ -1432,6 +1485,8 @@ export function buildWatchModeLabDebugBundle(
     transportErrorSeen,
     transportCommitReceiptSeen,
     transportPackageReceivedSeen,
+    transportPackageFileReceivedSeen,
+    packageFilePersistedSeen,
     watchPackageTransferErrorSeen,
     stateRegressionDetected,
   });
@@ -1448,6 +1503,8 @@ export function buildWatchModeLabDebugBundle(
     transportErrorSeen,
     transportCommitReceiptSeen,
     transportPackageReceivedSeen,
+    transportPackageFileReceivedSeen,
+    packageFilePersistedSeen,
     fixtureImportSeen,
     recoverySimulationSeen,
     currentTransportSessionId: currentSessionId,
@@ -1527,6 +1584,8 @@ export function buildWatchModeLabDebugBundle(
         transportErrorSeen,
         transportCommitReceiptSeen,
         transportPackageReceivedSeen,
+        transportPackageFileReceivedSeen,
+        packageFilePersistedSeen,
         fixtureImportSeen,
         recoverySimulationSeen,
         currentTransportSessionId: currentSessionId,

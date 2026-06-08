@@ -68,6 +68,20 @@ export interface NativeWatchTransportStatus {
     packageId: string;
     packageHash: string;
     receivedAt?: string;
+    fileByteCount?: number;
+    sourceExistsBeforeCopy?: boolean;
+    persisted?: boolean;
+  };
+  latestPackageFile?: {
+    sessionId: string;
+    planHash: string;
+    packageId: string;
+    packageHash: string;
+    receivedAt?: string;
+    fileByteCount?: number;
+    sourceExistsBeforeCopy?: boolean;
+    persisted?: boolean;
+    errorMessage?: string;
   };
   latestAck?: {
     sessionId: string;

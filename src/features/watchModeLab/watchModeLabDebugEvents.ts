@@ -493,6 +493,12 @@ export async function appendWatchModeLabTransportStatusSnapshot(input: {
       direction: "inbound",
       transportMessageType: "lucidtlr.watch.package.file",
       deliveryMethod: "transferFile",
+      metadata: {
+        fileByteCount: status.latestReceivedPackage.fileByteCount,
+        sourceExistsBeforeCopy:
+          status.latestReceivedPackage.sourceExistsBeforeCopy,
+        persisted: status.latestReceivedPackage.persisted,
+      },
     });
   }
 

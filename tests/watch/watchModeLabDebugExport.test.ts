@@ -61,6 +61,8 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("mismatchedHashDetected");
     expect(helper).toContain("transportCommitReceiptSeen");
     expect(helper).toContain("transportPackageReceivedSeen");
+    expect(helper).toContain("transportPackageFileReceivedSeen");
+    expect(helper).toContain("packageFilePersistedSeen");
     expect(helper).toContain("fixtureImportSeen");
     expect(helper).toContain("recoverySimulationSeen");
     expect(helper).toContain("currentTransportSessionId");
@@ -74,6 +76,8 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("isTransportCommitReceiptEvent");
     expect(helper).toContain("isTransportPackageReceivedEvent");
     expect(helper).toContain("isWatchPackageTransferStatusEvent");
+    expect(helper).toContain("Package manifest/status was observed, but no package file receipt was recorded on the phone.");
+    expect(helper).toContain("Package file receipt was observed, but the phone did not persist a readable package file.");
     expect(helper).toContain("Watch commit receipt arrived, but no Watch package transfer attempt/status was observed.");
     expect(helper).toContain("Watch package transfer diagnostics reported an error.");
     expect(helper).toContain("sessionId ?? \"no-session\"");
@@ -157,6 +161,8 @@ describe("Watch Mode Lab debug export", () => {
     expect(screen).toContain("package transfer bytes");
     expect(screen).toContain("package transfer outstanding");
     expect(screen).toContain("package transfer error");
+    expect(screen).toContain("latest package file");
+    expect(screen).toContain("packageFilePersistenceLabel");
     expect(screen).toContain("FileSystem.writeAsStringAsync");
     expect(screen).toContain("Share.share");
     expect(screen).toContain('import("expo-clipboard")');
