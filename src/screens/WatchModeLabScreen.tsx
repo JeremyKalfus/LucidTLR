@@ -129,9 +129,10 @@ function recoveryActionLabel(action: WatchModeLabRecoveryAction): string {
 const GUIDED_TRANSPORT_DRILL_STEPS = [
   "Activate transport on phone and Watch.",
   "Stage synthetic TLR plan from phone.",
-  "Commit staged plan on Watch and send receipt.",
-  "Force-quit/reopen phone, then reload recovery from DB.",
+  "Commit staged plan on Watch, send receipt, then request Watch status on phone.",
+  "Force-quit/reopen phone, activate transport again, then reload recovery from DB.",
   "Seal and transfer synthetic package from Watch.",
+  "Request Watch status on phone and confirm package transfer stage/bytes update.",
   "Import latest received synthetic package on phone.",
   "Send ack and confirm Watch records it.",
   "Retry package transfer/import/ack to check idempotency.",

@@ -203,6 +203,43 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(labTransport).toContain("findUnresolvedConflictingActiveWatchSyncState");
   });
 
+  it("applies native transport snapshots into the ledger during status refresh", () => {
+    const labTransport = readSource(
+      "src/features/watchModeLab/watchModeTransportLab.ts",
+    );
+    const loadSummary = labTransport.slice(
+      labTransport.indexOf("export async function loadWatchModeLabTransportSummary"),
+      labTransport.indexOf("export async function activateWatchModeLabTransport"),
+    );
+    const activateTransport = labTransport.slice(
+      labTransport.indexOf("export async function activateWatchModeLabTransport"),
+      labTransport.indexOf("export async function stageSyntheticWatchModeTransportPlan"),
+    );
+    const requestStatus = labTransport.slice(
+      labTransport.indexOf("export async function requestWatchModeLabTransportStatus"),
+      labTransport.indexOf("export async function importLatestReceivedSyntheticWatchPackage"),
+    );
+
+    expect(loadSummary).toContain("watchTransport.getTransportStatus");
+    expect(loadSummary).toContain("applyWatchTransportReceiptSnapshotsFromStatus");
+    expect(activateTransport).toContain("watchTransport.activateTransport");
+    expect(activateTransport).toContain("applyWatchTransportReceiptSnapshotsFromStatus");
+    expect(requestStatus).toContain("watchTransport.requestWatchStatus");
+    expect(requestStatus).toContain("appendWatchModeLabTransportStatusSnapshot");
+    expect(requestStatus).toContain("applyWatchTransportReceiptSnapshotsFromStatus");
+    expect(labTransport).toContain(
+      "async function applyWatchTransportReceiptSnapshotsFromStatus",
+    );
+    expect(labTransport).toContain("status.latestCommitReceipt");
+    expect(labTransport).toContain("applyWatchCommitReceipt");
+    expect(labTransport).toContain("status.latestStatusSnapshot?.watchState");
+    expect(labTransport).toContain("applyWatchRunningStatus");
+    expect(labTransport).toContain("status.latestPackageManifest");
+    expect(labTransport).toContain("applyWatchSealedManifest");
+    expect(labTransport).toContain("status.latestAck");
+    expect(labTransport).toContain("applyAckRecorded");
+  });
+
   it("keeps package import transaction-gated before ack send", () => {
     const labTransport = readSource(
       "src/features/watchModeLab/watchModeTransportLab.ts",

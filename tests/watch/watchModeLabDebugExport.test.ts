@@ -144,6 +144,8 @@ describe("Watch Mode Lab debug export", () => {
     expect(screen).toContain("Run Transport Drill");
     expect(screen).toContain("guided_transport_drill_started");
     expect(screen).toContain("guided_transport_drill_step_completed");
+    expect(screen).toContain("activate transport again");
+    expect(screen).toContain("package transfer stage/bytes");
     expect(screen).toContain("Mark current guided step complete");
     expect(screen).toContain("do not prove");
     expect(screen).toContain("WatchConnectivity");

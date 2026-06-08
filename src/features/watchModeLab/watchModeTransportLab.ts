@@ -104,17 +104,18 @@ export async function loadWatchModeLabTransportSummary(input: {
   db: LocalDb;
   participantId: string;
 }): Promise<WatchModeLabTransportSummary> {
-  const [status, recovery] = await Promise.all([
-    watchTransport.getTransportStatus(),
-    loadRecovery(input),
-  ]);
+  const status = await watchTransport.getTransportStatus();
 
   await appendWatchModeLabTransportStatusSnapshot({
     db: input.db,
     status,
   });
 
-  return { status, recovery };
+  return applyWatchTransportReceiptSnapshotsFromStatus({
+    db: input.db,
+    participantId: input.participantId,
+    status,
+  });
 }
 
 export async function activateWatchModeLabTransport(input: {
@@ -122,7 +123,6 @@ export async function activateWatchModeLabTransport(input: {
   participantId: string;
 }): Promise<WatchModeLabTransportSummary> {
   const status = await watchTransport.activateTransport();
-  const recovery = await loadRecovery(input);
 
   await appendWatchModeLabDebugEvent({
     db: input.db,
@@ -143,7 +143,11 @@ export async function activateWatchModeLabTransport(input: {
     status,
   });
 
-  return { status, recovery };
+  return applyWatchTransportReceiptSnapshotsFromStatus({
+    db: input.db,
+    participantId: input.participantId,
+    status,
+  });
 }
 
 export async function stageSyntheticWatchModeTransportPlan(input: {
@@ -342,10 +346,11 @@ export async function requestWatchModeLabTransportStatus(input: {
     status,
   });
 
-  return {
+  return applyWatchTransportReceiptSnapshotsFromStatus({
+    db: input.db,
+    participantId: input.participantId,
     status,
-    recovery: summarizeRecovery(unresolved),
-  };
+  });
 }
 
 export async function importLatestReceivedSyntheticWatchPackage(input: {
@@ -593,6 +598,20 @@ export async function applyWatchTransportReceiptSnapshots(input: {
     db: input.db,
     status,
   });
+
+  return applyWatchTransportReceiptSnapshotsFromStatus({
+    db: input.db,
+    participantId: input.participantId,
+    status,
+  });
+}
+
+async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
+  db: LocalDb;
+  participantId: string;
+  status: NativeWatchTransportStatus;
+}): Promise<WatchModeLabTransportSummary> {
+  const { status } = input;
   const sessionId =
     status.latestCommitReceipt?.sessionId ??
     status.latestPackageManifest?.sessionId ??
