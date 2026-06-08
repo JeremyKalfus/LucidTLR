@@ -81,6 +81,9 @@ struct WatchModeLabView: View {
         Button("Activate transport") {
           viewModel.activateTransport()
         }
+        Button("Run Watch baseline loop") {
+          viewModel.runWatchBaselineTransportLoop()
+        }
         Button("Check/pull staged synthetic plan") {
           viewModel.checkOrPullStagedSyntheticPlan()
         }

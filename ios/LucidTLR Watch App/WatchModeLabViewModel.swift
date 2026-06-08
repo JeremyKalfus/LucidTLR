@@ -401,6 +401,65 @@ final class WatchModeLabViewModel: ObservableObject {
     }
   }
 
+  func runWatchBaselineTransportLoop() {
+    do {
+      try transportCoordinator.activate()
+      transportCoordinator.refreshStatus()
+      guard let stagedPlan = try transportCoordinator.latestStagedPlan() else {
+        statusMessage = "No staged synthetic plan is available. Run One-Button Baseline on phone first."
+        refreshRows()
+        return
+      }
+
+      let plan = stagedPlan.plan
+      let nextCoordinator = try makeCoordinator(
+        plan: plan,
+        preflightScenario: .allPass,
+        requiresStartPreflight: false
+      )
+      try nextCoordinator.commit(plan: plan)
+      try currentSessionIndex?.recordCommit(
+        plan: plan,
+        runtimeState: .planCommitted,
+        updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      )
+      coordinator = nextCoordinator
+      activePlan = plan
+      activeManifest = nil
+      activePreflightResult = nil
+
+      guard let committedEntry = try currentSessionIndex?.load() else {
+        throw WatchTransportError.noCommittedSession
+      }
+
+      try transportCoordinator.sendCommitReceipt(
+        plan: plan,
+        commitId: committedEntry.commitId,
+        watchState: committedEntry.runtimeState,
+        committedAt: WatchRuntimeDateFormat.date(from: committedEntry.updatedAt) ?? Date()
+      )
+      do {
+        try transferSyntheticPackage()
+      } catch {
+        reportTransportPackageError(error)
+        throw error
+      }
+      let sealedEntry = try currentSessionIndex?.load()
+      try transportCoordinator.sendStatusSnapshot(
+        sessionId: sealedEntry?.activeSessionId ?? plan.sessionId,
+        planHash: sealedEntry?.planHash ?? plan.planHash,
+        watchState: sealedEntry?.runtimeState ?? coordinator?.state ?? .sealedWaitingForPhone,
+        packageId: sealedEntry?.sealedPackageId ?? activeManifest?.packageId,
+        packageHash: sealedEntry?.sealedPackageHash ?? activeManifest?.packageHash,
+        createdAt: Date()
+      )
+      statusMessage = "Ran Watch baseline loop: committed staged plan, sent receipt/status, sealed and transferred package. Synthetic lab only; no real sensors or cues."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
   func discardCurrentSyntheticSessionWithExplicitConfirmation() {
     do {
       let index = try labIndex()

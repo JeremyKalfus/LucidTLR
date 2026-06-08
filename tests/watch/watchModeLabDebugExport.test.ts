@@ -146,6 +146,13 @@ describe("Watch Mode Lab debug export", () => {
     expect(screen).toContain("Mark phone reload recovery tested");
     expect(screen).toContain("phone_reload_recovery_tested");
     expect(screen).toContain("Run Transport Drill");
+    expect(screen).toContain("Run One-Button Baseline");
+    expect(screen).toContain("one-button happy path");
+    expect(screen).toContain("does not replace force-quit");
+    expect(screen).toContain("automated_transport_baseline_started");
+    expect(screen).toContain("automated_transport_baseline_waiting_for_watch");
+    expect(screen).toContain("automated_transport_baseline_waiting_for_package_file");
+    expect(screen).toContain("automated_transport_baseline_completed");
     expect(screen).toContain("guided_transport_drill_started");
     expect(screen).toContain("guided_transport_drill_step_completed");
     expect(screen).toContain("activate transport again");

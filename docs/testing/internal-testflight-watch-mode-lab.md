@@ -119,6 +119,10 @@ On iPhone:
 - Confirm `Export Watch Lab Debug Bundle` is present. It creates a local JSON
   file for Codex analysis, does not upload anything, and excludes dream journal
   content.
+- For a clean non-interruption sanity check, use the baseline pair: tap
+  `Run One-Button Baseline` on phone, tap `Run Watch baseline loop` on Watch if
+  the phone waits for Watch proof, then tap the phone baseline again and export
+  the bundle.
 
 On Watch:
 
@@ -147,6 +151,10 @@ Watch app must show only the rebuild placeholder.
   and discard synthetic lab session with explicit confirmation.
 
 ## First Transport Drill
+
+Use the baseline above for happy-path transport/import/ack sanity checks. Use
+this drill when testing force-quit, background, lock, delayed delivery, or
+unreachable behavior.
 
 This drill tests the v1/v2 connection and recovery failure class. It still does
 not test real heart-rate, motion, workouts, haptics, audio, overnight runtime,

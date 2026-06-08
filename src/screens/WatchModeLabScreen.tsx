@@ -132,6 +132,34 @@ function packageFilePersistenceLabel(
   return `${persisted}, ${byteCount}, ${sourceExists}`;
 }
 
+function hasTransportBaselineEvidence(
+  summary: WatchModeLabTransportSummary | null,
+): boolean {
+  const status = summary?.status;
+
+  return Boolean(
+    (summary?.recovery.unresolvedCount ?? 0) > 0 ||
+      status?.latestStagedPlanId ||
+      status?.latestCommitReceipt ||
+      status?.latestStatusSnapshot ||
+      status?.latestPackageManifest ||
+      status?.latestReceivedPackage ||
+      status?.latestPackageFile ||
+      status?.latestAck,
+  );
+}
+
+function hasPersistedPackageFile(status: NativeWatchTransportStatus): boolean {
+  if (status.latestPackageFile?.persisted === true) {
+    return true;
+  }
+
+  return Boolean(
+    status.latestReceivedPackage &&
+      status.latestReceivedPackage.persisted !== false,
+  );
+}
+
 function recoveryActionLabel(action: WatchModeLabRecoveryAction): string {
   switch (action) {
     case "watch_committed":
@@ -358,6 +386,213 @@ export function WatchModeLabScreen() {
           error instanceof Error
             ? error.message
             : "Synthetic transport action failed.",
+      });
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
+  async function runOneButtonTransportBaseline() {
+    setBusyLabel("Running baseline...");
+
+    try {
+      const db = await getLocalDb();
+      let summary = await activateWatchModeLabTransport({
+        db,
+        participantId,
+      });
+
+      setTransportSummary(summary);
+      setRecoverySummary(summary.recovery);
+      recordLabAction({
+        action: "automated_transport_baseline_started",
+        result: "ok",
+        message:
+          "Started one-button synthetic transport baseline. This does not replace interruption testing.",
+        details: {
+          unresolvedCount: summary.recovery.unresolvedCount,
+          doesNotReplaceInterruptionTesting: true,
+        },
+      });
+
+      if (!hasTransportBaselineEvidence(summary)) {
+        const staged = await stageSyntheticWatchModeTransportPlan({
+          db,
+          kind: "tlr",
+          participantId,
+          selectedCueId: tlrOptions.selectedCueId,
+          tlrOptions,
+          engineSettings,
+        });
+
+        setPlanSummary(staged.plan);
+        summary = {
+          status: staged.status,
+          recovery: staged.recovery,
+        };
+        setTransportSummary(summary);
+        setRecoverySummary(summary.recovery);
+        recordLabAction({
+          action: "automated_transport_baseline_plan_staged",
+          result: "ok",
+          message:
+            "Baseline staged a synthetic TLR plan. Run the Watch baseline loop next if no Watch proof has returned yet.",
+          details: {
+            sessionId: staged.plan.sessionId,
+            planHash: staged.plan.planHash,
+          },
+        });
+      } else {
+        recordLabAction({
+          action: "automated_transport_baseline_reused_state",
+          result: "ok",
+          message:
+            "Baseline reused existing synthetic transport/recovery state instead of staging a new plan.",
+          details: {
+            unresolvedCount: summary.recovery.unresolvedCount,
+            stagedPlanId: summary.status.latestStagedPlanId,
+            commitSessionId: summary.status.latestCommitReceipt?.sessionId,
+            packageId:
+              summary.status.latestPackageFile?.packageId ??
+              summary.status.latestReceivedPackage?.packageId,
+          },
+        });
+      }
+
+      summary = await requestWatchModeLabTransportStatus({
+        db,
+        participantId,
+      });
+      setTransportSummary(summary);
+      setRecoverySummary(summary.recovery);
+
+      if (!summary.status.latestCommitReceipt) {
+        recordLabAction({
+          action: "automated_transport_baseline_waiting_for_watch",
+          result: "ok",
+          message:
+            "Baseline is waiting for Watch proof. On Watch, tap Run Watch baseline loop, then tap Run One-Button Baseline again on phone.",
+          details: {
+            missing: "commit_receipt",
+            stagedPlanId: summary.status.latestStagedPlanId,
+          },
+        });
+        return;
+      }
+
+      if (!hasPersistedPackageFile(summary.status)) {
+        recordLabAction({
+          action: "automated_transport_baseline_waiting_for_package_file",
+          result: "ok",
+          message:
+            "Baseline saw Watch progress but no persisted package file yet. Run the Watch baseline loop or retry package transfer, then tap this again.",
+          details: {
+            missing: "persisted_package_file",
+            sessionId: summary.status.latestCommitReceipt.sessionId,
+            planHash: summary.status.latestCommitReceipt.planHash,
+            packageId:
+              summary.status.latestPackageManifest?.packageId ??
+              summary.status.latestPackageFile?.packageId,
+            packageHash:
+              summary.status.latestPackageManifest?.packageHash ??
+              summary.status.latestPackageFile?.packageHash,
+            packageFile: summary.status.latestPackageFile,
+          },
+        });
+        return;
+      }
+
+      const imported = await importLatestReceivedSyntheticWatchPackage({
+        db,
+        participantId,
+      });
+      setImportSummary(imported.importSummary);
+      summary = {
+        status: imported.status,
+        recovery: imported.recovery,
+      };
+      setTransportSummary(summary);
+      setRecoverySummary(summary.recovery);
+      recordLabAction({
+        action: "automated_transport_baseline_imported_package",
+        result: "ok",
+        message: `Baseline imported the latest received package with status ${imported.importSummary.status}; ack eligible: ${imported.importSummary.ackEligible ? "yes" : "no"}.`,
+        details: {
+          sessionId: imported.importSummary.sessionId,
+          packageId: imported.importSummary.packageId,
+          packageHash: imported.importSummary.packageHash,
+          ackEligible: imported.importSummary.ackEligible,
+        },
+      });
+
+      if (!imported.importSummary.ackEligible) {
+        recordLabAction({
+          action: "automated_transport_baseline_incomplete",
+          result: "error",
+          message:
+            "Baseline import completed without ack eligibility. Export the debug bundle for analysis.",
+          details: {
+            status: imported.importSummary.status,
+            sessionId: imported.importSummary.sessionId,
+            packageId: imported.importSummary.packageId,
+            packageHash: imported.importSummary.packageHash,
+          },
+        });
+        return;
+      }
+
+      const acked = await sendAckForLatestImportedWatchPackage({
+        db,
+        participantId,
+      });
+      summary = {
+        status: acked.status,
+        recovery: acked.recovery,
+      };
+      setTransportSummary(summary);
+      setRecoverySummary(summary.recovery);
+      recordLabAction({
+        action: "automated_transport_baseline_ack_sent",
+        result: "ok",
+        message: acked.message,
+        details: {
+          latestAckPackageId: acked.status.latestAck?.packageId,
+          latestAckPackageHash: acked.status.latestAck?.packageHash,
+          unresolvedCount: acked.recovery.unresolvedCount,
+        },
+      });
+
+      try {
+        summary = await requestWatchModeLabTransportStatus({
+          db,
+          participantId,
+        });
+        setTransportSummary(summary);
+        setRecoverySummary(summary.recovery);
+      } catch {
+        // The ack send is the critical phone-side result; the follow-up status
+        // refresh may fail if the Watch is not immediately reachable.
+      }
+
+      recordLabAction({
+        action: "automated_transport_baseline_completed",
+        result: "ok",
+        message:
+          "Completed the one-button baseline path through transport proof, package import, and ack send. Export the bundle for analysis.",
+        details: {
+          unresolvedCount: summary.recovery.unresolvedCount,
+          latestAckPackageId: summary.status.latestAck?.packageId,
+          latestAckAt: summary.status.latestAck?.ackedAt,
+        },
+      });
+    } catch (error) {
+      recordLabAction({
+        action: "automated_transport_baseline_failed",
+        result: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "One-button synthetic transport baseline failed.",
       });
     } finally {
       setBusyLabel(null);
@@ -700,6 +935,33 @@ export function WatchModeLabScreen() {
           icon={CheckCircle2}
           label="Mark current guided step complete"
           onPress={markGuidedStepComplete}
+        />
+      </Card>
+
+      <Card>
+        <InfoRow label="baseline" value="one-button happy path" />
+        <InfoRow
+          label="interruption coverage"
+          value="not included; use guided drill"
+        />
+        <LabNote>
+          Run One-Button Baseline automates the normal phone-side path through
+          transport activation, plan staging, Watch proof check, package import,
+          and ack send. It pauses if Watch proof is missing; on Watch, tap Run
+          Watch baseline loop, then tap this phone button again.
+        </LabNote>
+        <LabNote>
+          This baseline is useful for clean TestFlight sanity checks, but it
+          does not replace force-quit, background, lock, delayed delivery, or
+          unreachable interruption testing.
+        </LabNote>
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={CheckCircle2}
+          label="Run One-Button Baseline"
+          onPress={() => {
+            void runOneButtonTransportBaseline();
+          }}
         />
       </Card>
 

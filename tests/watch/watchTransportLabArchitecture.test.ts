@@ -294,6 +294,31 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(watchCoordinator).toContain("entry.sealedPackageHash == ack.packageHash");
   });
 
+  it("adds an explicit one-button synthetic baseline without replacing interruption testing", () => {
+    const phoneLab = readSource("src/screens/WatchModeLabScreen.tsx");
+    const watchLab = readSource("ios/LucidTLR Watch App/WatchModeLabView.swift");
+    const watchModel = readSource(
+      "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
+    );
+
+    expect(phoneLab).toContain("Run One-Button Baseline");
+    expect(phoneLab).toContain("runOneButtonTransportBaseline");
+    expect(phoneLab).toContain("doesNotReplaceInterruptionTesting");
+    expect(phoneLab).toContain("stageSyntheticWatchModeTransportPlan");
+    expect(phoneLab).toContain("requestWatchModeLabTransportStatus");
+    expect(phoneLab).toContain("importLatestReceivedSyntheticWatchPackage");
+    expect(phoneLab).toContain("sendAckForLatestImportedWatchPackage");
+    expect(phoneLab).toContain("automated_transport_baseline_waiting_for_watch");
+    expect(phoneLab).toContain("automated_transport_baseline_waiting_for_package_file");
+    expect(watchLab).toContain("Run Watch baseline loop");
+    expect(watchModel).toContain("runWatchBaselineTransportLoop");
+    expect(watchModel).toContain("latestStagedPlan");
+    expect(watchModel).toContain("sendCommitReceipt");
+    expect(watchModel).toContain("transferSyntheticPackage");
+    expect(watchModel).toContain("sendStatusSnapshot");
+    expect(watchModel).toContain("requireCanStartSession(sessionId:");
+  });
+
   it("keeps public Watch Mode disabled and public screens disconnected", () => {
     const availability = readSource("src/features/watchMode/watchModeAvailability.ts");
     const home = readSource("src/screens/HomeScreen.tsx");

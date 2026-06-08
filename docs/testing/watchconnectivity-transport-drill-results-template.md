@@ -25,6 +25,22 @@ being tested.
 - Ack is sent only after transaction-wrapped package import reports
   `ackEligible = true`.
 
+## One-Button Baseline
+
+For a clean, non-interruption sanity check, use the baseline controls before
+running the full drill:
+
+1. Open the phone lab and Watch lab.
+2. On phone, tap `Run One-Button Baseline`.
+3. If the phone says it is waiting for Watch proof, on Watch tap
+   `Run Watch baseline loop`.
+4. On phone, tap `Run One-Button Baseline` again.
+5. Export the debug bundle.
+
+This baseline should prove the happy path through synthetic transport proof,
+package import, and ack send. It does not replace the force-quit, background,
+lock, delayed delivery, or unreachable checks below.
+
 ## Drill Checklist
 
 1. Install the Internal TestFlight build on iPhone.
