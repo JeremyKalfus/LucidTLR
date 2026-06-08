@@ -33,6 +33,17 @@ import {
   type WatchModeLabPlanSummary,
 } from "@/src/features/watchModeLab/watchModeLab";
 import {
+  activateWatchModeLabTransport,
+  applyWatchTransportReceiptSnapshots,
+  clearWatchModeLabTransportStatus,
+  importLatestReceivedSyntheticWatchPackage,
+  loadWatchModeLabTransportSummary,
+  requestWatchModeLabTransportStatus,
+  sendAckForLatestImportedWatchPackage,
+  stageSyntheticWatchModeTransportPlan,
+  type WatchModeLabTransportSummary,
+} from "@/src/features/watchModeLab/watchModeTransportLab";
+import {
   internalLabBuildInfo,
   isWatchModeLabAvailable,
 } from "@/src/features/internalBuild/internalBuildFlags";
@@ -101,6 +112,8 @@ export function WatchModeLabScreen() {
     React.useState<WatchModeLabPackageValidationSummary | null>(null);
   const [recoverySummary, setRecoverySummary] =
     React.useState<WatchModeLabRecoverySummary | null>(null);
+  const [transportSummary, setTransportSummary] =
+    React.useState<WatchModeLabTransportSummary | null>(null);
   const [busyLabel, setBusyLabel] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState<string>(
     "Internal TestFlight Lab -- synthetic / QA only. Public Watch Mode remains disabled.",
@@ -116,9 +129,38 @@ export function WatchModeLabScreen() {
     setRecoverySummary(summary);
   }, [participantId]);
 
+  const reloadTransportState = React.useCallback(async () => {
+    const db = await getLocalDb();
+    const summary = await loadWatchModeLabTransportSummary({
+      db,
+      participantId,
+    });
+
+    setTransportSummary(summary);
+    setRecoverySummary(summary.recovery);
+  }, [participantId]);
+
   React.useEffect(() => {
     void reloadRecoveryState();
-  }, [reloadRecoveryState]);
+    void reloadTransportState();
+  }, [reloadRecoveryState, reloadTransportState]);
+
+  async function runTransportAction(
+    label: string,
+    action: () => Promise<string>,
+  ) {
+    setBusyLabel(label);
+
+    try {
+      setMessage(await action());
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Synthetic transport action failed.",
+      );
+    } finally {
+      setBusyLabel(null);
+    }
+  }
 
   function buildPlan(kind: WatchModeLabKind) {
     const plan = buildSyntheticWatchModeLabPlan({
@@ -130,7 +172,7 @@ export function WatchModeLabScreen() {
     });
 
     setPlanSummary(summarizeWatchModeLabPlan(plan));
-    setMessage(`Built ${planTitle(kind)}. No native bridge was used.`);
+    setMessage(`Built ${planTitle(kind)} locally. No transport message was sent.`);
   }
 
   async function importFixture(kind: WatchModeLabKind, reimport = false) {
@@ -218,12 +260,12 @@ export function WatchModeLabScreen() {
         <InfoRow label="public Watch Mode" value="disabled" />
         <InfoRow label="real overnight Watch Mode" value="not available" />
         <InfoRow label="real Watch sensors" value="not used" />
-        <InfoRow label="WatchConnectivity" value="not used" />
+        <InfoRow label="WatchConnectivity" value="synthetic lab transport only" />
         <InfoRow label="uploads" value="none" />
         <LabNote>
           Internal TestFlight Lab -- synthetic / QA only. This does not start an
           overnight Watch session, does not use real Watch sensors or
-          WatchConnectivity, keeps data local, and does not upload anything.
+          live Watch cue timing, keeps data local, and does not upload anything.
         </LabNote>
       </Card>
 
@@ -322,6 +364,242 @@ export function WatchModeLabScreen() {
             </LabNote>
           </View>
         ) : null}
+      </Card>
+
+      <Card>
+        <InfoRow label="transport" value="synthetic only" />
+        <InfoRow
+          label="WC activation"
+          value={transportSummary?.status.activationState ?? "not loaded"}
+        />
+        <InfoRow
+          label="paired"
+          value={transportSummary?.status.paired ? "yes" : "no"}
+        />
+        <InfoRow
+          label="watch app"
+          value={transportSummary?.status.watchAppInstalled ? "installed" : "unknown/not installed"}
+        />
+        <InfoRow
+          label="reachable"
+          value={
+            transportSummary?.status.reachable
+              ? "yes -- informational only"
+              : "no -- informational only"
+          }
+        />
+        <InfoRow
+          label="last message"
+          value={transportSummary?.status.lastMessageType ?? "none"}
+        />
+        <InfoRow
+          label="last message at"
+          value={transportSummary?.status.lastMessageAt ?? "none"}
+        />
+        <InfoRow
+          label="staged plan"
+          value={transportSummary?.status.latestStagedPlanId ?? "none"}
+        />
+        <InfoRow
+          label="commit receipt"
+          value={
+            transportSummary?.status.latestCommitReceipt?.sessionId ?? "none"
+          }
+        />
+        <InfoRow
+          label="status snapshot"
+          value={
+            transportSummary?.status.latestStatusSnapshot?.watchState ?? "none"
+          }
+        />
+        <InfoRow
+          label="package manifest"
+          value={
+            transportSummary?.status.latestPackageManifest?.packageId ?? "none"
+          }
+        />
+        <InfoRow
+          label="latest package"
+          value={
+            transportSummary?.status.latestReceivedPackage?.packageId ?? "none"
+          }
+        />
+        <InfoRow
+          label="latest ack"
+          value={transportSummary?.status.latestAck?.packageId ?? "none"}
+        />
+        <LabNote>
+          Transport -- synthetic only. `isReachable` is display-only and is not
+          treated as proof that Watch Mode is running. Phone reload recovery
+          still comes from the durable local DB ledger.
+        </LabNote>
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={Watch}
+          label="Activate transport"
+          onPress={() => {
+            void runTransportAction("Activating transport...", async () => {
+              const db = await getLocalDb();
+              const summary = await activateWatchModeLabTransport({
+                db,
+                participantId,
+              });
+
+              setTransportSummary(summary);
+              setRecoverySummary(summary.recovery);
+              return "Activated synthetic WatchConnectivity transport.";
+            });
+          }}
+        />
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={FileJson}
+          label="Stage synthetic TLR plan"
+          onPress={() => {
+            void runTransportAction("Staging TLR plan...", async () => {
+              const db = await getLocalDb();
+              const summary = await stageSyntheticWatchModeTransportPlan({
+                db,
+                kind: "tlr",
+                participantId,
+                selectedCueId: tlrOptions.selectedCueId,
+                tlrOptions,
+                engineSettings,
+              });
+
+              setPlanSummary(summary.plan);
+              setTransportSummary({
+                status: summary.status,
+                recovery: summary.recovery,
+              });
+              setRecoverySummary(summary.recovery);
+              return "Queued synthetic TLR plan over WatchConnectivity and marked plan_staged in the local ledger.";
+            });
+          }}
+        />
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={FileJson}
+          label="Stage synthetic sleep-log plan"
+          onPress={() => {
+            void runTransportAction("Staging sleep-log plan...", async () => {
+              const db = await getLocalDb();
+              const summary = await stageSyntheticWatchModeTransportPlan({
+                db,
+                kind: "sleep_log",
+                participantId,
+                selectedCueId: tlrOptions.selectedCueId,
+                tlrOptions,
+                engineSettings,
+              });
+
+              setPlanSummary(summary.plan);
+              setTransportSummary({
+                status: summary.status,
+                recovery: summary.recovery,
+              });
+              setRecoverySummary(summary.recovery);
+              return "Queued synthetic sleep-log plan over WatchConnectivity and marked plan_staged in the local ledger.";
+            });
+          }}
+        />
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={RefreshCw}
+          label="Request Watch status"
+          onPress={() => {
+            void runTransportAction("Requesting Watch status...", async () => {
+              const db = await getLocalDb();
+              const summary = await requestWatchModeLabTransportStatus({
+                db,
+                participantId,
+              });
+
+              setTransportSummary(summary);
+              setRecoverySummary(summary.recovery);
+              return "Queued a synthetic Watch status request. Watch status remains last-known until a snapshot is received.";
+            });
+          }}
+        />
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={Watch}
+          label="Import latest received synthetic package"
+          onPress={() => {
+            void runTransportAction("Importing received package...", async () => {
+              const db = await getLocalDb();
+              const summary = await importLatestReceivedSyntheticWatchPackage({
+                db,
+                participantId,
+              });
+
+              setImportSummary(summary.importSummary);
+              setTransportSummary({
+                status: summary.status,
+                recovery: summary.recovery,
+              });
+              setRecoverySummary(summary.recovery);
+              return `Imported latest received synthetic package with status ${summary.importSummary.status}; ack eligible: ${summary.importSummary.ackEligible ? "yes" : "no"}.`;
+            });
+          }}
+        />
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={CheckCircle2}
+          label="Send ack for latest imported package"
+          onPress={() => {
+            void runTransportAction("Sending ack...", async () => {
+              const db = await getLocalDb();
+              const summary = await sendAckForLatestImportedWatchPackage({
+                db,
+                participantId,
+              });
+
+              setTransportSummary({
+                status: summary.status,
+                recovery: summary.recovery,
+              });
+              setRecoverySummary(summary.recovery);
+              return summary.message;
+            });
+          }}
+        />
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={RefreshCw}
+          label="Simulate phone reload / reload recovery state"
+          onPress={() => {
+            void runTransportAction("Reloading recovery...", async () => {
+              const db = await getLocalDb();
+              const summary = await applyWatchTransportReceiptSnapshots({
+                db,
+                participantId,
+              });
+
+              setTransportSummary(summary);
+              setRecoverySummary(summary.recovery);
+              return "Reloaded phone recovery from DB and applied latest synthetic transport receipt snapshots.";
+            });
+          }}
+        />
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={ShieldAlert}
+          label="Clear lab transport messages/status"
+          onPress={() => {
+            void runTransportAction("Clearing transport...", async () => {
+              const db = await getLocalDb();
+              const summary = await clearWatchModeLabTransportStatus({
+                db,
+                participantId,
+              });
+
+              setTransportSummary(summary);
+              setRecoverySummary(summary.recovery);
+              return "Cleared synthetic transport messages/status only. Durable recovery ledger and imports were not deleted.";
+            });
+          }}
+        />
       </Card>
 
       <Card>

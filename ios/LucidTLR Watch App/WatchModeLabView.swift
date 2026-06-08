@@ -27,7 +27,7 @@ struct WatchModeLabView: View {
           .fontWeight(.semibold)
           .accessibilityAddTraits(.isHeader)
 
-        Text("No real Watch sensors, workout runtime, WatchConnectivity, haptics, audio, or package transfer. Public Watch Mode remains disabled.")
+        Text("Synthetic WatchConnectivity transport only. No real Watch sensors, workout runtime, live cue timing, haptics, audio, uploads, or package deletion. Public Watch Mode remains disabled.")
           .font(.caption2)
           .foregroundStyle(.secondary)
 
@@ -70,6 +70,40 @@ struct WatchModeLabView: View {
         }
         Button("Discard synthetic lab session with explicit confirmation") {
           viewModel.discardCurrentSyntheticSessionWithExplicitConfirmation()
+        }
+
+        Divider()
+
+        Text("Transport -- synthetic only")
+          .font(.caption2)
+          .fontWeight(.semibold)
+
+        Button("Activate transport") {
+          viewModel.activateTransport()
+        }
+        Button("Check/pull staged synthetic plan") {
+          viewModel.checkOrPullStagedSyntheticPlan()
+        }
+        Button("Commit staged plan") {
+          viewModel.commitStagedTransportPlan()
+        }
+        Button("Send commit receipt") {
+          viewModel.sendTransportCommitReceipt()
+        }
+        Button("Send status snapshot") {
+          viewModel.sendTransportStatusSnapshot()
+        }
+        Button("Transfer sealed synthetic package") {
+          viewModel.transferSealedSyntheticPackage()
+        }
+        Button("Retry package transfer") {
+          viewModel.retryTransportPackageTransfer()
+        }
+        Button("Record received ack") {
+          viewModel.recordReceivedTransportAck()
+        }
+        Button("Reload current session index") {
+          viewModel.reloadTransportCurrentSessionIndex()
         }
 
         Divider()

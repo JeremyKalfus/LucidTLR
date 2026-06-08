@@ -16,6 +16,8 @@
 		4AFEA0078B754B4A9CF00001 /* lucidtlr_feasibility_high.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEA00A8B754B4A9CF00001 /* lucidtlr_feasibility_high.wav */; };
 		4AFEB0038B754B4A9CF00001 /* LucidTLRPhoneRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEB0018B754B4A9CF00001 /* LucidTLRPhoneRuntime.swift */; };
 		4AFEB0048B754B4A9CF00001 /* LucidTLRPhoneRuntimeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEB0028B754B4A9CF00001 /* LucidTLRPhoneRuntimeBridge.m */; };
+		B71000000000000000000001 /* LucidTLRWatchTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000011 /* LucidTLRWatchTransport.swift */; };
+		B71000000000000000000002 /* LucidTLRWatchTransportBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000012 /* LucidTLRWatchTransportBridge.m */; };
 		4AFEC0068B754B4A9CF00001 /* clear_bell_chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0018B754B4A9CF00001 /* clear_bell_chime.mp3 */; };
 		4AFEC0078B754B4A9CF00001 /* ui_success_chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0028B754B4A9CF00001 /* ui_success_chime.mp3 */; };
 		4AFEC0088B754B4A9CF00001 /* sci_fi_confirmation.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */; };
@@ -68,6 +70,9 @@
 		A60000000000000000000006 /* WatchPackageAckStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000016 /* WatchPackageAckStore.swift */; };
 		A60000000000000000000007 /* WatchSyntheticStorageFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */; };
 		A90000000000000000000001 /* WatchCurrentSessionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000011 /* WatchCurrentSessionIndex.swift */; };
+		B72000000000000000000001 /* WatchTransportMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000011 /* WatchTransportMessages.swift */; };
+		B72000000000000000000002 /* WatchTransportPackageBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000012 /* WatchTransportPackageBuilder.swift */; };
+		B72000000000000000000003 /* WatchTransportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000013 /* WatchTransportCoordinator.swift */; };
 		A70000000000000000000001 /* WatchModeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000011 /* WatchModeLabView.swift */; };
 		A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000012 /* WatchModeLabViewModel.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
@@ -109,6 +114,8 @@
 		4AFEA00A8B754B4A9CF00001 /* lucidtlr_feasibility_high.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; name = lucidtlr_feasibility_high.wav; path = LucidTLR/FeasibilityAudioSegments/lucidtlr_feasibility_high.wav; sourceTree = "<group>"; };
 		4AFEB0018B754B4A9CF00001 /* LucidTLRPhoneRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LucidTLRPhoneRuntime.swift; path = LucidTLR/LucidTLRPhoneRuntime.swift; sourceTree = "<group>"; };
 		4AFEB0028B754B4A9CF00001 /* LucidTLRPhoneRuntimeBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LucidTLRPhoneRuntimeBridge.m; path = LucidTLR/LucidTLRPhoneRuntimeBridge.m; sourceTree = "<group>"; };
+		B71000000000000000000011 /* LucidTLRWatchTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LucidTLRWatchTransport.swift; path = LucidTLR/LucidTLRWatchTransport.swift; sourceTree = "<group>"; };
+		B71000000000000000000012 /* LucidTLRWatchTransportBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LucidTLRWatchTransportBridge.m; path = LucidTLR/LucidTLRWatchTransportBridge.m; sourceTree = "<group>"; };
 		4AFEC0018B754B4A9CF00001 /* clear_bell_chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = clear_bell_chime.mp3; path = LucidTLR/CueAudio/clear_bell_chime.mp3; sourceTree = "<group>"; };
 		4AFEC0028B754B4A9CF00001 /* ui_success_chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = ui_success_chime.mp3; path = LucidTLR/CueAudio/ui_success_chime.mp3; sourceTree = "<group>"; };
 		4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; name = sci_fi_confirmation.wav; path = LucidTLR/CueAudio/sci_fi_confirmation.wav; sourceTree = "<group>"; };
@@ -162,6 +169,9 @@
 		A60000000000000000000016 /* WatchPackageAckStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageAckStore.swift; sourceTree = "<group>"; };
 		A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyntheticStorageFixtures.swift; sourceTree = "<group>"; };
 		A90000000000000000000011 /* WatchCurrentSessionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCurrentSessionIndex.swift; sourceTree = "<group>"; };
+		B72000000000000000000011 /* WatchTransportMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportMessages.swift; sourceTree = "<group>"; };
+		B72000000000000000000012 /* WatchTransportPackageBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportPackageBuilder.swift; sourceTree = "<group>"; };
+		B72000000000000000000013 /* WatchTransportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportCoordinator.swift; sourceTree = "<group>"; };
 		A70000000000000000000011 /* WatchModeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabView.swift; sourceTree = "<group>"; };
 		A70000000000000000000012 /* WatchModeLabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabViewModel.swift; sourceTree = "<group>"; };
 		A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = LucidTLR/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -200,6 +210,8 @@
 				4AFEA0028B754B4A9CF00001 /* LucidTLROvernightFeasibilityBridge.m */,
 				4AFEB0018B754B4A9CF00001 /* LucidTLRPhoneRuntime.swift */,
 				4AFEB0028B754B4A9CF00001 /* LucidTLRPhoneRuntimeBridge.m */,
+				B71000000000000000000011 /* LucidTLRWatchTransport.swift */,
+				B71000000000000000000012 /* LucidTLRWatchTransportBridge.m */,
 				4AFEA00B8B754B4A9CF00001 /* FeasibilityAudioSegments */,
 				4AFEC00B8B754B4A9CF00001 /* CueAudio */,
 				4AFED0038B754B4A9CF00001 /* TrainingAudio */,
@@ -263,6 +275,7 @@
 				A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */,
 				A70000000000000000000011 /* WatchModeLabView.swift */,
 				A70000000000000000000012 /* WatchModeLabViewModel.swift */,
+				B72000000000000000000020 /* Connectivity */,
 				A30000000000000000000020 /* Runtime */,
 				A60000000000000000000020 /* Storage */,
 				4AFEF0078B754B4A9CF00001 /* Assets.xcassets */,
@@ -374,6 +387,16 @@
 				A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */,
 			);
 			path = Storage;
+			sourceTree = "<group>";
+		};
+		B72000000000000000000020 /* Connectivity */ = {
+			isa = PBXGroup;
+			children = (
+				B72000000000000000000011 /* WatchTransportMessages.swift */,
+				B72000000000000000000012 /* WatchTransportPackageBuilder.swift */,
+				B72000000000000000000013 /* WatchTransportCoordinator.swift */,
+			);
+			path = Connectivity;
 			sourceTree = "<group>";
 		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
@@ -652,6 +675,8 @@
 				4AFEA0048B754B4A9CF00001 /* LucidTLROvernightFeasibilityBridge.m in Sources */,
 				4AFEB0038B754B4A9CF00001 /* LucidTLRPhoneRuntime.swift in Sources */,
 				4AFEB0048B754B4A9CF00001 /* LucidTLRPhoneRuntimeBridge.m in Sources */,
+				B71000000000000000000001 /* LucidTLRWatchTransport.swift in Sources */,
+				B71000000000000000000002 /* LucidTLRWatchTransportBridge.m in Sources */,
 				5E297646B1EBAE539E8C17DC /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -668,6 +693,9 @@
 				A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */,
 				A70000000000000000000001 /* WatchModeLabView.swift in Sources */,
 				A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */,
+				B72000000000000000000001 /* WatchTransportMessages.swift in Sources */,
+				B72000000000000000000002 /* WatchTransportPackageBuilder.swift in Sources */,
+				B72000000000000000000003 /* WatchTransportCoordinator.swift in Sources */,
 				A30000000000000000000001 /* WatchRuntimePlanV3.swift in Sources */,
 				A30000000000000000000002 /* WatchPackageManifestV3.swift in Sources */,
 				A30000000000000000000003 /* WatchRuntimeEventV3.swift in Sources */,

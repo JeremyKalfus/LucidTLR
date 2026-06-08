@@ -20,7 +20,7 @@ final class WatchModeLabViewModel: ObservableObject {
   @Published private(set) var statusRows: [WatchModeLabStatusRow] = [
     WatchModeLabStatusRow(id: "scope", label: "scope", value: "synthetic only"),
     WatchModeLabStatusRow(id: "public", label: "public Watch Mode", value: "disabled"),
-    WatchModeLabStatusRow(id: "transport", label: "WatchConnectivity", value: "not used"),
+    WatchModeLabStatusRow(id: "transport", label: "WatchConnectivity", value: "synthetic lab only"),
   ]
   @Published private(set) var selectedPreflightScenario: SyntheticPreflightScenario = .allPass
   @Published var sleepShieldViewModel: SleepShieldViewModel?
@@ -31,6 +31,7 @@ final class WatchModeLabViewModel: ObservableObject {
   private var activePlan: WatchRuntimePlanV3?
   private var activeManifest: WatchPackageManifestV3?
   private var activePreflightResult: WatchRuntimePreflightResult?
+  private let transportCoordinator = WatchTransportCoordinator.shared
 
   func showInstructions() {
     displayMode = .instructions
@@ -250,6 +251,154 @@ final class WatchModeLabViewModel: ObservableObject {
     }
   }
 
+  func activateTransport() {
+    do {
+      try transportCoordinator.activate()
+      statusMessage = "Activated synthetic WatchConnectivity transport. Reachability is informational only and is not Watch runtime truth."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func checkOrPullStagedSyntheticPlan() {
+    do {
+      transportCoordinator.refreshStatus()
+      guard let stagedPlan = try transportCoordinator.latestStagedPlan() else {
+        statusMessage = "No staged synthetic plan is available from transport."
+        refreshRows()
+        return
+      }
+
+      activePlan = stagedPlan.plan
+      activeManifest = nil
+      activePreflightResult = nil
+      statusMessage = "Pulled staged synthetic plan \(stagedPlan.sessionId). This did not start runtime."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func commitStagedTransportPlan() {
+    do {
+      guard let stagedPlan = try transportCoordinator.latestStagedPlan() else {
+        throw WatchTransportError.noStagedPlan
+      }
+
+      let plan = stagedPlan.plan
+      let nextCoordinator = try makeCoordinator(
+        plan: plan,
+        preflightScenario: .allPass,
+        requiresStartPreflight: false
+      )
+      try nextCoordinator.commit(plan: plan)
+      try currentSessionIndex?.recordCommit(
+        plan: plan,
+        runtimeState: .planCommitted,
+        updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      )
+      coordinator = nextCoordinator
+      activePlan = plan
+      activeManifest = nil
+      activePreflightResult = nil
+      statusMessage = "Committed staged synthetic transport plan locally on Watch. Runtime was not started."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func sendTransportCommitReceipt() {
+    do {
+      let stagedPlan = try transportCoordinator.latestStagedPlan()?.plan
+      guard let plan = activePlan ?? stagedPlan else {
+        throw WatchTransportError.noStagedPlan
+      }
+      guard let entry = try currentSessionIndex?.load() else {
+        throw WatchTransportError.noCommittedSession
+      }
+
+      try transportCoordinator.sendCommitReceipt(
+        plan: plan,
+        commitId: entry.commitId,
+        watchState: entry.runtimeState,
+        committedAt: WatchRuntimeDateFormat.date(from: entry.updatedAt) ?? Date()
+      )
+      statusMessage = "Queued synthetic Watch commit receipt over WatchConnectivity."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func sendTransportStatusSnapshot() {
+    do {
+      transportCoordinator.refreshStatus()
+      let entry = try currentSessionIndex?.load()
+      let stagedPlan = try transportCoordinator.latestStagedPlan()?.plan
+      let plan = activePlan ?? stagedPlan
+      let manifest = activeManifest ?? coordinator?.sealedManifest
+      try transportCoordinator.sendStatusSnapshot(
+        sessionId: entry?.activeSessionId ?? plan?.sessionId,
+        planHash: entry?.planHash ?? plan?.planHash,
+        watchState: entry?.runtimeState ?? coordinator?.state ?? .idle,
+        packageId: entry?.sealedPackageId ?? manifest?.packageId,
+        packageHash: entry?.sealedPackageHash ?? manifest?.packageHash,
+        createdAt: Date()
+      )
+      statusMessage = "Queued last-known synthetic Watch status snapshot. Reachability was not treated as running truth."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func transferSealedSyntheticPackage() {
+    do {
+      try transferSyntheticPackage()
+      statusMessage = "Queued sealed synthetic package manifest and file transfer. Package remains on Watch until matching ack."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func retryTransportPackageTransfer() {
+    do {
+      try transferSyntheticPackage()
+      statusMessage = "Retried sealed synthetic package transfer with the same session/package identity."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func recordReceivedTransportAck() {
+    do {
+      let recorded = try transportCoordinator.recordLatestAckIfMatches(
+        rootDirectory: labRootDirectory()
+      )
+      statusMessage = recorded
+        ? "Recorded received package ack into Watch storage and current session index."
+        : "No received package ack is waiting to be recorded."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func reloadTransportCurrentSessionIndex() {
+    do {
+      currentSessionIndex = try labIndex()
+      transportCoordinator.refreshStatus()
+      statusMessage = "Reloaded current session index and synthetic transport status from local Watch storage."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
   func discardCurrentSyntheticSessionWithExplicitConfirmation() {
     do {
       let index = try labIndex()
@@ -269,6 +418,85 @@ final class WatchModeLabViewModel: ObservableObject {
     } catch {
       handle(error: error)
     }
+  }
+
+  private func transferSyntheticPackage() throws {
+    let sealed = try sealSyntheticPackageIfNeeded()
+    let package = try WatchTransportPackageBuilder.buildTransferPackage(
+      sessionStore: sealed.sessionStore,
+      baseManifest: sealed.manifest
+    )
+    let packageURL = try WatchTransportPackageBuilder.writePackageFile(
+      package: package,
+      rootDirectory: labRootDirectory()
+    )
+    try currentSessionIndex?.recordSealedPackage(
+      manifest: package.manifest,
+      runtimeState: coordinator?.state ?? .sealedWaitingForPhone,
+      updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+    )
+    activeManifest = package.manifest
+    try transportCoordinator.transferPackage(
+      package: package,
+      fileURL: packageURL,
+      createdAt: Date()
+    )
+  }
+
+  private func sealSyntheticPackageIfNeeded() throws -> (
+    manifest: WatchPackageManifestV3,
+    sessionStore: WatchSessionDirectoryStore
+  ) {
+    if let activeManifest, let sessionStore {
+      return (activeManifest, sessionStore)
+    }
+
+    if coordinator == nil {
+      let stagedPlan = try transportCoordinator.latestStagedPlan()?.plan
+      let plan = activePlan ?? stagedPlan ?? WatchSyntheticRuntimeFixtures.makeTlrPlanFixture(
+        sessionId: uniqueSessionId(prefix: "watch-lab-transport-seal")
+      )
+      coordinator = try makeCoordinator(plan: plan, preflightScenario: .allPass)
+      try coordinator?.commit(plan: plan)
+      try currentSessionIndex?.recordCommit(
+        plan: plan,
+        runtimeState: .planCommitted,
+        updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      )
+      activePlan = plan
+    }
+
+    if coordinator?.state == .planCommitted {
+      try coordinator?.startCommittedPlan()
+      if let activePlan {
+        try currentSessionIndex?.recordRuntimeState(
+          sessionId: activePlan.sessionId,
+          runtimeState: coordinator?.state ?? .training,
+          updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+        )
+      }
+    }
+
+    guard let coordinator else {
+      throw WatchSessionCoordinatorError.noCommittedPlan
+    }
+
+    if coordinator.state != .sealedWaitingForPhone {
+      activeManifest = try coordinator.stopAndSeal(reason: .manualForceSeal)
+    } else {
+      activeManifest = coordinator.sealedManifest
+    }
+
+    guard let manifest = activeManifest, let sessionStore else {
+      throw WatchTransportError.noSealedPackage
+    }
+
+    try currentSessionIndex?.recordSealedPackage(
+      manifest: manifest,
+      runtimeState: coordinator.state,
+      updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+    )
+    return (manifest, sessionStore)
   }
 
   private func runTenMinuteSession(
@@ -377,6 +605,8 @@ final class WatchModeLabViewModel: ObservableObject {
     let manifest = activeManifest ?? coordinator?.sealedManifest
     let ackState = ackRetentionState(for: manifest)
     let preflightResult = activePreflightResult ?? coordinator?.lastPreflightResult
+    transportCoordinator.refreshStatus()
+    let transportStatus = transportCoordinator.status
     let currentIndexEntry: WatchCurrentSessionIndexEntry?
     if let currentSessionIndex {
       currentIndexEntry = try? currentSessionIndex.load()
@@ -398,7 +628,15 @@ final class WatchModeLabViewModel: ObservableObject {
       WatchModeLabStatusRow(id: "events", label: "event count", value: manifest.map { "\($0.eventCount)" } ?? "0"),
       WatchModeLabStatusRow(id: "seal", label: "seal reason", value: manifest?.sealReason ?? "not sealed"),
       WatchModeLabStatusRow(id: "ack", label: "ack retention", value: ackState),
-      WatchModeLabStatusRow(id: "transport", label: "WatchConnectivity", value: "not used"),
+      WatchModeLabStatusRow(id: "transport", label: "WatchConnectivity", value: "synthetic lab only"),
+      WatchModeLabStatusRow(id: "transportActivation", label: "WC activation", value: transportStatus.activationState),
+      WatchModeLabStatusRow(id: "transportReachable", label: "reachable", value: transportStatus.reachable ? "yes -- informational only" : "no -- informational only"),
+      WatchModeLabStatusRow(id: "transportLastMessage", label: "last WC message", value: transportStatus.lastMessageType ?? "none"),
+      WatchModeLabStatusRow(id: "transportLastAt", label: "last WC time", value: transportStatus.lastMessageAt ?? "none"),
+      WatchModeLabStatusRow(id: "transportStagedPlan", label: "staged plan", value: transportStatus.latestStagedPlanSessionId ?? "none"),
+      WatchModeLabStatusRow(id: "transportCommit", label: "commit receipt", value: transportStatus.latestCommitReceiptSessionId ?? "not sent"),
+      WatchModeLabStatusRow(id: "transportPackage", label: "package transfer", value: transportStatus.latestPackageId ?? "not transferred"),
+      WatchModeLabStatusRow(id: "transportAck", label: "ack status", value: transportStatus.latestAckRecorded ? "matching ack recorded" : transportStatus.latestAckPackageId ?? "no ack"),
       WatchModeLabStatusRow(id: "public", label: "public Watch Mode", value: "disabled"),
     ]
 

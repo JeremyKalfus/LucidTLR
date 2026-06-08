@@ -38,6 +38,24 @@ not durable history. `transferUserInfo` is queued but not real-time.
 opportunistic. Overnight correctness must not depend on the iPhone staying
 reachable, unlocked, foregrounded, alive, paired, or nearby.
 
+## Synthetic WatchConnectivity Transport Lab
+
+Phase 7A adds WatchConnectivity only to the Internal TestFlight Lab lane. The
+transport adapter is allowed to queue synthetic plan availability, plan
+requests, Watch commit receipts, last-known status snapshots, sealed package
+manifest/file transfer, package import acknowledgements, and retry controls.
+
+This is a recovery drill, not public Watch Mode. `isReachable` is displayed as
+informational status only and is never treated as proof that the Watch is
+running. Phone reload recovery still comes from the durable
+`watch_session_sync_states` ledger, and Watch reload recovery still comes from
+`current_session_index.json`.
+
+No WatchConnectivity callback may start runtime, play or schedule a cue, infer
+REM/motion truth, delete packages, upload data, or create a public Watch start
+path. Duplicate and out-of-order transport messages must be safe to replay
+through the durable state machine.
+
 ## Why Watch-Owned Alone Was Not Enough In v2
 
 v2 proved that moving overnight cue timing to the Watch was necessary but not
@@ -186,9 +204,11 @@ not ack-sent, and ack recording completes only for a matching package hash.
 The hidden Watch Mode Lab is synthetic-only and is not public Watch Mode. It may
 exercise plan building, synthetic Watch-owned runtime execution, the black sleep
 shield, file-backed Watch storage, package sealing, and local phone package
-import fixtures. It must not use real Watch sensors, HealthKit, workout
-sessions, CoreMotion, WatchConnectivity, haptic/audio output, package transfer,
-or public Home/AppState Watch session creation.
+import fixtures. In the Internal TestFlight Lab lane it may also exercise
+synthetic WatchConnectivity plan staging, commit receipts, status snapshots,
+package transfer, and package ack retry. It must not use real Watch sensors,
+HealthKit, workout sessions, CoreMotion, haptic/audio output, package deletion,
+live cue timing, uploads, or public Home/AppState Watch session creation.
 
 The lab is required before real providers so plan/runtime/storage/import
 surfaces can be inspected without implying Watch Mode is ready for overnight
@@ -211,8 +231,9 @@ Jeremy-based real-device reliability testing should use Internal TestFlight Lab
 builds rather than only dev builds, because TestFlight removes Metro,
 dev-client, and Xcode-run state from the lifecycle and is closer to eventual
 distribution. The lane enables only synthetic lab surfaces; public Watch Mode,
-real WatchConnectivity, real HealthKit/workout, real CoreMotion, real haptics,
-real audio, uploads, and package deletion remain disabled.
+real HealthKit/workout, real CoreMotion, real haptics, real audio, uploads, and
+package deletion remain disabled. WatchConnectivity in this lane is limited to
+synthetic sync artifacts and must not be used for live cue timing.
 
 ## Implementation Sequencing
 
