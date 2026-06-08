@@ -9,7 +9,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify:watch-testflight-lab": "node scripts/verify-watch-testflight-lab.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "56.0.13",
