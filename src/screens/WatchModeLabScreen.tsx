@@ -4,11 +4,13 @@ import {
   CheckCircle2,
   FileJson,
   RefreshCw,
+  Share2,
   ShieldAlert,
   Watch,
 } from "lucide-react-native";
 import React from "react";
-import { Text, View } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import { Share, Text, View } from "react-native";
 
 import {
   Card,
@@ -32,6 +34,10 @@ import {
   type WatchModeLabPackageValidationSummary,
   type WatchModeLabPlanSummary,
 } from "@/src/features/watchModeLab/watchModeLab";
+import {
+  createWatchModeLabDebugBundle,
+  watchModeLabDebugBundleFileName,
+} from "@/src/features/watchModeLab/watchModeLabDebugExport";
 import {
   activateWatchModeLabTransport,
   applyWatchTransportReceiptSnapshots,
@@ -102,7 +108,8 @@ export function WatchModeLabScreen() {
     return <Redirect href="/" />;
   }
 
-  const { engineSettings, participantId, tlrOptions } = useAppState();
+  const { engineSettings, participantId, selectedMode, tlrOptions } =
+    useAppState();
   const buildInfo = React.useMemo(() => internalLabBuildInfo(), []);
   const [planSummary, setPlanSummary] =
     React.useState<WatchModeLabPlanSummary | null>(null);
@@ -115,6 +122,8 @@ export function WatchModeLabScreen() {
   const [transportSummary, setTransportSummary] =
     React.useState<WatchModeLabTransportSummary | null>(null);
   const [busyLabel, setBusyLabel] = React.useState<string | null>(null);
+  const [exportInfo, setExportInfo] = React.useState<string | null>(null);
+  const [exportError, setExportError] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState<string>(
     "Internal TestFlight Lab -- synthetic / QA only. Public Watch Mode remains disabled.",
   );
@@ -239,6 +248,88 @@ export function WatchModeLabScreen() {
     setImportSummary(null);
     setValidationSummary(null);
     setMessage("Cleared lab status. Local imported fixture rows were not deleted.");
+  }
+
+  async function copyDebugBundleFallback(
+    json: string,
+    fileUri?: string,
+  ): Promise<string> {
+    const Clipboard = await import("expo-clipboard");
+    const clipboardValue = fileUri ? `${fileUri}\n\n${json}` : json;
+
+    await Clipboard.setStringAsync(clipboardValue);
+
+    return fileUri
+      ? "Share sheet failed; copied the file URI and JSON to clipboard."
+      : "Share sheet unavailable; copied the JSON to clipboard.";
+  }
+
+  async function exportDebugBundle() {
+    setBusyLabel("Exporting debug bundle...");
+    setExportInfo(null);
+    setExportError(null);
+
+    try {
+      const db = await getLocalDb();
+      const bundle = await createWatchModeLabDebugBundle({
+        db,
+        participantId,
+        selectedMode,
+        latestMessage: message,
+        latestPlanSummary: planSummary,
+        latestImportSummary: importSummary,
+        latestValidationSummary: validationSummary,
+        transportStatus: transportSummary?.status,
+      });
+      const json = JSON.stringify(bundle, null, 2);
+      const fileName = watchModeLabDebugBundleFileName(bundle.exportedAt);
+      const shareMessage = `LucidTLR Watch Lab debug bundle\nexportedAt: ${bundle.exportedAt}`;
+      let resultMessage = "";
+
+      if (FileSystem.documentDirectory) {
+        const exportDirectory = `${FileSystem.documentDirectory}lucidtlr-exports/`;
+        const fileUri = `${exportDirectory}${fileName}`;
+
+        await FileSystem.makeDirectoryAsync(exportDirectory, {
+          intermediates: true,
+        });
+        await FileSystem.writeAsStringAsync(fileUri, json, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+
+        try {
+          await Share.share({
+            title: fileName,
+            message: shareMessage,
+            url: fileUri,
+          });
+          resultMessage = `Saved ${fileName} locally and opened the share sheet.`;
+        } catch {
+          resultMessage = await copyDebugBundleFallback(json, fileUri);
+        }
+      } else {
+        try {
+          await Share.share({
+            title: fileName,
+            message: `${shareMessage}\n\n${json}`,
+          });
+          resultMessage = `Opened share sheet for ${fileName}.`;
+        } catch {
+          resultMessage = await copyDebugBundleFallback(json);
+        }
+      }
+
+      setExportInfo(resultMessage);
+      setMessage("Exported Watch Lab debug bundle. Local export only; no upload.");
+    } catch (error) {
+      setExportError(
+        error instanceof Error
+          ? error.message
+          : "Could not export Watch Lab debug bundle.",
+      );
+    } finally {
+      setBusyLabel(null);
+    }
   }
 
   return (
@@ -664,6 +755,32 @@ export function WatchModeLabScreen() {
             />
           </View>
         ))}
+      </Card>
+
+      <Card>
+        <InfoRow label="debug export" value="Local export only" />
+        <InfoRow label="upload" value="No upload" />
+        <InfoRow label="content" value="Excludes dream journal content" />
+        <InfoRow label="scope" value="Synthetic/internal lab only" />
+        <LabNote>
+          Export a local JSON bundle after the TestFlight transport drill so
+          Codex can inspect transport status, DB-backed recovery state, package
+          import status, ack eligibility, and idempotency hints.
+        </LabNote>
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={Share2}
+          label={
+            busyLabel === "Exporting debug bundle..."
+              ? busyLabel
+              : "Export Watch Lab Debug Bundle"
+          }
+          onPress={() => {
+            void exportDebugBundle();
+          }}
+        />
+        {exportInfo ? <LabNote>{exportInfo}</LabNote> : null}
+        {exportError ? <LabNote>{exportError}</LabNote> : null}
       </Card>
 
       <Card>

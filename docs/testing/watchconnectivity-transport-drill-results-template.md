@@ -52,6 +52,13 @@ being tested.
     - force-quit phone before package transfer
     - background Watch app and reopen
     - temporarily break/recover Bluetooth only if comfortable
+22. Tap `Export Watch Lab Debug Bundle` in the phone lab.
+23. Upload the JSON file to ChatGPT/Codex for analysis.
+24. If the share sheet fails, copy/paste the JSON or file URI shown by the
+    fallback path.
+
+The JSON bundle is the primary result artifact. Screenshots are secondary and
+mainly help explain UI state when the bundle and the visible screens disagree.
 
 ## Failure Capture
 
@@ -70,6 +77,7 @@ If anything fails, capture:
 - Watch screenshot/photo attached: yes / no
 - Phone app killed/backgrounded/locked: yes / no
 - Watch app killed/backgrounded: yes / no
+- Watch Lab debug bundle JSON attached: yes / no
 - Notes:
 
 ## Result

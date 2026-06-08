@@ -1040,6 +1040,45 @@ limit 1`,
   return row ? toWatchSyncPackageImport(row) : null;
 }
 
+export async function loadRecentWatchSyncPackageImports(input: {
+  db: LocalDb;
+  limit?: number;
+  sessionIds?: string[];
+}): Promise<WatchSyncPackageImportRecord[]> {
+  const limit = Math.max(1, Math.min(input.limit ?? 20, 50));
+  const sessionIds = input.sessionIds?.filter((sessionId) => sessionId.length > 0);
+  const params: unknown[] = [];
+  const sessionClause =
+    sessionIds && sessionIds.length > 0
+      ? `where session_id in (${sessionIds.map(() => "?").join(", ")})`
+      : "";
+
+  if (sessionIds && sessionIds.length > 0) {
+    params.push(...sessionIds);
+  }
+
+  params.push(limit);
+
+  const rows = await input.db.query<WatchSyncPackageRow>(
+    `select package_id,
+  session_id,
+  plan_hash,
+  package_hash,
+  sealed_at,
+  imported_at,
+  import_status,
+  manifest_json,
+  import_error
+from watch_sync_packages
+${sessionClause}
+order by coalesce(imported_at, sealed_at) desc
+limit ?`,
+    params,
+  );
+
+  return rows.map(toWatchSyncPackageImport);
+}
+
 export async function markWatchSyncPackageImporting(input: {
   db: LocalDb;
   packageId: string;

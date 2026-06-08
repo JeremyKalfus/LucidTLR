@@ -647,6 +647,33 @@ order by updated_at desc`,
   return rows.map(toWatchSessionSyncState);
 }
 
+export async function loadRecentWatchSessionSyncStates(input: {
+  db: LocalDb;
+  participantId?: string;
+  limit?: number;
+}): Promise<WatchSessionSyncState[]> {
+  const params: unknown[] = [];
+  const participantClause = input.participantId ? "where participant_id = ?" : "";
+  const limit = Math.max(1, Math.min(input.limit ?? 20, 50));
+
+  if (input.participantId) {
+    params.push(input.participantId);
+  }
+
+  params.push(limit);
+
+  const rows = await input.db.query<WatchSessionSyncStateRow>(
+    `select *
+from watch_session_sync_states
+${participantClause}
+order by updated_at desc
+limit ?`,
+    params,
+  );
+
+  return rows.map(toWatchSessionSyncState);
+}
+
 export async function markWatchSessionPlanBuilt(input: {
   db: LocalDb;
   sessionId: string;

@@ -116,6 +116,9 @@ On iPhone:
   real overnight Watch Mode, and no uploads.
 - Confirm the transport section labels WatchConnectivity as synthetic/internal
   only and `reachable` as informational only.
+- Confirm `Export Watch Lab Debug Bundle` is present. It creates a local JSON
+  file for Codex analysis, does not upload anything, and excludes dream journal
+  content.
 
 On Watch:
 
