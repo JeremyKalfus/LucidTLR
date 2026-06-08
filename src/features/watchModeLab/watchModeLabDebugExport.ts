@@ -12,6 +12,7 @@ import {
   type WatchModeLabRecoverySummary,
 } from "@/src/features/watchModeLab/watchModeLab";
 import {
+  WATCH_SESSION_SYNC_STATUS_PRECEDENCE,
   loadRecentWatchSessionSyncStates,
   loadUnresolvedWatchSessionSyncStates,
   type WatchSessionSyncState,
@@ -29,6 +30,15 @@ export const WATCH_MODE_LAB_DEBUG_BUNDLE_SCHEMA_VERSION =
   "watch-mode-lab-debug-bundle-v1";
 
 type InternalLabBuildInfo = ReturnType<typeof internalLabBuildInfo>;
+export type WatchModeLabFinalDrillStatus = "pass" | "fail" | "incomplete";
+
+export interface WatchModeLabActionLogEntry {
+  at: string;
+  action: string;
+  result: "ok" | "error";
+  message: string;
+  details?: Record<string, unknown>;
+}
 
 export interface WatchModeLabDebugBundle {
   schemaVersion: typeof WATCH_MODE_LAB_DEBUG_BUNDLE_SCHEMA_VERSION;
@@ -54,6 +64,7 @@ export interface WatchModeLabDebugBundle {
   };
   lab: {
     latestMessage?: string;
+    actionLog: WatchModeLabActionLogEntry[];
     latestPlanSummary?: WatchModeLabPlanSummary | null;
     latestImportSummary?: WatchModeLabPackageImportSummary | null;
     latestValidationSummary?: WatchModeLabPackageValidationSummary | null;
@@ -88,6 +99,10 @@ export interface WatchModeLabDebugBundle {
       ackRecordedSeen: boolean;
       transportErrorSeen: boolean;
     };
+    unresolvedCount: number;
+    ackRecordedSeen: boolean;
+    finalDrillStatus: WatchModeLabFinalDrillStatus;
+    failureReasons: string[];
   };
   diagnostics: {
     generatedBy: "phone-lab";
@@ -105,6 +120,7 @@ export interface WatchModeLabDebugBundleInput {
   latestImportSummary?: WatchModeLabPackageImportSummary | null;
   latestValidationSummary?: WatchModeLabPackageValidationSummary | null;
   transportStatus?: NativeWatchTransportStatus | null;
+  actionLog?: WatchModeLabActionLogEntry[];
   exportedAt?: string;
 }
 
@@ -118,6 +134,7 @@ export interface WatchModeLabDebugBundleParts {
   latestImportSummary?: WatchModeLabPackageImportSummary | null;
   latestValidationSummary?: WatchModeLabPackageValidationSummary | null;
   transportStatus?: NativeWatchTransportStatus | null;
+  actionLog?: WatchModeLabActionLogEntry[];
   unresolvedStates: WatchSessionSyncState[];
   recentStates: WatchSessionSyncState[];
   packages: WatchSyncPackageImportRecord[];
@@ -194,7 +211,7 @@ function debugWarnings(input: {
 
   if (!input.transportStatus?.latestStatusSnapshot) {
     warnings.push(
-      "Watch-local state may require a Watch screenshot because no status snapshot has been received.",
+      "Watch-local status snapshot has not been received; package import and ack fields remain phone-ledger evidence.",
     );
   }
 
@@ -216,6 +233,111 @@ const DEBUG_EXPORT_LIMITATIONS = [
   "Public Watch Mode remains disabled.",
 ] as const;
 
+function hasRegressedImportedState(state: WatchSessionSyncState): boolean {
+  const importedEvidence = Boolean(state.importedAt || state.ackEligibleAt);
+
+  return (
+    importedEvidence &&
+    WATCH_SESSION_SYNC_STATUS_PRECEDENCE[state.status] <
+      WATCH_SESSION_SYNC_STATUS_PRECEDENCE.phone_imported_ack_eligible
+  );
+}
+
+function hasRegressedAckState(state: WatchSessionSyncState): boolean {
+  const ackEvidence = Boolean(state.ackSentAt);
+
+  return (
+    ackEvidence &&
+    WATCH_SESSION_SYNC_STATUS_PRECEDENCE[state.status] <
+      WATCH_SESSION_SYNC_STATUS_PRECEDENCE.ack_recorded
+  );
+}
+
+function failureReasons(input: {
+  publicWatchModeDisabled: boolean;
+  unresolvedStates: WatchSessionSyncState[];
+  importedPackagePresent: boolean;
+  ackEligibleSeen: boolean;
+  ackRecordedSeen: boolean;
+  transportErrorSeen: boolean;
+}): string[] {
+  const reasons: string[] = [];
+
+  if (!input.publicWatchModeDisabled) {
+    reasons.push("Public Watch Mode is unexpectedly enabled.");
+  }
+
+  if (input.transportErrorSeen) {
+    reasons.push("Transport error was reported.");
+  }
+
+  if (!input.importedPackagePresent) {
+    reasons.push("No imported Watch package record is present.");
+  }
+
+  if (!input.ackEligibleSeen) {
+    reasons.push("Ack eligibility was not observed after import.");
+  }
+
+  if (!input.ackRecordedSeen) {
+    reasons.push("Matching ack was not recorded.");
+  }
+
+  if (input.unresolvedStates.length > 0) {
+    reasons.push("Unresolved Watch sync state remains on the phone ledger.");
+  }
+
+  for (const state of input.unresolvedStates) {
+    if (hasRegressedImportedState(state)) {
+      reasons.push(
+        `State ${state.sessionId} has import/ack eligibility timestamps but regressed status ${state.status}.`,
+      );
+    }
+
+    if (hasRegressedAckState(state)) {
+      reasons.push(
+        `State ${state.sessionId} has ack timestamp evidence but regressed status ${state.status}.`,
+      );
+    }
+  }
+
+  return Array.from(new Set(reasons));
+}
+
+function finalDrillStatus(input: {
+  publicWatchModeDisabled: boolean;
+  unresolvedStates: WatchSessionSyncState[];
+  importedPackagePresent: boolean;
+  ackEligibleSeen: boolean;
+  ackRecordedSeen: boolean;
+  transportErrorSeen: boolean;
+}): WatchModeLabFinalDrillStatus {
+  const regressedStateSeen = input.unresolvedStates.some(
+    (state) => hasRegressedImportedState(state) || hasRegressedAckState(state),
+  );
+  const hardFailureSeen =
+    !input.publicWatchModeDisabled ||
+    input.transportErrorSeen ||
+    regressedStateSeen ||
+    (input.ackRecordedSeen && input.unresolvedStates.length > 0);
+
+  if (hardFailureSeen) {
+    return "fail";
+  }
+
+  if (
+    input.publicWatchModeDisabled &&
+    input.unresolvedStates.length === 0 &&
+    input.importedPackagePresent &&
+    input.ackEligibleSeen &&
+    input.ackRecordedSeen
+  ) {
+    return "pass";
+  }
+
+  return "incomplete";
+}
+
 export function buildWatchModeLabDebugBundle(
   input: WatchModeLabDebugBundleParts,
 ): WatchModeLabDebugBundle {
@@ -232,6 +354,23 @@ export function buildWatchModeLabDebugBundle(
     input.recentStates.some((state) => state.status === "ack_recorded") ||
     Boolean(input.transportStatus?.latestAck);
   const transportErrorSeen = Boolean(input.transportStatus?.lastError);
+  const publicWatchModeDisabled = WATCH_MODE_ENABLED === false;
+  const drillFailureReasons = failureReasons({
+    publicWatchModeDisabled,
+    unresolvedStates: input.unresolvedStates,
+    importedPackagePresent,
+    ackEligibleSeen,
+    ackRecordedSeen,
+    transportErrorSeen,
+  });
+  const drillStatus = finalDrillStatus({
+    publicWatchModeDisabled,
+    unresolvedStates: input.unresolvedStates,
+    importedPackagePresent,
+    ackEligibleSeen,
+    ackRecordedSeen,
+    transportErrorSeen,
+  });
 
   return {
     schemaVersion: WATCH_MODE_LAB_DEBUG_BUNDLE_SCHEMA_VERSION,
@@ -256,6 +395,7 @@ export function buildWatchModeLabDebugBundle(
     },
     lab: {
       latestMessage: input.latestMessage,
+      actionLog: input.actionLog ?? [],
       latestPlanSummary: input.latestPlanSummary ?? null,
       latestImportSummary: input.latestImportSummary ?? null,
       latestValidationSummary: input.latestValidationSummary ?? null,
@@ -283,13 +423,17 @@ export function buildWatchModeLabDebugBundle(
     },
     summaries: {
       passFailHints: {
-        publicWatchModeDisabled: WATCH_MODE_ENABLED === false,
+        publicWatchModeDisabled,
         unresolvedStatePresent: input.unresolvedStates.length > 0,
         importedPackagePresent,
         ackEligibleSeen,
         ackRecordedSeen,
         transportErrorSeen,
       },
+      unresolvedCount: input.unresolvedStates.length,
+      ackRecordedSeen,
+      finalDrillStatus: drillStatus,
+      failureReasons: drillFailureReasons,
     },
     diagnostics: {
       generatedBy: "phone-lab",
@@ -361,6 +505,7 @@ export async function createWatchModeLabDebugBundle(
     latestImportSummary: input.latestImportSummary,
     latestValidationSummary: input.latestValidationSummary,
     transportStatus,
+    actionLog: input.actionLog,
     unresolvedStates,
     recentStates,
     packages,

@@ -73,6 +73,7 @@ describe("Watch Mode v3 recovery and internal lab architecture", () => {
     }
 
     for (const helper of [
+      "WATCH_SESSION_SYNC_STATUS_PRECEDENCE",
       "assertNoUnresolvedWatchSyncStateForFutureStart",
       "computeWatchStartupRecoveryState",
       "applyPlanStaged",

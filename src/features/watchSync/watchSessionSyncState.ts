@@ -82,6 +82,37 @@ const TERMINAL_WATCH_SESSION_SYNC_STATUSES = new Set<WatchSessionSyncStatus>([
   "abandoned_local_only",
 ]);
 
+export const WATCH_SESSION_SYNC_STATUS_PRECEDENCE: Record<
+  WatchSessionSyncStatus,
+  number
+> = {
+  draft: 0,
+  phone_plan_built: 10,
+  plan_staged: 20,
+  watch_commit_pending: 30,
+  watch_committed: 40,
+  watch_running_unconfirmed: 50,
+  watch_running_last_known: 60,
+  watch_sealed_waiting_import: 70,
+  phone_importing: 80,
+  phone_imported_ack_eligible: 90,
+  ack_recorded: 100,
+  completed: 110,
+  abandoned_local_only: 120,
+  error: 130,
+};
+
+function statusPrecedence(status: WatchSessionSyncStatus): number {
+  return WATCH_SESSION_SYNC_STATUS_PRECEDENCE[status];
+}
+
+function isStatusAfter(
+  currentStatus: WatchSessionSyncStatus,
+  nextStatus: WatchSessionSyncStatus,
+): boolean {
+  return statusPrecedence(currentStatus) > statusPrecedence(nextStatus);
+}
+
 function metadataWith(
   state: WatchSessionSyncState,
   patch?: Record<string, unknown>,
@@ -249,6 +280,10 @@ export function applyPlanBuilt(
   state: WatchSessionSyncState,
   input: { builtAt: string },
 ): WatchSessionSyncState {
+  if (isStatusAfter(state.status, "phone_plan_built")) {
+    return state;
+  }
+
   return updateState(
     state,
     {
@@ -263,6 +298,10 @@ export function applyPlanStaged(
   state: WatchSessionSyncState,
   input: { stagedAt: string },
 ): WatchSessionSyncState {
+  if (isStatusAfter(state.status, "plan_staged")) {
+    return state;
+  }
+
   return updateState(
     state,
     {
@@ -284,6 +323,10 @@ export function applyWatchCommitReceipt(
   },
 ): WatchSessionSyncState {
   assertSessionAndPlanHash(state, input);
+
+  if (isStatusAfter(state.status, "watch_committed")) {
+    return state;
+  }
 
   return updateState(
     state,
@@ -310,15 +353,14 @@ export function applyWatchRunningStatus(
 ): WatchSessionSyncState {
   assertSessionAndPlanHash(state, input);
 
-  const status: WatchSessionSyncStatus =
-    state.packageId || state.status === "phone_imported_ack_eligible"
-      ? state.status
-      : "watch_running_last_known";
+  if (isStatusAfter(state.status, "watch_running_last_known")) {
+    return state;
+  }
 
   return updateState(
     state,
     {
-      status,
+      status: "watch_running_last_known",
       lastKnownWatchState: input.watchState,
       startedAt: state.startedAt ?? input.startedAt,
       unresolvedReason: undefined,
@@ -349,6 +391,10 @@ export function applyWatchSealedManifest(
     );
   }
 
+  if (isStatusAfter(state.status, "watch_sealed_waiting_import")) {
+    return state;
+  }
+
   return updateState(
     state,
     {
@@ -373,6 +419,10 @@ export function applyPhoneImportSuccess(
 ): WatchSessionSyncState {
   assertPackageMatch(state, input);
 
+  if (isStatusAfter(state.status, "phone_imported_ack_eligible")) {
+    return state;
+  }
+
   return updateState(
     state,
     {
@@ -394,6 +444,10 @@ export function applyAckRecorded(
   },
 ): WatchSessionSyncState {
   assertPackageMatch(state, input);
+
+  if (isStatusAfter(state.status, "ack_recorded")) {
+    return state;
+  }
 
   return updateState(
     state,

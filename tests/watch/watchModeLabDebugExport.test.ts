@@ -26,6 +26,7 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("watch-mode-lab-debug-bundle-v1");
     expect(helper).toContain("watchModeEnabled");
     expect(helper).toContain("lab:");
+    expect(helper).toContain("actionLog");
     expect(helper).toContain("transport:");
     expect(helper).toContain("syncLedger:");
     expect(helper).toContain("imports:");
@@ -44,7 +45,11 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("latestValidationSummary");
     expect(helper).toContain("ackEligibleSeen");
     expect(helper).toContain("ackRecordedSeen");
+    expect(helper).toContain("unresolvedCount");
+    expect(helper).toContain("finalDrillStatus");
+    expect(helper).toContain("failureReasons");
     expect(helper).toContain("transportErrorSeen");
+    expect(helper).toContain("hasRegressedImportedState");
   });
 
   it("documents export warnings and limitations inside the bundle", () => {
@@ -73,6 +78,8 @@ describe("Watch Mode Lab debug export", () => {
     expect(screen).toContain("Excludes dream journal content");
     expect(screen).toContain("Synthetic/internal lab only");
     expect(screen).toContain("createWatchModeLabDebugBundle");
+    expect(screen).toContain("actionLog");
+    expect(screen).toContain("recordLabAction");
     expect(screen).toContain("FileSystem.writeAsStringAsync");
     expect(screen).toContain("Share.share");
     expect(screen).toContain('import("expo-clipboard")');

@@ -37,6 +37,7 @@ import {
 import {
   createWatchModeLabDebugBundle,
   watchModeLabDebugBundleFileName,
+  type WatchModeLabActionLogEntry,
 } from "@/src/features/watchModeLab/watchModeLabDebugExport";
 import {
   activateWatchModeLabTransport,
@@ -127,6 +128,7 @@ export function WatchModeLabScreen() {
   const [message, setMessage] = React.useState<string>(
     "Internal TestFlight Lab -- synthetic / QA only. Public Watch Mode remains disabled.",
   );
+  const [actionLog, setActionLog] = React.useState<WatchModeLabActionLogEntry[]>([]);
 
   const reloadRecoveryState = React.useCallback(async () => {
     const db = await getLocalDb();
@@ -154,6 +156,24 @@ export function WatchModeLabScreen() {
     void reloadTransportState();
   }, [reloadRecoveryState, reloadTransportState]);
 
+  function recordLabAction(input: {
+    action: string;
+    result: WatchModeLabActionLogEntry["result"];
+    message: string;
+    details?: Record<string, unknown>;
+  }) {
+    const entry: WatchModeLabActionLogEntry = {
+      at: new Date().toISOString(),
+      action: input.action,
+      result: input.result,
+      message: input.message,
+      details: input.details,
+    };
+
+    setActionLog((current) => [...current, entry].slice(-80));
+    setMessage(input.message);
+  }
+
   async function runTransportAction(
     label: string,
     action: () => Promise<string>,
@@ -161,11 +181,20 @@ export function WatchModeLabScreen() {
     setBusyLabel(label);
 
     try {
-      setMessage(await action());
+      recordLabAction({
+        action: `transport:${label.replace(/\.+$/, "")}`,
+        result: "ok",
+        message: await action(),
+      });
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Synthetic transport action failed.",
-      );
+      recordLabAction({
+        action: `transport:${label.replace(/\.+$/, "")}`,
+        result: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Synthetic transport action failed.",
+      });
     } finally {
       setBusyLabel(null);
     }
@@ -181,7 +210,15 @@ export function WatchModeLabScreen() {
     });
 
     setPlanSummary(summarizeWatchModeLabPlan(plan));
-    setMessage(`Built ${planTitle(kind)} locally. No transport message was sent.`);
+    recordLabAction({
+      action: `build_plan:${kind}`,
+      result: "ok",
+      message: `Built ${planTitle(kind)} locally. No transport message was sent.`,
+      details: {
+        sessionId: plan.sessionId,
+        planHash: plan.planHash,
+      },
+    });
   }
 
   async function importFixture(kind: WatchModeLabKind, reimport = false) {
@@ -197,14 +234,25 @@ export function WatchModeLabScreen() {
 
       setImportSummary(result);
       setValidationSummary(null);
-      setMessage(
-        `${reimport ? "Re-imported" : "Imported"} synthetic ${kind} package with status ${result.status}.`,
-      );
+      recordLabAction({
+        action: `${reimport ? "reimport" : "import"}_fixture:${kind}`,
+        result: "ok",
+        message: `${reimport ? "Re-imported" : "Imported"} synthetic ${kind} package with status ${result.status}.`,
+        details: {
+          sessionId: result.sessionId,
+          packageId: result.packageId,
+          packageHash: result.packageHash,
+          ackEligible: result.ackEligible,
+        },
+      });
       await reloadRecoveryState();
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Synthetic package import failed.",
-      );
+      recordLabAction({
+        action: `${reimport ? "reimport" : "import"}_fixture:${kind}`,
+        result: "error",
+        message:
+          error instanceof Error ? error.message : "Synthetic package import failed.",
+      });
     } finally {
       setBusyLabel(null);
     }
@@ -222,11 +270,21 @@ export function WatchModeLabScreen() {
       });
 
       setRecoverySummary(result.recovery);
-      setMessage(result.message);
+      recordLabAction({
+        action: `recovery:${action}`,
+        result: "ok",
+        message: result.message,
+        details: {
+          unresolvedCount: result.recovery.unresolvedCount,
+          startupRecovery: result.recovery.startupRecovery,
+        },
+      });
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Recovery action failed.",
-      );
+      recordLabAction({
+        action: `recovery:${action}`,
+        result: "error",
+        message: error instanceof Error ? error.message : "Recovery action failed.",
+      });
     } finally {
       setBusyLabel(null);
     }
@@ -234,20 +292,32 @@ export function WatchModeLabScreen() {
 
   function validateCorruptPackage() {
     const result = validateCorruptSyntheticWatchModeLabPackage("tlr");
-
-    setValidationSummary(result);
-    setMessage(
+    const message =
       result.validationErrors.length > 0
         ? "Corrupt synthetic package was rejected before import."
-        : "Unexpected: corrupt synthetic package passed validation.",
-    );
+        : "Unexpected: corrupt synthetic package passed validation.";
+
+    setValidationSummary(result);
+    recordLabAction({
+      action: "validate_corrupt_package:tlr",
+      result: result.validationErrors.length > 0 ? "ok" : "error",
+      message,
+      details: {
+        packageId: result.packageId,
+        validationErrors: result.validationErrors,
+      },
+    });
   }
 
   function clearStatus() {
     setPlanSummary(null);
     setImportSummary(null);
     setValidationSummary(null);
-    setMessage("Cleared lab status. Local imported fixture rows were not deleted.");
+    recordLabAction({
+      action: "clear_lab_status",
+      result: "ok",
+      message: "Cleared lab status. Local imported fixture rows were not deleted.",
+    });
   }
 
   async function copyDebugBundleFallback(
@@ -271,6 +341,12 @@ export function WatchModeLabScreen() {
 
     try {
       const db = await getLocalDb();
+      const exportLogEntry: WatchModeLabActionLogEntry = {
+        at: new Date().toISOString(),
+        action: "export_debug_bundle",
+        result: "ok",
+        message: "Export Watch Lab debug bundle requested.",
+      };
       const bundle = await createWatchModeLabDebugBundle({
         db,
         participantId,
@@ -280,6 +356,7 @@ export function WatchModeLabScreen() {
         latestImportSummary: importSummary,
         latestValidationSummary: validationSummary,
         transportStatus: transportSummary?.status,
+        actionLog: [...actionLog, exportLogEntry],
       });
       const json = JSON.stringify(bundle, null, 2);
       const fileName = watchModeLabDebugBundleFileName(bundle.exportedAt);
@@ -320,13 +397,27 @@ export function WatchModeLabScreen() {
       }
 
       setExportInfo(resultMessage);
-      setMessage("Exported Watch Lab debug bundle. Local export only; no upload.");
+      recordLabAction({
+        action: "export_debug_bundle",
+        result: "ok",
+        message: "Exported Watch Lab debug bundle. Local export only; no upload.",
+        details: {
+          finalDrillStatus: bundle.summaries.finalDrillStatus,
+          unresolvedCount: bundle.summaries.unresolvedCount,
+        },
+      });
     } catch (error) {
-      setExportError(
+      const errorMessage =
         error instanceof Error
           ? error.message
-          : "Could not export Watch Lab debug bundle.",
-      );
+          : "Could not export Watch Lab debug bundle.";
+
+      setExportError(errorMessage);
+      recordLabAction({
+        action: "export_debug_bundle",
+        result: "error",
+        message: errorMessage,
+      });
     } finally {
       setBusyLabel(null);
     }

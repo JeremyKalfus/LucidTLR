@@ -139,6 +139,47 @@ describe("Watch session sync state machine", () => {
     expect(duplicate).toEqual(committed);
   });
 
+  it("does not regress imported state when a duplicate commit receipt arrives later", () => {
+    const imported = applyPhoneImportSuccess(sealedState(), {
+      packageId: PACKAGE_ID,
+      packageHash: PACKAGE_HASH,
+      importedAt: "2026-06-07T12:02:00.000Z",
+    });
+    const afterDuplicateCommit = applyWatchCommitReceipt(imported, {
+      sessionId: SESSION_ID,
+      planHash: PLAN_HASH,
+      committedAt: "2026-06-07T12:03:00.000Z",
+      commitId: "commit-1",
+    });
+
+    expect(afterDuplicateCommit).toEqual(imported);
+    expect(afterDuplicateCommit.status).toBe("phone_imported_ack_eligible");
+  });
+
+  it("does not regress ack-recorded state when a duplicate commit receipt arrives later", () => {
+    const ackRecorded = applyAckRecorded(
+      applyPhoneImportSuccess(sealedState(), {
+        packageId: PACKAGE_ID,
+        packageHash: PACKAGE_HASH,
+        importedAt: "2026-06-07T12:02:00.000Z",
+      }),
+      {
+        packageId: PACKAGE_ID,
+        packageHash: PACKAGE_HASH,
+        ackRecordedAt: "2026-06-07T12:03:00.000Z",
+      },
+    );
+    const afterDuplicateCommit = applyWatchCommitReceipt(ackRecorded, {
+      sessionId: SESSION_ID,
+      planHash: PLAN_HASH,
+      committedAt: "2026-06-07T12:04:00.000Z",
+      commitId: "commit-1",
+    });
+
+    expect(afterDuplicateCommit).toEqual(ackRecorded);
+    expect(afterDuplicateCommit.status).toBe("ack_recorded");
+  });
+
   it("accepts sealed manifest before running status without losing package identity", () => {
     const sealedBeforeRunning = applyWatchSealedManifest(stagedState(), {
       sessionId: SESSION_ID,
@@ -159,6 +200,50 @@ describe("Watch session sync state machine", () => {
       packageId: PACKAGE_ID,
       packageHash: PACKAGE_HASH,
     });
+  });
+
+  it("does not regress imported state when a running status arrives later", () => {
+    const imported = applyPhoneImportSuccess(sealedState(), {
+      packageId: PACKAGE_ID,
+      packageHash: PACKAGE_HASH,
+      importedAt: "2026-06-07T12:02:00.000Z",
+    });
+    const afterRunningStatus = applyWatchRunningStatus(imported, {
+      sessionId: SESSION_ID,
+      planHash: PLAN_HASH,
+      watchState: "running",
+      reportedAt: "2026-06-07T12:03:00.000Z",
+    });
+
+    expect(afterRunningStatus).toEqual(imported);
+    expect(afterRunningStatus.status).toBe("phone_imported_ack_eligible");
+  });
+
+  it("keeps sealed manifest idempotent after phone import while rejecting package mismatch", () => {
+    const imported = applyPhoneImportSuccess(sealedState(), {
+      packageId: PACKAGE_ID,
+      packageHash: PACKAGE_HASH,
+      importedAt: "2026-06-07T12:02:00.000Z",
+    });
+    const duplicateSeal = applyWatchSealedManifest(imported, {
+      sessionId: SESSION_ID,
+      planHash: PLAN_HASH,
+      packageId: PACKAGE_ID,
+      packageHash: PACKAGE_HASH,
+      sealedAt: "2026-06-07T12:03:00.000Z",
+    });
+
+    expect(duplicateSeal).toEqual(imported);
+    expect(duplicateSeal.status).toBe("phone_imported_ack_eligible");
+    expect(() =>
+      applyWatchSealedManifest(imported, {
+        sessionId: SESSION_ID,
+        planHash: PLAN_HASH,
+        packageId: PACKAGE_ID,
+        packageHash: "wrong-package-hash",
+        sealedAt: "2026-06-07T12:03:00.000Z",
+      }),
+    ).toThrow("already has package");
   });
 
   it("rejects stale or mismatched plan hashes", () => {
@@ -211,6 +296,24 @@ describe("Watch session sync state machine", () => {
       status: "ack_recorded",
       lastKnownWatchState: "ack_recorded",
       ackSentAt: NOW,
+    });
+  });
+
+  it("clears unresolved recovery after final ack is recorded", () => {
+    const imported = applyPhoneImportSuccess(sealedState(), {
+      packageId: PACKAGE_ID,
+      packageHash: PACKAGE_HASH,
+      importedAt: "2026-06-07T12:02:00.000Z",
+    });
+    const ackRecorded = applyAckRecorded(imported, {
+      packageId: PACKAGE_ID,
+      packageHash: PACKAGE_HASH,
+      ackRecordedAt: "2026-06-07T12:03:00.000Z",
+    });
+
+    expect(computeWatchStartupRecoveryState([ackRecorded])).toMatchObject({
+      kind: "normal_placeholder",
+      blocksFutureWatchStart: false,
     });
   });
 
