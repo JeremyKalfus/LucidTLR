@@ -18,6 +18,7 @@
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.jeremykalfus.lucidtlr",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "LucidTLR uses microphone access only for local debug feasibility audio analysis when explicitly enabled on the hidden development screen.",
         "UIBackgroundModes": [
           "audio"
