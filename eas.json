@@ -12,12 +12,14 @@
       }
     },
     "testflight-internal-lab": {
+      "autoIncrement": true,
       "distribution": "store",
       "env": {
         "EXPO_PUBLIC_WATCH_MODE_LAB_ENABLED": "true",
         "LUCIDTLR_INTERNAL_TESTFLIGHT_SWIFT_FLAGS": "-D LUCIDTLR_INTERNAL_TESTFLIGHT_LAB"
       },
       "ios": {
+        "scheme": "LucidTLR",
         "simulator": false
       }
     }
