@@ -19,6 +19,43 @@ WatchConnectivity recovery shell only.
 3. Keep the export explicit about what was real transport, what was fixture
    import, and what was recovery simulation.
 
+## Structural Transport Hardening
+
+After the current TestFlight drill results are reviewed, harden the synthetic
+transport layer itself rather than adding more point filters.
+
+1. Replace scattered Watch `UserDefaults` keys with one session-scoped Codable
+   transport state.
+   - Store staged plan, commit/status summary, latest transfer, ack, last
+     message, and last error under one `WatchTransportLabState`.
+   - Reset the state atomically when the staged plan `sessionId` or `planHash`
+     changes.
+   - Keep this lab-scoped and do not alter the durable Watch current-session
+     index semantics.
+2. Make `applicationContext` the staged-plan source of truth.
+   - Use latest-wins `updateApplicationContext` for the current staged plan.
+   - Do not rely on queued `transferUserInfo` for current-plan delivery.
+   - If a plan-available userInfo nudge remains, ignore it when its
+     `createdAt`/identity is older than the persisted staged plan.
+3. Persist a bounded recent-message idempotency ring.
+   - Use stable `messageId`/`idempotencyKey` values for semantic transport
+     events.
+   - Deduplicate incoming queued userInfo/file/context handling across relaunch
+     and redelivery.
+   - Keep only a small recent ring so the lab cannot grow unbounded local
+     metadata.
+4. Verify received package content at the transport boundary.
+   - When the phone receives a package file, compute/verify the expected package
+     hash before declaring it the latest received package.
+   - Report truncated/corrupt transfer as transport diagnostics, before import.
+   - Replace placeholder/structural lab hashes with a real canonical digest
+     before any real Watch Mode package path.
+5. Move received package files out of `Caches`.
+   - Store unacked received packages under Application Support with appropriate
+     file protection.
+   - Treat `Caches` as acceptable only for temporary synthetic lab artifacts,
+     not for the only pre-ack copy of overnight Watch data.
+
 ## Next TestFlight Drills
 
 1. Phone-closed package recovery:
