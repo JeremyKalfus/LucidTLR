@@ -994,6 +994,56 @@ function isWatchPackageTransferStatusEvent(
   return event.eventType === "watch_package_transfer_status";
 }
 
+function realPhoneReloadRecoverySeen(input: {
+  timeline: WatchModeLabTimelineEvent[];
+  currentSessionId?: string;
+}): boolean {
+  if (!input.currentSessionId) {
+    return false;
+  }
+
+  let stagedAt: string | undefined;
+  let phoneOpenedAfterStaged = false;
+
+  for (const event of input.timeline) {
+    if (
+      (event.eventType === "plan_staged" ||
+        event.eventType === "automated_transport_baseline_plan_staged") &&
+      matchesSession(event.sessionId, input.currentSessionId)
+    ) {
+      stagedAt = event.timestamp;
+      phoneOpenedAfterStaged = false;
+      continue;
+    }
+
+    if (!stagedAt) {
+      continue;
+    }
+
+    if (
+      event.eventType === "phone_lab_opened" &&
+      event.timestamp > stagedAt
+    ) {
+      phoneOpenedAfterStaged = true;
+      continue;
+    }
+
+    if (
+      phoneOpenedAfterStaged &&
+      event.eventType === "automated_transport_baseline_reused_state" &&
+      event.success &&
+      matchesSession(
+        metadataString(event.metadata, "stagedPlanId"),
+        input.currentSessionId,
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function currentTransportSessionId(input: {
   unresolvedStates: WatchSessionSyncState[];
   recentStates: WatchSessionSyncState[];
@@ -1311,6 +1361,10 @@ function buildDrillAssessment(input: {
       eventTypes.has("phone_reload_recovery_tested") ||
       eventTypes.has("phone_reload_recovery_simulated") ||
       eventTypes.has("recovery:reload") ||
+      realPhoneReloadRecoverySeen({
+        timeline: input.timeline,
+        currentSessionId: input.currentTransportSessionId,
+      }) ||
       input.timeline.some((event) =>
         event.eventType.toLowerCase().includes("reload"),
       ),

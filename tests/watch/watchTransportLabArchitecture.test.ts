@@ -290,6 +290,11 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
       labTransport.indexOf("sendAckForImportedPackage"),
     );
     expect(labTransport).toContain("No ack-eligible imported Watch package exists");
+    expect(labTransport).toContain("loadRecentWatchSessionSyncStates");
+    expect(labTransport).toContain("latestTransportPackageIdentity");
+    expect(labTransport).toContain("isTerminalAckForPackage");
+    expect(labTransport).toContain("ack_already_recorded");
+    expect(labTransport).toContain("duplicate retry is idempotent");
   });
 
   it("keeps the Watch current session index as the no-overwrite and ack-match boundary", () => {
@@ -347,6 +352,20 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(watchModel).toContain("transferSealedPackage");
     expect(watchModel).toContain("sendStatusSnapshot");
     expect(watchModel).toContain("requireCanStartSession(sessionId:");
+  });
+
+  it("documents the next synthetic transport recovery drills before real providers", () => {
+    const nextSteps = readSource(
+      "docs/testing/watch-mode-synthetic-transport-next-steps.md",
+    );
+
+    expect(nextSteps).toContain("Immediate QA Harness Cleanup");
+    expect(nextSteps).toContain("Phone-closed package recovery");
+    expect(nextSteps).toContain("Watch reload recovery");
+    expect(nextSteps).toContain("Delayed/unreachable retry");
+    expect(nextSteps).toContain("Move-On Criteria");
+    expect(nextSteps).toContain("Start with low-risk battery and Low Power Mode");
+    expect(nextSteps).toContain("Do not add HealthKit, CoreMotion, workout runtime");
   });
 
   it("lets the Watch baseline pull the latest application-context plan before using stale local state", () => {

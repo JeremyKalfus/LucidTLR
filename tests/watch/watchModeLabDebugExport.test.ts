@@ -65,6 +65,8 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("packageFilePersistedSeen");
     expect(helper).toContain("fixtureImportSeen");
     expect(helper).toContain("recoverySimulationSeen");
+    expect(helper).toContain("realPhoneReloadRecoverySeen");
+    expect(helper).toContain("automated_transport_baseline_reused_state");
     expect(helper).toContain("currentTransportSessionId");
     expect(helper).toContain("currentSessionImportedPackageSeen");
     expect(helper).toContain("currentSessionAckEligibleSeen");

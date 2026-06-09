@@ -7,6 +7,7 @@ import {
   computeWatchStartupRecoveryState,
   createDraftWatchSessionSyncState,
   findUnresolvedConflictingActiveWatchSyncState,
+  loadRecentWatchSessionSyncStates,
   loadUnresolvedWatchSessionSyncStates,
   loadWatchSessionSyncStateBySessionId,
   markWatchSessionPlanBuilt,
@@ -495,6 +496,50 @@ export async function sendAckForLatestImportedWatchPackage(input: {
   );
 
   if (!state?.packageId || !state.packageHash) {
+    const status = await watchTransport.getTransportStatus();
+    const latestPackageIdentity = latestTransportPackageIdentity(status);
+
+    await appendWatchModeLabTransportStatusSnapshot({
+      db: input.db,
+      status,
+    });
+
+    if (latestPackageIdentity) {
+      const recentStates = await loadRecentWatchSessionSyncStates({
+        db: input.db,
+        participantId: input.participantId,
+        limit: 50,
+      });
+      const terminalState = recentStates.find((candidate) =>
+        isTerminalAckForPackage(candidate, latestPackageIdentity),
+      );
+
+      if (terminalState) {
+        await appendWatchModeLabDebugEvent({
+          db: input.db,
+          timestamp: ackedAt,
+          source: "transport",
+          eventType: "ack_already_recorded",
+          sessionId: terminalState.sessionId,
+          planHash: terminalState.planHash,
+          packageId: terminalState.packageId,
+          packageHash: terminalState.packageHash,
+          success: true,
+          metadata: {
+            idempotentRetry: true,
+            previousStatus: terminalState.status,
+          },
+        });
+
+        return {
+          message:
+            "Matching synthetic package ack was already recorded; duplicate retry is idempotent and no new ack was needed.",
+          status,
+          recovery: await loadRecovery(input),
+        };
+      }
+    }
+
     throw new Error(
       "No ack-eligible imported Watch package exists. Import must commit transactionally before ack can be sent.",
     );
@@ -583,6 +628,56 @@ export async function sendAckForLatestImportedWatchPackage(input: {
     status,
     recovery: await loadRecovery(input),
   };
+}
+
+function latestTransportPackageIdentity(
+  status: NativeWatchTransportStatus,
+): TransportLabPackageIdentity | null {
+  const packageIdentity =
+    status.latestReceivedPackage ??
+    status.latestPackageFile ??
+    status.latestPackageManifest ??
+    (status.latestStatusSnapshot?.sessionId &&
+    status.latestStatusSnapshot.planHash &&
+    status.latestStatusSnapshot.packageId &&
+    status.latestStatusSnapshot.packageHash
+      ? {
+          sessionId: status.latestStatusSnapshot.sessionId,
+          planHash: status.latestStatusSnapshot.planHash,
+          packageId: status.latestStatusSnapshot.packageId,
+          packageHash: status.latestStatusSnapshot.packageHash,
+        }
+      : undefined) ??
+    status.latestAck;
+
+  if (
+    !packageIdentity?.sessionId ||
+    !packageIdentity.planHash ||
+    !packageIdentity.packageId ||
+    !packageIdentity.packageHash
+  ) {
+    return null;
+  }
+
+  return {
+    sessionId: packageIdentity.sessionId,
+    planHash: packageIdentity.planHash,
+    packageId: packageIdentity.packageId,
+    packageHash: packageIdentity.packageHash,
+  };
+}
+
+function isTerminalAckForPackage(
+  state: WatchSessionSyncState,
+  packageIdentity: TransportLabPackageIdentity,
+): boolean {
+  return (
+    (state.status === "ack_recorded" || state.status === "completed") &&
+    state.sessionId === packageIdentity.sessionId &&
+    state.planHash === packageIdentity.planHash &&
+    state.packageId === packageIdentity.packageId &&
+    state.packageHash === packageIdentity.packageHash
+  );
 }
 
 export async function clearWatchModeLabTransportStatus(input: {
