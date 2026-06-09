@@ -72,6 +72,8 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("watchPackageTransferAttemptSeen");
     expect(helper).toContain("watchPackageTransferQueued");
     expect(helper).toContain("watchPackageTransferErrorSeen");
+    expect(helper).toContain("staleTransportLabPackageConflictSeen");
+    expect(helper).toContain("staleTransportLabPackageReplacedSeen");
     expect(helper).toContain("terminalThenUnresolvedStateSeen");
     expect(helper).toContain("isTransportCommitReceiptEvent");
     expect(helper).toContain("isTransportPackageReceivedEvent");

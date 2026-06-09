@@ -412,6 +412,10 @@ final class WatchModeLabViewModel: ObservableObject {
       }
 
       let plan = stagedPlan.plan
+      if try retransferExistingBaselinePackageIfPossible(plan: plan) {
+        return
+      }
+
       let nextCoordinator = try makeCoordinator(
         plan: plan,
         preflightScenario: .allPass,
@@ -460,6 +464,77 @@ final class WatchModeLabViewModel: ObservableObject {
     }
   }
 
+  private func retransferExistingBaselinePackageIfPossible(
+    plan: WatchRuntimePlanV3
+  ) throws -> Bool {
+    let rootDirectory = try labRootDirectory()
+    let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
+    currentSessionIndex = index
+
+    guard let entry = try index.load(),
+      entry.isActiveUnacked,
+      entry.activeSessionId == plan.sessionId else {
+      return false
+    }
+
+    guard entry.planHash == plan.planHash else {
+      throw WatchTransportError.invalidPlanPayload
+    }
+
+    guard let sealedPackageId = entry.sealedPackageId,
+      let sealedPackageHash = entry.sealedPackageHash else {
+      return false
+    }
+
+    let existingSessionStore = try WatchSessionDirectoryStore(
+      rootDirectory: rootDirectory,
+      sessionId: entry.activeSessionId
+    )
+    let packageStore = WatchPackageStore(sessionStore: existingSessionStore)
+
+    guard let manifest = try packageStore.readManifest(),
+      manifest.packageId == sealedPackageId,
+      manifest.packageHash == sealedPackageHash else {
+      throw WatchTransportError.packageHashMismatch
+    }
+
+    sessionStore = existingSessionStore
+    activePlan = plan
+    activeManifest = manifest
+    activePreflightResult = nil
+
+    try transportCoordinator.sendCommitReceipt(
+      plan: plan,
+      commitId: entry.commitId,
+      watchState: entry.runtimeState,
+      committedAt: WatchRuntimeDateFormat.date(from: entry.updatedAt) ?? Date()
+    )
+
+    do {
+      try transferSealedPackage(
+        manifest: manifest,
+        sessionStore: existingSessionStore,
+        runtimeState: entry.runtimeState
+      )
+    } catch {
+      reportTransportPackageError(error)
+      throw error
+    }
+
+    try transportCoordinator.sendStatusSnapshot(
+      sessionId: entry.activeSessionId,
+      planHash: entry.planHash,
+      watchState: entry.runtimeState,
+      packageId: sealedPackageId,
+      packageHash: sealedPackageHash,
+      createdAt: Date()
+    )
+
+    statusMessage = "Retransferred existing sealed baseline package for the staged synthetic plan. No new session or package was created."
+    refreshRows()
+    return true
+  }
+
   func discardCurrentSyntheticSessionWithExplicitConfirmation() {
     do {
       let index = try labIndex()
@@ -483,9 +558,21 @@ final class WatchModeLabViewModel: ObservableObject {
 
   private func transferSyntheticPackage() throws {
     let sealed = try sealSyntheticPackageIfNeeded()
-    let package = try WatchTransportPackageBuilder.buildTransferPackage(
+    try transferSealedPackage(
+      manifest: sealed.manifest,
       sessionStore: sealed.sessionStore,
-      baseManifest: sealed.manifest
+      runtimeState: coordinator?.state ?? .sealedWaitingForPhone
+    )
+  }
+
+  private func transferSealedPackage(
+    manifest: WatchPackageManifestV3,
+    sessionStore: WatchSessionDirectoryStore,
+    runtimeState: WatchRuntimeState
+  ) throws {
+    let package = try WatchTransportPackageBuilder.buildTransferPackage(
+      sessionStore: sessionStore,
+      baseManifest: manifest
     )
     let packageURL = try WatchTransportPackageBuilder.writePackageFile(
       package: package,
@@ -493,7 +580,7 @@ final class WatchModeLabViewModel: ObservableObject {
     )
     try currentSessionIndex?.recordSealedPackage(
       manifest: package.manifest,
-      runtimeState: coordinator?.state ?? .sealedWaitingForPhone,
+      runtimeState: runtimeState,
       updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
     )
     activeManifest = package.manifest

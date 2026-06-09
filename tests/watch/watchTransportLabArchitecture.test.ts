@@ -222,6 +222,12 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(labTransport).toContain("status.latestStatusSnapshot?.packageId");
     expect(labTransport).toContain("observedWatchAck");
     expect(labTransport).toContain("findUnresolvedConflictingActiveWatchSyncState");
+    expect(labTransport).toContain("isReplaceableTransportLabPackageConflict");
+    expect(labTransport).toContain("replaceStaleTransportLabPackageState");
+    expect(labTransport).toContain("baselineReplacedStalePackage");
+    expect(labTransport).toContain(
+      "one_button_baseline_latest_received_package_imported",
+    );
   });
 
   it("applies native transport snapshots into the ledger during status refresh", () => {
@@ -313,8 +319,12 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(watchLab).toContain("Run Watch baseline loop");
     expect(watchModel).toContain("runWatchBaselineTransportLoop");
     expect(watchModel).toContain("latestStagedPlan");
+    expect(watchModel).toContain("retransferExistingBaselinePackageIfPossible");
+    expect(watchModel).toContain("readManifest");
+    expect(watchModel).toContain("Retransferred existing sealed baseline package");
     expect(watchModel).toContain("sendCommitReceipt");
     expect(watchModel).toContain("transferSyntheticPackage");
+    expect(watchModel).toContain("transferSealedPackage");
     expect(watchModel).toContain("sendStatusSnapshot");
     expect(watchModel).toContain("requireCanStartSession(sessionId:");
   });

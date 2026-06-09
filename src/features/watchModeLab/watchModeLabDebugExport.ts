@@ -84,6 +84,8 @@ export interface WatchModeLabStateTransition {
   rejectionReason?: string;
   planHashCheck?: string;
   packageHashCheck?: string;
+  staleTransportLabPackageConflict?: boolean;
+  baselineReplacedStalePackage?: boolean;
 }
 
 export interface WatchModeLabTransportMessageSummary {
@@ -154,6 +156,8 @@ export interface WatchModeLabDrillAssessment {
   watchPackageTransferAttemptSeen: boolean;
   watchPackageTransferQueued: boolean;
   watchPackageTransferErrorSeen: boolean;
+  staleTransportLabPackageConflictSeen: boolean;
+  staleTransportLabPackageReplacedSeen: boolean;
   stateRegressionDetected: boolean;
   mismatchedHashDetected: boolean;
   finalUnresolvedStateBlocksStart: boolean;
@@ -235,6 +239,8 @@ export interface WatchModeLabDebugBundle {
       watchPackageTransferAttemptSeen: boolean;
       watchPackageTransferQueued: boolean;
       watchPackageTransferErrorSeen: boolean;
+      staleTransportLabPackageConflictSeen: boolean;
+      staleTransportLabPackageReplacedSeen: boolean;
       stateRegressionDetected: boolean;
     };
     unresolvedCount: number;
@@ -572,6 +578,14 @@ function buildStateTransitions(
           event.errorMessage ?? metadataString(event.metadata, "rejectionReason"),
         planHashCheck: metadataString(event.metadata, "planHashCheck"),
         packageHashCheck: metadataString(event.metadata, "packageHashCheck"),
+        staleTransportLabPackageConflict: metadataBoolean(
+          event.metadata,
+          "staleTransportLabPackageConflict",
+        ),
+        baselineReplacedStalePackage: metadataBoolean(
+          event.metadata,
+          "baselineReplacedStalePackage",
+        ),
       })),
     WATCH_MODE_LAB_DEBUG_EVENT_LIMIT,
   );
@@ -1232,6 +1246,8 @@ function buildDrillAssessment(input: {
   watchPackageTransferAttemptSeen: boolean;
   watchPackageTransferQueued: boolean;
   watchPackageTransferErrorSeen: boolean;
+  staleTransportLabPackageConflictSeen: boolean;
+  staleTransportLabPackageReplacedSeen: boolean;
   stateRegressionDetected: boolean;
   transportStatus?: NativeWatchTransportStatus | null;
   drillFailureReasons: string[];
@@ -1292,6 +1308,10 @@ function buildDrillAssessment(input: {
     watchPackageTransferAttemptSeen: input.watchPackageTransferAttemptSeen,
     watchPackageTransferQueued: input.watchPackageTransferQueued,
     watchPackageTransferErrorSeen: input.watchPackageTransferErrorSeen,
+    staleTransportLabPackageConflictSeen:
+      input.staleTransportLabPackageConflictSeen,
+    staleTransportLabPackageReplacedSeen:
+      input.staleTransportLabPackageReplacedSeen,
     stateRegressionDetected: input.stateRegressionDetected,
     mismatchedHashDetected: hashMismatchSeen({
       timeline: input.timeline,
@@ -1430,6 +1450,20 @@ export function buildWatchModeLabDebugBundle(
     transportStatus: input.transportStatus,
     currentSessionId,
   });
+  const staleTransportLabPackageConflictSeen =
+    stateTransitions.some(
+      (transition) => transition.staleTransportLabPackageConflict === true,
+    ) ||
+    timeline.some((event) =>
+      metadataBoolean(event.metadata, "staleTransportLabPackageConflict"),
+    );
+  const staleTransportLabPackageReplacedSeen =
+    stateTransitions.some(
+      (transition) => transition.baselineReplacedStalePackage === true,
+    ) ||
+    timeline.some((event) =>
+      metadataBoolean(event.metadata, "baselineReplacedStalePackage"),
+    );
   const fixtureImportSeen = timeline.some(isFixtureImportEvent);
   const recoverySimulationSeen = timeline.some(isRecoverySimulationEvent);
   const ackEligibleSeen = currentSessionAckEligibleSeen;
@@ -1514,6 +1548,8 @@ export function buildWatchModeLabDebugBundle(
     watchPackageTransferAttemptSeen,
     watchPackageTransferQueued,
     watchPackageTransferErrorSeen,
+    staleTransportLabPackageConflictSeen,
+    staleTransportLabPackageReplacedSeen,
     stateRegressionDetected,
     transportStatus: input.transportStatus,
     drillFailureReasons,
@@ -1595,6 +1631,8 @@ export function buildWatchModeLabDebugBundle(
         watchPackageTransferAttemptSeen,
         watchPackageTransferQueued,
         watchPackageTransferErrorSeen,
+        staleTransportLabPackageConflictSeen,
+        staleTransportLabPackageReplacedSeen,
         stateRegressionDetected,
       },
       unresolvedCount: input.unresolvedStates.length,

@@ -64,6 +64,13 @@ export interface WatchModeLabTransportAckSummary {
   recovery: WatchModeLabRecoverySummary;
 }
 
+interface TransportLabPackageIdentity {
+  sessionId: string;
+  planHash: string;
+  packageId: string;
+  packageHash: string;
+}
+
 function summarizeRecovery(
   states: WatchSessionSyncState[],
 ): WatchModeLabRecoverySummary {
@@ -589,6 +596,101 @@ export async function clearWatchModeLabTransportStatus(input: {
   return { status, recovery };
 }
 
+function isTransportLabState(state: WatchSessionSyncState): boolean {
+  return state.metadata.transportLab === true || state.metadata.syntheticLab === true;
+}
+
+function hasDifferentPackageIdentity(
+  state: WatchSessionSyncState,
+  incoming: TransportLabPackageIdentity,
+): boolean {
+  return Boolean(
+    state.packageId &&
+      (state.packageId !== incoming.packageId ||
+        state.packageHash !== incoming.packageHash),
+  );
+}
+
+function isReplaceableTransportLabPackageConflict(
+  state: WatchSessionSyncState,
+  incoming: TransportLabPackageIdentity,
+): boolean {
+  return (
+    isTransportLabState(state) &&
+    state.sessionId === incoming.sessionId &&
+    state.planHash === incoming.planHash &&
+    hasDifferentPackageIdentity(state, incoming) &&
+    state.status !== "ack_recorded" &&
+    state.status !== "completed" &&
+    state.status !== "abandoned_local_only"
+  );
+}
+
+function replaceStaleTransportLabPackageState(
+  state: WatchSessionSyncState,
+  incoming: TransportLabPackageIdentity & {
+    replacedAt: string;
+    reason: string;
+  },
+): WatchSessionSyncState {
+  return {
+    ...state,
+    packageId: incoming.packageId,
+    packageHash: incoming.packageHash,
+    status: "watch_sealed_waiting_import",
+    sealedAt: incoming.replacedAt,
+    importedAt: undefined,
+    ackEligibleAt: undefined,
+    ackSentAt: undefined,
+    lastKnownWatchState: "sealed",
+    lastStatusAt: incoming.replacedAt,
+    unresolvedReason: undefined,
+    updatedAt: incoming.replacedAt,
+    metadata: {
+      ...state.metadata,
+      transportLab: true,
+      baselineReplacedStalePackage: true,
+      replacedPackageId: state.packageId,
+      replacedPackageHash: state.packageHash,
+      replacementPackageId: incoming.packageId,
+      replacementPackageHash: incoming.packageHash,
+      replacedAt: incoming.replacedAt,
+      replacementReason: incoming.reason,
+    },
+  };
+}
+
+async function appendIgnoredStalePackageConflict(input: {
+  db: LocalDb;
+  eventApplied: string;
+  previousState: WatchSessionSyncState;
+  incoming: TransportLabPackageIdentity;
+  timestamp?: string;
+  rejectionReason: string;
+  source: string;
+}): Promise<void> {
+  await appendWatchModeLabStateTransition({
+    db: input.db,
+    timestamp: input.timestamp,
+    eventApplied: input.eventApplied,
+    previousState: input.previousState,
+    nextState: input.previousState,
+    rejected: true,
+    rejectionReason: input.rejectionReason,
+    metadata: {
+      transportLab: true,
+      packageHashCheck: "rejected",
+      staleTransportLabPackageConflict: true,
+      ignoredUntilLatestPackageImport: true,
+      source: input.source,
+      existingPackageId: input.previousState.packageId,
+      existingPackageHash: input.previousState.packageHash,
+      incomingPackageId: input.incoming.packageId,
+      incomingPackageHash: input.incoming.packageHash,
+    },
+  });
+}
+
 export async function applyWatchTransportReceiptSnapshots(input: {
   db: LocalDb;
   participantId: string;
@@ -709,13 +811,16 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
     !status.latestPackageManifest
   ) {
     const previous = state;
+    const incoming = {
+      sessionId: status.latestStatusSnapshot.sessionId ?? state.sessionId,
+      planHash: status.latestStatusSnapshot.planHash ?? state.planHash,
+      packageId: status.latestStatusSnapshot.packageId,
+      packageHash: status.latestStatusSnapshot.packageHash,
+    };
 
     try {
       state = applyWatchSealedManifest(state, {
-        sessionId: status.latestStatusSnapshot.sessionId ?? state.sessionId,
-        planHash: status.latestStatusSnapshot.planHash ?? state.planHash,
-        packageId: status.latestStatusSnapshot.packageId,
-        packageHash: status.latestStatusSnapshot.packageHash,
+        ...incoming,
         sealedAt: status.latestStatusSnapshot.createdAt ?? new Date().toISOString(),
       });
       await appendWatchModeLabStateTransition({
@@ -730,33 +835,52 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
         },
       });
     } catch (error) {
-      await appendWatchModeLabStateTransition({
-        db: input.db,
-        eventApplied: "watch_status_sealed_package",
-        previousState: previous,
-        rejected: true,
-        rejectionReason:
-          error instanceof Error
-            ? error.message
-            : "Watch status sealed package rejected.",
-        metadata: {
-          transportLab: true,
-          packageHashCheck: "rejected",
-        },
-      });
-      throw error;
+      if (isReplaceableTransportLabPackageConflict(previous, incoming)) {
+        await appendIgnoredStalePackageConflict({
+          db: input.db,
+          timestamp: status.latestStatusSnapshot.createdAt,
+          eventApplied: "watch_status_sealed_package",
+          previousState: previous,
+          incoming,
+          rejectionReason:
+            error instanceof Error
+              ? error.message
+              : "Watch status sealed package rejected.",
+          source: "status_snapshot",
+        });
+        state = previous;
+      } else {
+        await appendWatchModeLabStateTransition({
+          db: input.db,
+          eventApplied: "watch_status_sealed_package",
+          previousState: previous,
+          rejected: true,
+          rejectionReason:
+            error instanceof Error
+              ? error.message
+              : "Watch status sealed package rejected.",
+          metadata: {
+            transportLab: true,
+            packageHashCheck: "rejected",
+          },
+        });
+        throw error;
+      }
     }
   }
 
   if (state && status.latestPackageManifest) {
     const previous = state;
+    const incoming = {
+      sessionId: status.latestPackageManifest.sessionId,
+      planHash: status.latestPackageManifest.planHash,
+      packageId: status.latestPackageManifest.packageId,
+      packageHash: status.latestPackageManifest.packageHash,
+    };
 
     try {
       state = applyWatchSealedManifest(state, {
-        sessionId: status.latestPackageManifest.sessionId,
-        planHash: status.latestPackageManifest.planHash,
-        packageId: status.latestPackageManifest.packageId,
-        packageHash: status.latestPackageManifest.packageHash,
+        ...incoming,
         sealedAt: status.latestPackageManifest.receivedAt ?? new Date().toISOString(),
       });
       await appendWatchModeLabStateTransition({
@@ -770,19 +894,33 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
         },
       });
     } catch (error) {
-      await appendWatchModeLabStateTransition({
-        db: input.db,
-        eventApplied: "watch_sealed_manifest",
-        previousState: previous,
-        rejected: true,
-        rejectionReason:
-          error instanceof Error ? error.message : "Watch sealed manifest rejected.",
-        metadata: {
-          transportLab: true,
-          packageHashCheck: "rejected",
-        },
-      });
-      throw error;
+      if (isReplaceableTransportLabPackageConflict(previous, incoming)) {
+        await appendIgnoredStalePackageConflict({
+          db: input.db,
+          timestamp: status.latestPackageManifest.receivedAt,
+          eventApplied: "watch_sealed_manifest",
+          previousState: previous,
+          incoming,
+          rejectionReason:
+            error instanceof Error ? error.message : "Watch sealed manifest rejected.",
+          source: "package_manifest",
+        });
+        state = previous;
+      } else {
+        await appendWatchModeLabStateTransition({
+          db: input.db,
+          eventApplied: "watch_sealed_manifest",
+          previousState: previous,
+          rejected: true,
+          rejectionReason:
+            error instanceof Error ? error.message : "Watch sealed manifest rejected.",
+          metadata: {
+            transportLab: true,
+            packageHashCheck: "rejected",
+          },
+        });
+        throw error;
+      }
     }
   }
 
@@ -858,13 +996,26 @@ async function markTransportPackageImportedInLedger(input: {
         source: "phone_watch_transport_lab_import",
       },
     });
-  const sealed = applyWatchSealedManifest(base, {
+  const incoming = {
     sessionId: input.result.sessionId,
     planHash: input.planHash,
     packageId: input.result.packageId,
     packageHash: input.result.packageHash,
-    sealedAt: input.importedAt,
-  });
+  };
+  const stalePackageConflict = isReplaceableTransportLabPackageConflict(
+    base,
+    incoming,
+  );
+  const sealed = stalePackageConflict
+    ? replaceStaleTransportLabPackageState(base, {
+        ...incoming,
+        replacedAt: input.importedAt,
+        reason: "one_button_baseline_latest_received_package_imported",
+      })
+    : applyWatchSealedManifest(base, {
+        ...incoming,
+        sealedAt: input.importedAt,
+      });
   const imported = applyPhoneImportSuccess(sealed, {
     packageId: input.result.packageId,
     packageHash: input.result.packageHash,
@@ -880,6 +1031,14 @@ async function markTransportPackageImportedInLedger(input: {
     nextState: sealed,
     metadata: {
       transportLab: true,
+      staleTransportLabPackageConflict: stalePackageConflict,
+      baselineReplacedStalePackage: stalePackageConflict,
+      existingPackageId: stalePackageConflict ? base.packageId : undefined,
+      existingPackageHash: stalePackageConflict ? base.packageHash : undefined,
+      replacementPackageId: stalePackageConflict ? input.result.packageId : undefined,
+      replacementPackageHash: stalePackageConflict
+        ? input.result.packageHash
+        : undefined,
     },
   });
   await appendWatchModeLabStateTransition({
