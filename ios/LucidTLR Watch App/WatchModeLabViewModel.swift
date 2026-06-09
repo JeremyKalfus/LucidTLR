@@ -415,6 +415,9 @@ final class WatchModeLabViewModel: ObservableObject {
       if try retransferExistingBaselinePackageIfPossible(plan: plan) {
         return
       }
+      let discardedStaleSessionId = try discardStaleBaselineCurrentSessionIfNeeded(
+        for: plan
+      )
 
       let nextCoordinator = try makeCoordinator(
         plan: plan,
@@ -457,7 +460,11 @@ final class WatchModeLabViewModel: ObservableObject {
         packageHash: sealedEntry?.sealedPackageHash ?? activeManifest?.packageHash,
         createdAt: Date()
       )
-      statusMessage = "Ran Watch baseline loop: committed staged plan, sent receipt/status, sealed and transferred package. Synthetic lab only; no real sensors or cues."
+      if let discardedStaleSessionId {
+        statusMessage = "Ran Watch baseline loop after discarding stale synthetic current session \(discardedStaleSessionId); committed latest staged plan, sent receipt/status, sealed and transferred package. Synthetic lab only; no real sensors or cues."
+      } else {
+        statusMessage = "Ran Watch baseline loop: committed staged plan, sent receipt/status, sealed and transferred package. Synthetic lab only; no real sensors or cues."
+      }
       refreshRows()
     } catch {
       handle(error: error)
@@ -533,6 +540,32 @@ final class WatchModeLabViewModel: ObservableObject {
     statusMessage = "Retransferred existing sealed baseline package for the staged synthetic plan. No new session or package was created."
     refreshRows()
     return true
+  }
+
+  private func discardStaleBaselineCurrentSessionIfNeeded(
+    for plan: WatchRuntimePlanV3
+  ) throws -> String? {
+    let rootDirectory = try labRootDirectory()
+    let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
+    currentSessionIndex = index
+
+    guard let entry = try index.load(),
+      entry.isActiveUnacked,
+      entry.activeSessionId != plan.sessionId else {
+      return nil
+    }
+
+    try index.discardSyntheticLabSession(
+      explicitConfirmation: true,
+      discardedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+    )
+    coordinator = nil
+    sessionStore = nil
+    activeManifest = nil
+    activePreflightResult = nil
+    sleepShieldViewModel = nil
+    activePlan = plan
+    return entry.activeSessionId
   }
 
   func discardCurrentSyntheticSessionWithExplicitConfirmation() {

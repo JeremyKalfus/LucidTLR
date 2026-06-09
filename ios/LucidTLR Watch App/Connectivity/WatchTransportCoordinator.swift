@@ -49,7 +49,8 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
 
   func refreshStatus() {
     let session = WCSession.isSupported() ? WCSession.default : nil
-    let staged = try? latestStagedPlan()
+    try? syncReceivedApplicationContextStagedPlanIfPresent()
+    let staged = try? persistedStagedPlan()
     let ack = latestReceivedAck()
     let next = WatchTransportStatusSnapshot(
       activationState: session.map { activationStateLabel($0.activationState) } ?? "unsupported",
@@ -73,6 +74,11 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
   }
 
   func latestStagedPlan() throws -> WatchTransportStagedPlan? {
+    try syncReceivedApplicationContextStagedPlanIfPresent()
+    return try persistedStagedPlan()
+  }
+
+  private func persistedStagedPlan() throws -> WatchTransportStagedPlan? {
     guard let planJson = defaults.string(forKey: stagedPlanJsonKey),
       let data = planJson.data(using: .utf8) else {
       return nil
@@ -85,6 +91,23 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       plan: plan,
       receivedAt: defaults.string(forKey: stagedPlanReceivedAtKey) ?? ""
     )
+  }
+
+  private func syncReceivedApplicationContextStagedPlanIfPresent() throws {
+    guard WCSession.isSupported() else {
+      return
+    }
+
+    let context = WCSession.default.receivedApplicationContext
+    guard !context.isEmpty,
+      let stagedPlan = try WatchTransportMessageParser.stagedPlan(
+        from: context,
+        receivedAt: Date()
+      ) else {
+      return
+    }
+
+    try persist(stagedPlan, refreshAfterPersist: false)
   }
 
   func sendCommitReceipt(
@@ -363,9 +386,12 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       }
 
       if WatchTransportMessageParser.messageType(from: payload) == .planRequest {
+        let stagedPlan = try? latestStagedPlan()
+        let requestedSessionId = payload["sessionId"] as? String
+        let requestedPlanHash = payload["planHash"] as? String
         try? sendStatusSnapshot(
-          sessionId: nil,
-          planHash: nil,
+          sessionId: requestedSessionId ?? stagedPlan?.sessionId,
+          planHash: requestedPlanHash ?? stagedPlan?.planHash,
           watchState: .idle,
           packageId: nil,
           packageHash: nil,
@@ -412,7 +438,10 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     return transfer
   }
 
-  private func persist(_ stagedPlan: WatchTransportStagedPlan) throws {
+  private func persist(
+    _ stagedPlan: WatchTransportStagedPlan,
+    refreshAfterPersist: Bool = true
+  ) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     defaults.set(
@@ -420,7 +449,9 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       forKey: stagedPlanJsonKey
     )
     defaults.set(stagedPlan.receivedAt, forKey: stagedPlanReceivedAtKey)
-    refreshStatus()
+    if refreshAfterPersist {
+      refreshStatus()
+    }
   }
 
   private func persist(_ ack: WatchTransportReceivedAck) {

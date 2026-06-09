@@ -1001,14 +1001,14 @@ function currentTransportSessionId(input: {
   timeline: WatchModeLabTimelineEvent[];
 }): string | undefined {
   return (
+    input.unresolvedStates[0]?.sessionId ||
+    input.transportStatus?.latestStagedPlanId ||
+    input.transportStatus?.latestCommitReceipt?.sessionId ||
+    input.transportStatus?.latestStatusSnapshot?.sessionId ||
     input.transportStatus?.latestReceivedPackage?.sessionId ||
     input.transportStatus?.latestPackageManifest?.sessionId ||
     input.transportStatus?.latestPackageTransfer?.sessionId ||
     input.transportStatus?.latestStatusSnapshot?.packageTransfer?.sessionId ||
-    input.transportStatus?.latestCommitReceipt?.sessionId ||
-    input.transportStatus?.latestStatusSnapshot?.sessionId ||
-    input.transportStatus?.latestStagedPlanId ||
-    input.unresolvedStates[0]?.sessionId ||
     input.timeline
       .slice()
       .reverse()

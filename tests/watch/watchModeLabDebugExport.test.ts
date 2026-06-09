@@ -69,6 +69,9 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("currentSessionImportedPackageSeen");
     expect(helper).toContain("currentSessionAckEligibleSeen");
     expect(helper).toContain("currentSessionAckRecordedSeen");
+    expect(helper.indexOf("input.unresolvedStates[0]?.sessionId")).toBeLessThan(
+      helper.indexOf("input.transportStatus?.latestReceivedPackage?.sessionId"),
+    );
     expect(helper).toContain("watchPackageTransferAttemptSeen");
     expect(helper).toContain("watchPackageTransferQueued");
     expect(helper).toContain("watchPackageTransferErrorSeen");

@@ -136,28 +136,75 @@ function packageFilePersistenceLabel(
 function hasTransportBaselineEvidence(
   summary: WatchModeLabTransportSummary | null,
 ): boolean {
-  const status = summary?.status;
-
-  return Boolean(
-    (summary?.recovery.unresolvedCount ?? 0) > 0 ||
-      status?.latestStagedPlanId ||
-      status?.latestCommitReceipt ||
-      status?.latestStatusSnapshot ||
-      status?.latestPackageManifest ||
-      status?.latestReceivedPackage ||
-      status?.latestPackageFile ||
-      status?.latestAck,
-  );
+  return Boolean(currentBaselineSessionId(summary));
 }
 
-function hasPersistedPackageFile(status: NativeWatchTransportStatus): boolean {
-  if (status.latestPackageFile?.persisted === true) {
+function currentBaselineSessionId(
+  summary: WatchModeLabTransportSummary | null,
+): string | undefined {
+  const unresolvedTransportState = summary?.recovery.states.find(
+    (state) =>
+      state.metadataJson.includes('"transportLab":true') &&
+      state.status !== "abandoned_local_only",
+  );
+
+  return unresolvedTransportState?.sessionId ?? summary?.status.latestStagedPlanId;
+}
+
+function currentBaselinePlanHash(
+  summary: WatchModeLabTransportSummary | null,
+  sessionId: string | undefined,
+): string | undefined {
+  const unresolvedTransportState = summary?.recovery.states.find(
+    (state) => state.sessionId === sessionId,
+  );
+
+  return unresolvedTransportState?.planHash ?? summary?.status.latestStagedPlanHash;
+}
+
+function matchesBaselineIdentity(
+  record:
+    | {
+        sessionId?: string;
+        planHash?: string;
+      }
+    | undefined,
+  sessionId: string | undefined,
+  planHash?: string,
+): boolean {
+  if (!record || !sessionId || record.sessionId !== sessionId) {
+    return false;
+  }
+
+  return !planHash || !record.planHash || record.planHash === planHash;
+}
+
+function matchingBaselineCommitReceipt(
+  status: NativeWatchTransportStatus,
+  sessionId: string | undefined,
+  planHash?: string,
+) {
+  return matchesBaselineIdentity(status.latestCommitReceipt, sessionId, planHash)
+    ? status.latestCommitReceipt
+    : undefined;
+}
+
+function hasPersistedPackageFileForBaseline(
+  status: NativeWatchTransportStatus,
+  sessionId: string | undefined,
+  planHash?: string,
+): boolean {
+  if (
+    status.latestPackageFile?.persisted === true &&
+    matchesBaselineIdentity(status.latestPackageFile, sessionId, planHash)
+  ) {
     return true;
   }
 
   return Boolean(
     status.latestReceivedPackage &&
-      status.latestReceivedPackage.persisted !== false,
+      status.latestReceivedPackage.persisted !== false &&
+      matchesBaselineIdentity(status.latestReceivedPackage, sessionId, planHash),
   );
 }
 
@@ -416,6 +463,9 @@ export function WatchModeLabScreen() {
         },
       });
 
+      let baselineSessionId = currentBaselineSessionId(summary);
+      let baselinePlanHash = currentBaselinePlanHash(summary, baselineSessionId);
+
       if (!hasTransportBaselineEvidence(summary)) {
         const staged = await stageSyntheticWatchModeTransportPlan({
           db,
@@ -433,6 +483,8 @@ export function WatchModeLabScreen() {
         };
         setTransportSummary(summary);
         setRecoverySummary(summary.recovery);
+        baselineSessionId = staged.plan.sessionId;
+        baselinePlanHash = staged.plan.planHash;
         recordLabAction({
           action: "automated_transport_baseline_plan_staged",
           result: "ok",
@@ -451,11 +503,26 @@ export function WatchModeLabScreen() {
             "Baseline reused existing synthetic transport/recovery state instead of staging a new plan.",
           details: {
             unresolvedCount: summary.recovery.unresolvedCount,
-            stagedPlanId: summary.status.latestStagedPlanId,
-            commitSessionId: summary.status.latestCommitReceipt?.sessionId,
+            stagedPlanId: baselineSessionId,
+            commitSessionId: matchingBaselineCommitReceipt(
+              summary.status,
+              baselineSessionId,
+              baselinePlanHash,
+            )?.sessionId,
             packageId:
-              summary.status.latestPackageFile?.packageId ??
-              summary.status.latestReceivedPackage?.packageId,
+              matchesBaselineIdentity(
+                summary.status.latestPackageFile,
+                baselineSessionId,
+                baselinePlanHash,
+              )
+                ? summary.status.latestPackageFile?.packageId
+                : matchesBaselineIdentity(
+                      summary.status.latestReceivedPackage,
+                      baselineSessionId,
+                      baselinePlanHash,
+                    )
+                  ? summary.status.latestReceivedPackage?.packageId
+                  : undefined,
           },
         });
       }
@@ -466,8 +533,17 @@ export function WatchModeLabScreen() {
       });
       setTransportSummary(summary);
       setRecoverySummary(summary.recovery);
+      baselineSessionId =
+        baselineSessionId ?? currentBaselineSessionId(summary);
+      baselinePlanHash =
+        baselinePlanHash ?? currentBaselinePlanHash(summary, baselineSessionId);
+      const commitReceipt = matchingBaselineCommitReceipt(
+        summary.status,
+        baselineSessionId,
+        baselinePlanHash,
+      );
 
-      if (!summary.status.latestCommitReceipt) {
+      if (!commitReceipt) {
         recordLabAction({
           action: "automated_transport_baseline_waiting_for_watch",
           result: "ok",
@@ -475,13 +551,24 @@ export function WatchModeLabScreen() {
             "Baseline is waiting for Watch proof. On Watch, tap Run Watch baseline loop, then tap Run One-Button Baseline again on phone.",
           details: {
             missing: "commit_receipt",
-            stagedPlanId: summary.status.latestStagedPlanId,
+            stagedPlanId: baselineSessionId ?? summary.status.latestStagedPlanId,
+            ignoredCommitSessionId: summary.status.latestCommitReceipt?.sessionId,
+            ignoredPackageSessionId:
+              summary.status.latestPackageManifest?.sessionId ??
+              summary.status.latestPackageFile?.sessionId ??
+              summary.status.latestReceivedPackage?.sessionId,
           },
         });
         return;
       }
 
-      if (!hasPersistedPackageFile(summary.status)) {
+      if (
+        !hasPersistedPackageFileForBaseline(
+          summary.status,
+          baselineSessionId,
+          baselinePlanHash,
+        )
+      ) {
         recordLabAction({
           action: "automated_transport_baseline_waiting_for_package_file",
           result: "ok",
@@ -489,14 +576,36 @@ export function WatchModeLabScreen() {
             "Baseline saw Watch progress but no persisted package file yet. Run the Watch baseline loop or retry package transfer, then tap this again.",
           details: {
             missing: "persisted_package_file",
-            sessionId: summary.status.latestCommitReceipt.sessionId,
-            planHash: summary.status.latestCommitReceipt.planHash,
+            sessionId: commitReceipt.sessionId,
+            planHash: commitReceipt.planHash,
             packageId:
-              summary.status.latestPackageManifest?.packageId ??
-              summary.status.latestPackageFile?.packageId,
+              matchesBaselineIdentity(
+                summary.status.latestPackageManifest,
+                baselineSessionId,
+                baselinePlanHash,
+              )
+                ? summary.status.latestPackageManifest?.packageId
+                : matchesBaselineIdentity(
+                      summary.status.latestPackageFile,
+                      baselineSessionId,
+                      baselinePlanHash,
+                    )
+                  ? summary.status.latestPackageFile?.packageId
+                  : undefined,
             packageHash:
-              summary.status.latestPackageManifest?.packageHash ??
-              summary.status.latestPackageFile?.packageHash,
+              matchesBaselineIdentity(
+                summary.status.latestPackageManifest,
+                baselineSessionId,
+                baselinePlanHash,
+              )
+                ? summary.status.latestPackageManifest?.packageHash
+                : matchesBaselineIdentity(
+                      summary.status.latestPackageFile,
+                      baselineSessionId,
+                      baselinePlanHash,
+                    )
+                  ? summary.status.latestPackageFile?.packageHash
+                  : undefined,
             packageFile: summary.status.latestPackageFile,
           },
         });
@@ -525,6 +634,23 @@ export function WatchModeLabScreen() {
           ackEligible: imported.importSummary.ackEligible,
         },
       });
+
+      if (imported.importSummary.sessionId !== baselineSessionId) {
+        recordLabAction({
+          action: "automated_transport_baseline_incomplete",
+          result: "error",
+          message:
+            "Baseline import belonged to a stale session instead of the current staged plan. Export the debug bundle for analysis.",
+          details: {
+            expectedSessionId: baselineSessionId,
+            expectedPlanHash: baselinePlanHash,
+            importedSessionId: imported.importSummary.sessionId,
+            packageId: imported.importSummary.packageId,
+            packageHash: imported.importSummary.packageHash,
+          },
+        });
+        return;
+      }
 
       if (!imported.importSummary.ackEligible) {
         recordLabAction({

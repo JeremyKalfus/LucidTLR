@@ -231,6 +231,10 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(labTransport).toContain("resetWatchModeLabTransportBaselineState");
     expect(labTransport).toContain("watch_mode_lab_clean_transport_baseline_reset");
     expect(labTransport).toContain("isTransportBaselineResettableState");
+    expect(labTransport).toContain(
+      "isIgnorableTerminalTransportLabPackageConflict",
+    );
+    expect(labTransport).toContain("ignoredUntilLatestPackageImport");
     expect(labTransport).toContain("state.metadata.transportLab === true");
     expect(labTransport).toContain("applyUserAbandonLocalOnly");
     expect(labTransport).toContain("cleanBaselineReset");
@@ -320,6 +324,10 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(phoneLab).toContain("Watch lab discard action");
     expect(phoneLab).toContain("runOneButtonTransportBaseline");
     expect(phoneLab).toContain("doesNotReplaceInterruptionTesting");
+    expect(phoneLab).toContain("currentBaselineSessionId");
+    expect(phoneLab).toContain("matchingBaselineCommitReceipt");
+    expect(phoneLab).toContain("hasPersistedPackageFileForBaseline");
+    expect(phoneLab).toContain("Baseline import belonged to a stale session");
     expect(phoneLab).toContain("stageSyntheticWatchModeTransportPlan");
     expect(phoneLab).toContain("requestWatchModeLabTransportStatus");
     expect(phoneLab).toContain("importLatestReceivedSyntheticWatchPackage");
@@ -329,6 +337,8 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(watchLab).toContain("Run Watch baseline loop");
     expect(watchModel).toContain("runWatchBaselineTransportLoop");
     expect(watchModel).toContain("latestStagedPlan");
+    expect(watchModel).toContain("discardStaleBaselineCurrentSessionIfNeeded");
+    expect(watchModel).toContain("after discarding stale synthetic current session");
     expect(watchModel).toContain("retransferExistingBaselinePackageIfPossible");
     expect(watchModel).toContain("readManifest");
     expect(watchModel).toContain("Retransferred existing sealed baseline package");
@@ -337,6 +347,21 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(watchModel).toContain("transferSealedPackage");
     expect(watchModel).toContain("sendStatusSnapshot");
     expect(watchModel).toContain("requireCanStartSession(sessionId:");
+  });
+
+  it("lets the Watch baseline pull the latest application-context plan before using stale local state", () => {
+    const watchCoordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+
+    expect(watchCoordinator).toContain(
+      "syncReceivedApplicationContextStagedPlanIfPresent",
+    );
+    expect(watchCoordinator).toContain("WCSession.default.receivedApplicationContext");
+    expect(watchCoordinator).toContain("persistedStagedPlan");
+    expect(watchCoordinator).toContain("refreshAfterPersist: false");
+    expect(watchCoordinator).toContain("requestedSessionId ?? stagedPlan?.sessionId");
+    expect(watchCoordinator).toContain("requestedPlanHash ?? stagedPlan?.planHash");
   });
 
   it("keeps public Watch Mode disabled and public screens disconnected", () => {

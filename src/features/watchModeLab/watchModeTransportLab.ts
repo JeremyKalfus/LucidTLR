@@ -705,6 +705,19 @@ function isReplaceableTransportLabPackageConflict(
   );
 }
 
+function isIgnorableTerminalTransportLabPackageConflict(
+  state: WatchSessionSyncState,
+  incoming: TransportLabPackageIdentity,
+): boolean {
+  return (
+    isTransportLabState(state) &&
+    state.sessionId === incoming.sessionId &&
+    state.planHash === incoming.planHash &&
+    hasDifferentPackageIdentity(state, incoming) &&
+    (state.status === "ack_recorded" || state.status === "completed")
+  );
+}
+
 function replaceStaleTransportLabPackageState(
   state: WatchSessionSyncState,
   incoming: TransportLabPackageIdentity & {
@@ -914,7 +927,10 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
         },
       });
     } catch (error) {
-      if (isReplaceableTransportLabPackageConflict(previous, incoming)) {
+      if (
+        isReplaceableTransportLabPackageConflict(previous, incoming) ||
+        isIgnorableTerminalTransportLabPackageConflict(previous, incoming)
+      ) {
         await appendIgnoredStalePackageConflict({
           db: input.db,
           timestamp: status.latestStatusSnapshot.createdAt,
@@ -973,7 +989,10 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
         },
       });
     } catch (error) {
-      if (isReplaceableTransportLabPackageConflict(previous, incoming)) {
+      if (
+        isReplaceableTransportLabPackageConflict(previous, incoming) ||
+        isIgnorableTerminalTransportLabPackageConflict(previous, incoming)
+      ) {
         await appendIgnoredStalePackageConflict({
           db: input.db,
           timestamp: status.latestPackageManifest.receivedAt,
