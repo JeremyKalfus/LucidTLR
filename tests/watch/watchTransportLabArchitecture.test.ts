@@ -228,6 +228,12 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(labTransport).toContain(
       "one_button_baseline_latest_received_package_imported",
     );
+    expect(labTransport).toContain("resetWatchModeLabTransportBaselineState");
+    expect(labTransport).toContain("watch_mode_lab_clean_transport_baseline_reset");
+    expect(labTransport).toContain("isTransportBaselineResettableState");
+    expect(labTransport).toContain("state.metadata.transportLab === true");
+    expect(labTransport).toContain("applyUserAbandonLocalOnly");
+    expect(labTransport).toContain("cleanBaselineReset");
   });
 
   it("applies native transport snapshots into the ledger during status refresh", () => {
@@ -308,6 +314,10 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     );
 
     expect(phoneLab).toContain("Run One-Button Baseline");
+    expect(phoneLab).toContain("Reset Clean Phone Baseline");
+    expect(phoneLab).toContain("resetCleanTransportBaselineState");
+    expect(phoneLab).toContain("abandoned_local_only");
+    expect(phoneLab).toContain("Watch lab discard action");
     expect(phoneLab).toContain("runOneButtonTransportBaseline");
     expect(phoneLab).toContain("doesNotReplaceInterruptionTesting");
     expect(phoneLab).toContain("stageSyntheticWatchModeTransportPlan");

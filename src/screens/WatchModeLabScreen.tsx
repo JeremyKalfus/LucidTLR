@@ -47,6 +47,7 @@ import {
   importLatestReceivedSyntheticWatchPackage,
   loadWatchModeLabTransportSummary,
   requestWatchModeLabTransportStatus,
+  resetWatchModeLabTransportBaselineState,
   sendAckForLatestImportedWatchPackage,
   stageSyntheticWatchModeTransportPlan,
   type WatchModeLabTransportSummary,
@@ -599,6 +600,49 @@ export function WatchModeLabScreen() {
     }
   }
 
+  async function resetCleanTransportBaselineState() {
+    setBusyLabel("Resetting baseline...");
+
+    try {
+      const db = await getLocalDb();
+      const summary = await resetWatchModeLabTransportBaselineState({
+        db,
+        participantId,
+      });
+
+      setPlanSummary(null);
+      setImportSummary(null);
+      setValidationSummary(null);
+      setTransportSummary({
+        status: summary.status,
+        recovery: summary.recovery,
+      });
+      setRecoverySummary(summary.recovery);
+      recordLabAction({
+        action: "clean_transport_baseline_reset",
+        result: "ok",
+        message: summary.message,
+        details: {
+          localOnly: true,
+          abandonedCount: summary.abandonedCount,
+          unresolvedCount: summary.recovery.unresolvedCount,
+          watchSideDiscardStillRequiredForColdStart: true,
+        },
+      });
+    } catch (error) {
+      recordLabAction({
+        action: "clean_transport_baseline_reset",
+        result: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not reset synthetic transport baseline state.",
+      });
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
   function buildPlan(kind: WatchModeLabKind) {
     const plan = buildSyntheticWatchModeLabPlan({
       kind,
@@ -955,6 +999,20 @@ export function WatchModeLabScreen() {
           does not replace force-quit, background, lock, delayed delivery, or
           unreachable interruption testing.
         </LabNote>
+        <LabNote>
+          Reset Clean Phone Baseline marks unresolved phone-side synthetic
+          transport rows abandoned_local_only and clears phone transport status.
+          For a true cold start, also use the Watch lab discard action if the
+          Watch still shows an active/unacked synthetic session.
+        </LabNote>
+        <PrimaryPillButton
+          disabled={busyLabel !== null}
+          icon={ShieldAlert}
+          label="Reset Clean Phone Baseline"
+          onPress={() => {
+            void resetCleanTransportBaselineState();
+          }}
+        />
         <PrimaryPillButton
           disabled={busyLabel !== null}
           icon={CheckCircle2}

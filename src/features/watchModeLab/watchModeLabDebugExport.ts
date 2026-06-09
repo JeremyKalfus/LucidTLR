@@ -809,9 +809,13 @@ function hashMismatchSeen(input: {
 }): boolean {
   const rejectedHashTransition = input.stateTransitions.some((transition) => {
     const reason = transition.rejectionReason?.toLowerCase() ?? "";
+    const recoveredStaleLabConflict =
+      transition.staleTransportLabPackageConflict === true ||
+      transition.baselineReplacedStalePackage === true;
 
     return (
       transition.rejected &&
+      !recoveredStaleLabConflict &&
       (reason.includes("hash mismatch") ||
         reason.includes("package mismatch") ||
         transition.planHashCheck === "rejected" ||
@@ -820,9 +824,14 @@ function hashMismatchSeen(input: {
   });
   const timelineHashError = input.timeline.some((event) => {
     const message = event.errorMessage?.toLowerCase() ?? "";
+    const recoveredStaleLabConflict =
+      metadataBoolean(event.metadata, "staleTransportLabPackageConflict") ||
+      metadataBoolean(event.metadata, "baselineReplacedStalePackage") ||
+      metadataBoolean(event.metadata, "ignoredUntilLatestPackageImport");
 
     return (
       !event.success &&
+      !recoveredStaleLabConflict &&
       (message.includes("hash mismatch") ||
         message.includes("sha256") ||
         message.includes("package mismatch"))
@@ -895,7 +904,13 @@ function terminalThenUnresolvedStateSeen(input: {
   stateTransitions: WatchModeLabStateTransition[];
   unresolvedStates: WatchSessionSyncState[];
 }): boolean {
-  const terminalKeys = new Set<string>();
+  const latestStatusByKey = new Map<
+    string,
+    {
+      terminalSeen: boolean;
+      status?: string;
+    }
+  >();
   const transitions = [...input.stateTransitions].sort((a, b) =>
     a.timestamp.localeCompare(b.timestamp),
   );
@@ -907,22 +922,30 @@ function terminalThenUnresolvedStateSeen(input: {
       continue;
     }
 
+    const latest = latestStatusByKey.get(key) ?? {
+      terminalSeen: false,
+      status: undefined,
+    };
+
     if (isTerminalExportStatus(transition.nextStatus)) {
-      terminalKeys.add(key);
-      continue;
+      latest.terminalSeen = true;
     }
 
-    if (
-      terminalKeys.has(key) &&
-      isUnresolvedExportStatus(transition.nextStatus)
-    ) {
+    latest.status = transition.nextStatus;
+    latestStatusByKey.set(key, latest);
+  }
+
+  for (const latest of latestStatusByKey.values()) {
+    if (latest.terminalSeen && isUnresolvedExportStatus(latest.status)) {
       return true;
     }
   }
 
-  return input.unresolvedStates.some((state) =>
-    terminalKeys.has(statePackageKey(state)),
-  );
+  return input.unresolvedStates.some((state) => {
+    const latest = latestStatusByKey.get(statePackageKey(state));
+
+    return latest?.terminalSeen === true;
+  });
 }
 
 function isTransportCommitReceiptEvent(

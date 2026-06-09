@@ -75,6 +75,8 @@ describe("Watch Mode Lab debug export", () => {
     expect(helper).toContain("staleTransportLabPackageConflictSeen");
     expect(helper).toContain("staleTransportLabPackageReplacedSeen");
     expect(helper).toContain("terminalThenUnresolvedStateSeen");
+    expect(helper).toContain("latestStatusByKey");
+    expect(helper).toContain("!recoveredStaleLabConflict");
     expect(helper).toContain("isTransportCommitReceiptEvent");
     expect(helper).toContain("isTransportPackageReceivedEvent");
     expect(helper).toContain("isWatchPackageTransferStatusEvent");
@@ -149,6 +151,10 @@ describe("Watch Mode Lab debug export", () => {
     expect(screen).toContain("phone_reload_recovery_tested");
     expect(screen).toContain("Run Transport Drill");
     expect(screen).toContain("Run One-Button Baseline");
+    expect(screen).toContain("Reset Clean Phone Baseline");
+    expect(screen).toContain("resetWatchModeLabTransportBaselineState");
+    expect(screen).toContain("watchSideDiscardStillRequiredForColdStart");
+    expect(screen).toContain("Watch lab discard action");
     expect(screen).toContain("one-button happy path");
     expect(screen).toContain("does not replace force-quit");
     expect(screen).toContain("automated_transport_baseline_started");

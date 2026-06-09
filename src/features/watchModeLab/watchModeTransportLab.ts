@@ -14,6 +14,7 @@ import {
   saveWatchSessionSyncState,
   applyAckRecorded,
   applyPhoneImportSuccess,
+  applyUserAbandonLocalOnly,
   applyWatchCommitReceipt,
   applyWatchRunningStatus,
   applyWatchSealedManifest,
@@ -60,6 +61,13 @@ export interface WatchModeLabTransportImportSummary {
 
 export interface WatchModeLabTransportAckSummary {
   message: string;
+  status: NativeWatchTransportStatus;
+  recovery: WatchModeLabRecoverySummary;
+}
+
+export interface WatchModeLabTransportResetSummary {
+  message: string;
+  abandonedCount: number;
   status: NativeWatchTransportStatus;
   recovery: WatchModeLabRecoverySummary;
 }
@@ -596,8 +604,79 @@ export async function clearWatchModeLabTransportStatus(input: {
   return { status, recovery };
 }
 
+export async function resetWatchModeLabTransportBaselineState(input: {
+  db: LocalDb;
+  participantId: string;
+  resetAt?: string;
+}): Promise<WatchModeLabTransportResetSummary> {
+  const resetAt = input.resetAt ?? new Date().toISOString();
+  const unresolved = await loadUnresolvedWatchSessionSyncStates({
+    db: input.db,
+    participantId: input.participantId,
+  });
+  const resettableStates = unresolved.filter(isTransportBaselineResettableState);
+
+  for (const state of resettableStates) {
+    const abandoned = applyUserAbandonLocalOnly(state, {
+      abandonedAt: resetAt,
+      reason: "watch_mode_lab_clean_transport_baseline_reset",
+      explicit: true,
+    });
+
+    await saveWatchSessionSyncState({ db: input.db, state: abandoned });
+    await appendWatchModeLabStateTransition({
+      db: input.db,
+      timestamp: resetAt,
+      eventApplied: "clean_transport_baseline_reset",
+      previousState: state,
+      nextState: abandoned,
+      metadata: {
+        explicit: true,
+        localOnly: true,
+        transportLab: true,
+        cleanBaselineReset: true,
+      },
+    });
+  }
+
+  const status = await watchTransport.clearLabTransportStatus();
+  const recovery = await loadRecovery(input);
+
+  await appendWatchModeLabDebugEvent({
+    db: input.db,
+    timestamp: resetAt,
+    source: "phone_lab",
+    eventType: "clean_transport_baseline_reset",
+    metadata: {
+      localOnly: true,
+      transportLab: true,
+      explicit: true,
+      abandonedCount: resettableStates.length,
+      packageDeletion: false,
+      note:
+        "Phone-side synthetic baseline state reset only; Watch-local current session index must be discarded on Watch for a true cold start.",
+    },
+  });
+
+  return {
+    message:
+      resettableStates.length > 0
+        ? `Reset phone-side synthetic transport baseline state by marking ${resettableStates.length} unresolved lab state(s) abandoned_local_only. No packages were deleted.`
+        : "Reset phone-side synthetic transport baseline state. No unresolved lab states needed abandonment and no packages were deleted.",
+    abandonedCount: resettableStates.length,
+    status,
+    recovery,
+  };
+}
+
 function isTransportLabState(state: WatchSessionSyncState): boolean {
   return state.metadata.transportLab === true || state.metadata.syntheticLab === true;
+}
+
+function isTransportBaselineResettableState(
+  state: WatchSessionSyncState,
+): boolean {
+  return state.metadata.transportLab === true;
 }
 
 function hasDifferentPackageIdentity(
