@@ -822,6 +822,9 @@ final class WatchModeLabViewModel: ObservableObject {
       WatchModeLabStatusRow(id: "transportOutstanding", label: "WC outstanding", value: packageTransferOutstandingLabel(transportStatus.latestPackageTransfer)),
       WatchModeLabStatusRow(id: "transportPackageError", label: "package error", value: transportStatus.latestPackageTransfer?.errorMessage ?? transportStatus.lastError ?? "none"),
       WatchModeLabStatusRow(id: "transportAck", label: "ack status", value: transportStatus.latestAckRecorded ? "matching ack recorded" : transportStatus.latestAckPackageId ?? "no ack"),
+      WatchModeLabStatusRow(id: "transportStaleIgnored", label: "stale ignored", value: transportStatus.latestStaleIgnoredSummary ?? "none"),
+      WatchModeLabStatusRow(id: "transportStaleIgnoredCount", label: "stale ignored count", value: "\(transportStatus.staleIgnoredCount)"),
+      WatchModeLabStatusRow(id: "transportDuplicateIgnoredCount", label: "dupes ignored", value: "\(transportStatus.duplicateIgnoredCount)"),
       WatchModeLabStatusRow(id: "public", label: "public Watch Mode", value: "disabled"),
     ]
 

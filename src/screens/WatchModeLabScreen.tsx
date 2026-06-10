@@ -1312,6 +1312,25 @@ export function WatchModeLabScreen() {
           )}
         />
         <InfoRow
+          label="package hash check"
+          value={
+            transportSummary?.status.latestReceivedPackage?.hashVerification ??
+            transportSummary?.status.latestPackageFile?.hashVerification ??
+            "none"
+          }
+        />
+        <InfoRow
+          label="phone dupes ignored"
+          value={`${transportSummary?.status.duplicateIgnoredCount ?? 0}`}
+        />
+        <InfoRow
+          label="watch stale ignored"
+          value={
+            transportSummary?.status.latestStatusSnapshot
+              ?.watchStaleIgnoredSummary ?? "none"
+          }
+        />
+        <InfoRow
           label="package transfer stage"
           value={
             transportSummary?.status.latestPackageTransfer?.stage ??

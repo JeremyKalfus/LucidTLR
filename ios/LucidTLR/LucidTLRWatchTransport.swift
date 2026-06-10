@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import React
 import WatchConnectivity
@@ -10,6 +11,7 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     let receivedAt: String
     let fileByteCount: Int
     let sourceExistsBeforeCopy: Bool
+    let hashVerification: String
   }
 
   private struct PackageFileReceiveFailure: Error {
@@ -17,7 +19,11 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     let receivedAt: String
     let sourceExistsBeforeCopy: Bool
     let errorMessage: String
+    let hashVerification: String
   }
+
+  private static let recentIncomingMessageIdLimit = 64
+  private static let hashVerifiedLabel = "verified-sha256"
 
   private let queue = DispatchQueue(label: "com.lucidtlr.watch-transport-lab")
   private let defaults = UserDefaults.standard
@@ -228,6 +234,10 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     queue.async {
       switch persistedFile {
       case .success(let packageFile):
+        if self.noteIncomingMessageIdAndDetectDuplicate(from: packageFile.metadata) {
+          return
+        }
+
         self.defaults.set(packageFile.targetPath, forKey: self.packageFilePathKey)
         self.recordPackageFile(packageFile)
         self.recordLastMessage(
@@ -239,7 +249,8 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
           metadata: failure.metadata,
           receivedAt: failure.receivedAt,
           sourceExistsBeforeCopy: failure.sourceExistsBeforeCopy,
-          errorMessage: failure.errorMessage
+          errorMessage: failure.errorMessage,
+          hashVerification: failure.hashVerification
         )
       }
     }
@@ -327,6 +338,62 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     }
   }
 
+  /// Appends the incoming messageId/idempotencyKey to a bounded persisted ring
+  /// and reports whether this payload was already handled. Duplicate queued
+  /// WatchConnectivity deliveries become diagnostic no-ops. Must run on queue.
+  private func noteIncomingMessageIdAndDetectDuplicate(from payload: [String: Any]) -> Bool {
+    guard let messageId =
+      stringValue(payload["messageId"]) ?? stringValue(payload["idempotencyKey"]) else {
+      return false
+    }
+
+    var isDuplicate = false
+    mutateStatus { status in
+      var recentIds = status["recentIncomingMessageIds"] as? [String] ?? []
+
+      if recentIds.contains(messageId) {
+        isDuplicate = true
+        let duplicateCount = ((status["duplicateIgnoredCount"] as? NSNumber)?.intValue ?? 0) + 1
+        status["duplicateIgnoredCount"] = duplicateCount
+        status["latestIgnoredDuplicate"] = [
+          "messageType": self.stringValue(payload["messageType"]) ?? "unknown",
+          "messageId": messageId,
+          "ignoredAt": self.nowString(),
+        ]
+        status["lastMessageType"] =
+          "\(self.stringValue(payload["messageType"]) ?? "unknown").duplicate.ignored"
+        status["lastMessageAt"] = self.nowString()
+        return
+      }
+
+      recentIds.append(messageId)
+      if recentIds.count > Self.recentIncomingMessageIdLimit {
+        recentIds.removeFirst(recentIds.count - Self.recentIncomingMessageIdLimit)
+      }
+      status["recentIncomingMessageIds"] = recentIds
+    }
+
+    return isDuplicate
+  }
+
+  private func matchesStagedPlan(_ payload: [String: Any], status: [String: Any]) -> Bool {
+    guard let stagedSessionId = status["latestStagedPlanId"] as? String,
+      let incomingSessionId = stringValue(payload["sessionId"]) else {
+      return true
+    }
+
+    if incomingSessionId != stagedSessionId {
+      return false
+    }
+
+    guard let stagedPlanHash = status["latestStagedPlanHash"] as? String,
+      let incomingPlanHash = stringValue(payload["planHash"]) else {
+      return true
+    }
+
+    return incomingPlanHash == stagedPlanHash
+  }
+
   private func recordCommitReceipt(_ payload: [String: Any]) {
     mutateStatus { status in
       status["latestCommitReceipt"] = [
@@ -335,6 +402,7 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
         "commitId": self.stringValue(payload["commitId"]) ?? "",
         "committedAt": self.stringValue(payload["committedAt"]) ?? "",
         "watchState": self.stringValue(payload["watchState"]) ?? "",
+        "matchesStagedPlan": self.matchesStagedPlan(payload, status: status),
       ]
     }
   }
@@ -348,10 +416,20 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
         "packageId": self.stringValue(payload["packageId"]) ?? "",
         "packageHash": self.stringValue(payload["packageHash"]) ?? "",
         "createdAt": self.stringValue(payload["createdAt"]) ?? "",
+        "matchesStagedPlan": self.matchesStagedPlan(payload, status: status),
       ]
       if let packageTransfer = payload["packageTransfer"] as? [String: Any] {
         snapshot["packageTransfer"] = self.propertyListDictionary(packageTransfer)
         status["latestPackageTransfer"] = self.propertyListDictionary(packageTransfer)
+      }
+      if let staleIgnoredSummary = self.stringValue(payload["staleIgnoredSummary"]) {
+        snapshot["watchStaleIgnoredSummary"] = staleIgnoredSummary
+      }
+      if let staleIgnoredCount = payload["staleIgnoredCount"] as? NSNumber {
+        snapshot["watchStaleIgnoredCount"] = staleIgnoredCount
+      }
+      if let duplicateIgnoredCount = payload["duplicateIgnoredCount"] as? NSNumber {
+        snapshot["watchDuplicateIgnoredCount"] = duplicateIgnoredCount
       }
       status["latestStatusSnapshot"] = snapshot
     }
@@ -365,6 +443,7 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
         "packageId": self.stringValue(payload["packageId"]) ?? "",
         "packageHash": self.stringValue(payload["packageHash"]) ?? "",
         "receivedAt": receivedAt,
+        "matchesStagedPlan": self.matchesStagedPlan(payload, status: status),
       ]
     }
   }
@@ -381,6 +460,8 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
         "fileByteCount": packageFile.fileByteCount,
         "sourceExistsBeforeCopy": packageFile.sourceExistsBeforeCopy,
         "persisted": true,
+        "hashVerification": packageFile.hashVerification,
+        "matchesStagedPlan": self.matchesStagedPlan(payload, status: status),
       ]
       status["latestReceivedPackage"] = record
       status["latestPackageFile"] = record
@@ -392,7 +473,8 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     metadata: [String: Any],
     receivedAt: String,
     sourceExistsBeforeCopy: Bool,
-    errorMessage: String
+    errorMessage: String,
+    hashVerification: String
   ) {
     mutateStatus { status in
       status["latestPackageFile"] = [
@@ -404,6 +486,7 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
         "sourceExistsBeforeCopy": sourceExistsBeforeCopy,
         "persisted": false,
         "errorMessage": errorMessage,
+        "hashVerification": hashVerification,
       ]
       status["lastError"] = errorMessage
       status["lastMessageType"] = "lucidtlr.watch.transport.error"
@@ -419,6 +502,7 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
         "packageId": self.stringValue(payload["packageId"]) ?? "",
         "packageHash": self.stringValue(payload["packageHash"]) ?? "",
         "ackedAt": self.stringValue(payload["ackedAt"]) ?? self.stringValue(payload["createdAt"]) ?? "",
+        "matchesStagedPlan": self.matchesStagedPlan(payload, status: status),
       ]
     }
   }
@@ -427,6 +511,10 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     let payload = propertyListDictionary(rawPayload)
     let type = stringValue(payload["messageType"]) ?? "unknown"
     let receivedAt = nowString()
+
+    if noteIncomingMessageIdAndDetectDuplicate(from: payload) {
+      return
+    }
 
     switch type {
     case "lucidtlr.watch.plan.commit.receipt":
@@ -508,6 +596,31 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
       }
 
       try FileManager.default.copyItem(at: file.fileURL, to: targetURL)
+      try? FileManager.default.setAttributes(
+        [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+        ofItemAtPath: targetURL.path
+      )
+
+      // Receive-boundary content verification: a truncated or corrupt
+      // transfer must surface here as a transport diagnostic, not later
+      // during import. The file is removed so it can never be surfaced as
+      // the latest received package.
+      if let verificationFailure = verifyReceivedPackageFile(
+        at: targetURL,
+        expectedPackageId: stringValue(metadata["packageId"]),
+        expectedPackageHash: stringValue(metadata["packageHash"])
+      ) {
+        try? FileManager.default.removeItem(at: targetURL)
+        return .failure(
+          PackageFileReceiveFailure(
+            metadata: metadata,
+            receivedAt: receivedAt,
+            sourceExistsBeforeCopy: sourceExistsBeforeCopy,
+            errorMessage: "Received package failed receive-boundary hash verification: \(verificationFailure)",
+            hashVerification: "failed: \(verificationFailure)"
+          )
+        )
+      }
 
       return .success(
         ReceivedPackageFile(
@@ -515,7 +628,8 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
           targetPath: targetURL.path,
           receivedAt: receivedAt,
           fileByteCount: try fileByteCount(at: targetURL),
-          sourceExistsBeforeCopy: sourceExistsBeforeCopy
+          sourceExistsBeforeCopy: sourceExistsBeforeCopy,
+          hashVerification: Self.hashVerifiedLabel
         )
       )
     } catch {
@@ -524,10 +638,92 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
           metadata: metadata,
           receivedAt: receivedAt,
           sourceExistsBeforeCopy: sourceExistsBeforeCopy,
-          errorMessage: "Package file receive failed before queued status update: \(error.localizedDescription)"
+          errorMessage: "Package file receive failed before queued status update: \(error.localizedDescription)",
+          hashVerification: "not-verified: receive failed before verification"
         )
       )
     }
+  }
+
+  /// Verifies the received synthetic package at the transport boundary:
+  /// metadata identity vs manifest, per-file sha256/byteLength entries, and
+  /// the canonical-JSON manifest packageHash (the same SHA-256 scheme used by
+  /// the Watch `WatchTransportPackageBuilder`). Returns nil when verified, or
+  /// a failure reason string.
+  private func verifyReceivedPackageFile(
+    at url: URL,
+    expectedPackageId: String?,
+    expectedPackageHash: String?
+  ) -> String? {
+    let object: Any
+    do {
+      object = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+    } catch {
+      return "package file is not valid JSON (possible truncated transfer): \(error.localizedDescription)"
+    }
+
+    guard let package = object as? [String: Any],
+      let manifest = package["manifest"] as? [String: Any],
+      let files = package["files"] as? [[String: Any]] else {
+      return "package file is missing manifest/files structure"
+    }
+
+    guard let manifestPackageHash = manifest["packageHash"] as? String,
+      let manifestPackageId = manifest["packageId"] as? String else {
+      return "manifest is missing packageId/packageHash"
+    }
+
+    if let expectedPackageId, expectedPackageId != manifestPackageId {
+      return "metadata packageId \(expectedPackageId) does not match manifest packageId \(manifestPackageId)"
+    }
+
+    if let expectedPackageHash, expectedPackageHash != manifestPackageHash {
+      return "metadata packageHash does not match manifest packageHash"
+    }
+
+    guard let manifestFileEntries = manifest["files"] as? [[String: Any]] else {
+      return "manifest is missing file entries"
+    }
+
+    var payloadByPath: [String: String] = [:]
+    for filePayload in files {
+      guard let relativePath = filePayload["relativePath"] as? String,
+        let contents = filePayload["contents"] as? String else {
+        return "package file payload entry is malformed"
+      }
+
+      payloadByPath[relativePath] = contents
+    }
+
+    for entry in manifestFileEntries {
+      guard let relativePath = entry["relativePath"] as? String,
+        let expectedSha256 = entry["sha256"] as? String,
+        let expectedByteLength = (entry["byteLength"] as? NSNumber)?.intValue else {
+        return "manifest file entry is malformed"
+      }
+
+      guard let contents = payloadByPath[relativePath] else {
+        return "package is missing file payload for \(relativePath)"
+      }
+
+      if Array(contents.utf8).count != expectedByteLength {
+        return "byteLength mismatch for \(relativePath)"
+      }
+
+      if Self.sha256Hex(contents) != expectedSha256 {
+        return "sha256 mismatch for \(relativePath)"
+      }
+    }
+
+    let recomputedPackageHash = Self.sha256Hex(
+      Self.canonicalJSONString(manifest, ignoredKeys: ["packageHash"])
+    )
+
+    if recomputedPackageHash != manifestPackageHash {
+      return "canonical manifest hash mismatch: expected \(manifestPackageHash), recomputed \(recomputedPackageHash)"
+    }
+
+    return nil
   }
 
   private func fileByteCount(at url: URL) throws -> Int {
@@ -535,15 +731,18 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     return (attributes[.size] as? NSNumber)?.intValue ?? 0
   }
 
+  /// Received unacked packages are stored under Application Support rather
+  /// than Caches: iOS may purge Caches under storage pressure, and the
+  /// received file is the phone's only pre-import copy.
   private func receivedPackageURL(packageId: String) throws -> URL {
-    let caches = try FileManager.default.url(
-      for: .cachesDirectory,
+    let applicationSupport = try FileManager.default.url(
+      for: .applicationSupportDirectory,
       in: .userDomainMask,
       appropriateFor: nil,
       create: true
     )
-    let directory = caches.appendingPathComponent(
-      "LucidTLRWatchTransportLab",
+    let directory = applicationSupport.appendingPathComponent(
+      "LucidTLRWatchTransportLab/ReceivedPackages",
       isDirectory: true
     )
     try FileManager.default.createDirectory(
@@ -553,6 +752,70 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     )
     let safePackageId = packageId.replacingOccurrences(of: "/", with: "-")
     return directory.appendingPathComponent("\(safePackageId).json")
+  }
+
+  // MARK: - Canonical hashing (matches Watch WatchTransportPackageBuilder)
+
+  private static func canonicalJSONString(
+    _ value: Any,
+    ignoredKeys: Set<String> = []
+  ) -> String {
+    if value is NSNull {
+      return "null"
+    }
+
+    if let string = value as? String {
+      return jsonStringLiteral(string)
+    }
+
+    if let number = value as? NSNumber {
+      if CFGetTypeID(number) == CFBooleanGetTypeID() {
+        return number.boolValue ? "true" : "false"
+      }
+
+      return numberString(number)
+    }
+
+    if let array = value as? [Any] {
+      return "[\(array.map { canonicalJSONString($0, ignoredKeys: ignoredKeys) }.joined(separator: ","))]"
+    }
+
+    if let dictionary = value as? [String: Any] {
+      let entries = dictionary.keys
+        .filter { !ignoredKeys.contains($0) }
+        .sorted()
+        .map { key in
+          "\(jsonStringLiteral(key)):\(canonicalJSONString(dictionary[key] as Any, ignoredKeys: ignoredKeys))"
+        }
+      return "{\(entries.joined(separator: ","))}"
+    }
+
+    return "null"
+  }
+
+  private static func jsonStringLiteral(_ value: String) -> String {
+    guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+      let encoded = String(data: data, encoding: .utf8),
+      encoded.count >= 2 else {
+      return "\"\""
+    }
+
+    return String(encoded.dropFirst().dropLast())
+  }
+
+  private static func numberString(_ value: NSNumber) -> String {
+    let doubleValue = value.doubleValue
+
+    if doubleValue.rounded() == doubleValue {
+      return "\(Int64(doubleValue))"
+    }
+
+    return "\(doubleValue)"
+  }
+
+  private static func sha256Hex(_ value: String) -> String {
+    let digest = SHA256.hash(data: Data(value.utf8))
+    return digest.map { String(format: "%02x", $0) }.joined()
   }
 
   private func activationStateLabel(_ state: WCSessionActivationState) -> String {

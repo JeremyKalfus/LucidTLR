@@ -161,6 +161,12 @@ export interface WatchModeLabDrillAssessment {
   stateRegressionDetected: boolean;
   mismatchedHashDetected: boolean;
   finalUnresolvedStateBlocksStart: boolean;
+  receivedPackageHashVerification?: string;
+  phoneDuplicateIgnoredCount: number;
+  phoneLatestIgnoredDuplicateMessageType?: string;
+  watchStaleIgnoredSummary?: string;
+  watchStaleIgnoredCount?: number;
+  watchDuplicateIgnoredCount?: number;
 }
 
 export interface WatchModeLabDebugBundle {
@@ -1396,6 +1402,18 @@ function buildDrillAssessment(input: {
     }),
     finalUnresolvedStateBlocksStart:
       input.recoveryPresentation.blocksFutureWatchStart,
+    receivedPackageHashVerification:
+      input.transportStatus?.latestReceivedPackage?.hashVerification ??
+      input.transportStatus?.latestPackageFile?.hashVerification,
+    phoneDuplicateIgnoredCount: input.transportStatus?.duplicateIgnoredCount ?? 0,
+    phoneLatestIgnoredDuplicateMessageType:
+      input.transportStatus?.latestIgnoredDuplicate?.messageType,
+    watchStaleIgnoredSummary:
+      input.transportStatus?.latestStatusSnapshot?.watchStaleIgnoredSummary,
+    watchStaleIgnoredCount:
+      input.transportStatus?.latestStatusSnapshot?.watchStaleIgnoredCount,
+    watchDuplicateIgnoredCount:
+      input.transportStatus?.latestStatusSnapshot?.watchDuplicateIgnoredCount,
   };
 }
 

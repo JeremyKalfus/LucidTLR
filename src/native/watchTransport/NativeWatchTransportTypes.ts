@@ -44,6 +44,14 @@ export interface NativeWatchTransportStatus {
     commitId?: string;
     committedAt?: string;
     watchState?: string;
+    matchesStagedPlan?: boolean;
+  };
+  recentIncomingMessageIds?: string[];
+  duplicateIgnoredCount?: number;
+  latestIgnoredDuplicate?: {
+    messageType?: string;
+    messageId?: string;
+    ignoredAt?: string;
   };
   latestStatusSnapshot?: {
     sessionId?: string;
@@ -53,6 +61,10 @@ export interface NativeWatchTransportStatus {
     packageHash?: string;
     createdAt?: string;
     packageTransfer?: NativeWatchPackageTransferStatus;
+    matchesStagedPlan?: boolean;
+    watchStaleIgnoredSummary?: string;
+    watchStaleIgnoredCount?: number;
+    watchDuplicateIgnoredCount?: number;
   };
   latestPackageTransfer?: NativeWatchPackageTransferStatus;
   latestPackageManifest?: {
@@ -61,6 +73,7 @@ export interface NativeWatchTransportStatus {
     packageId: string;
     packageHash: string;
     receivedAt?: string;
+    matchesStagedPlan?: boolean;
   };
   latestReceivedPackage?: {
     sessionId: string;
@@ -71,6 +84,8 @@ export interface NativeWatchTransportStatus {
     fileByteCount?: number;
     sourceExistsBeforeCopy?: boolean;
     persisted?: boolean;
+    hashVerification?: string;
+    matchesStagedPlan?: boolean;
   };
   latestPackageFile?: {
     sessionId: string;
@@ -82,6 +97,8 @@ export interface NativeWatchTransportStatus {
     sourceExistsBeforeCopy?: boolean;
     persisted?: boolean;
     errorMessage?: string;
+    hashVerification?: string;
+    matchesStagedPlan?: boolean;
   };
   latestAck?: {
     sessionId: string;
@@ -89,6 +106,7 @@ export interface NativeWatchTransportStatus {
     packageId: string;
     packageHash: string;
     ackedAt?: string;
+    matchesStagedPlan?: boolean;
   };
 }
 

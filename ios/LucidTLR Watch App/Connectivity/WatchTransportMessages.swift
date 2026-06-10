@@ -26,14 +26,127 @@ struct WatchTransportStagedPlan: Equatable {
   let planHash: String
   let plan: WatchRuntimePlanV3
   let receivedAt: String
+  let messageCreatedAt: String?
 }
 
-struct WatchTransportReceivedAck: Equatable {
+struct WatchTransportReceivedAck: Codable, Equatable {
   let sessionId: String
   let planHash: String
   let packageId: String
   let packageHash: String
   let ackedAt: String
+}
+
+struct WatchTransportStaleIgnoredRecord: Codable, Equatable {
+  let messageType: String
+  let sessionId: String?
+  let planHash: String?
+  let reason: String
+  let ignoredAt: String
+
+  var summary: String {
+    "\(messageType) for \(sessionId ?? "unknown-session") ignored: \(reason)"
+  }
+}
+
+/// One atomic, session-scoped synthetic transport lab state for the Watch.
+/// This replaces the previous scattered per-field UserDefaults keys so a newly
+/// staged plan cannot coexist with stale old-session package/ack evidence.
+struct WatchTransportLabState: Codable, Equatable {
+  static let currentSchemaVersion = "watch-transport-lab-state-v2"
+  static let recentIncomingMessageIdLimit = 64
+
+  var schemaVersion: String
+  var stagedPlanJson: String?
+  var stagedPlanSessionId: String?
+  var stagedPlanHash: String?
+  var stagedPlanMessageCreatedAt: String?
+  var stagedPlanReceivedAt: String?
+  var latestCommitReceiptSessionId: String?
+  var latestPackageId: String?
+  var latestPackageHash: String?
+  var latestPackageTransfer: WatchTransportPackageTransferStatus?
+  var latestAck: WatchTransportReceivedAck?
+  var latestAckRecorded: Bool
+  var latestStaleIgnored: WatchTransportStaleIgnoredRecord?
+  var staleIgnoredCount: Int
+  var duplicateIgnoredCount: Int
+  var recentIncomingMessageIds: [String]
+  var lastMessageType: String?
+  var lastMessageAt: String?
+  var lastError: String?
+  var updatedAt: String
+
+  static func empty(updatedAt: String) -> WatchTransportLabState {
+    WatchTransportLabState(
+      schemaVersion: currentSchemaVersion,
+      stagedPlanJson: nil,
+      stagedPlanSessionId: nil,
+      stagedPlanHash: nil,
+      stagedPlanMessageCreatedAt: nil,
+      stagedPlanReceivedAt: nil,
+      latestCommitReceiptSessionId: nil,
+      latestPackageId: nil,
+      latestPackageHash: nil,
+      latestPackageTransfer: nil,
+      latestAck: nil,
+      latestAckRecorded: false,
+      latestStaleIgnored: nil,
+      staleIgnoredCount: 0,
+      duplicateIgnoredCount: 0,
+      recentIncomingMessageIds: [],
+      lastMessageType: nil,
+      lastMessageAt: nil,
+      lastError: nil,
+      updatedAt: updatedAt
+    )
+  }
+
+  func hasSeenIncomingMessageId(_ messageId: String) -> Bool {
+    recentIncomingMessageIds.contains(messageId)
+  }
+
+  mutating func noteIncomingMessageId(_ messageId: String) {
+    guard !recentIncomingMessageIds.contains(messageId) else {
+      return
+    }
+
+    recentIncomingMessageIds.append(messageId)
+    if recentIncomingMessageIds.count > Self.recentIncomingMessageIdLimit {
+      recentIncomingMessageIds.removeFirst(
+        recentIncomingMessageIds.count - Self.recentIncomingMessageIdLimit
+      )
+    }
+  }
+
+  mutating func noteStaleIgnored(
+    messageType: String,
+    sessionId: String?,
+    planHash: String?,
+    reason: String,
+    ignoredAt: String
+  ) {
+    latestStaleIgnored = WatchTransportStaleIgnoredRecord(
+      messageType: messageType,
+      sessionId: sessionId,
+      planHash: planHash,
+      reason: reason,
+      ignoredAt: ignoredAt
+    )
+    staleIgnoredCount += 1
+    lastMessageType = "\(messageType).stale.ignored"
+    lastMessageAt = ignoredAt
+  }
+
+  /// Reset the whole session-scoped epoch when the staged sessionId/planHash
+  /// changes. The incoming-message dedup ring intentionally survives so queued
+  /// old-session redeliveries are still ignored after the reset.
+  mutating func resetForNewStagedPlan() {
+    let preservedRing = recentIncomingMessageIds
+    let preservedUpdatedAt = updatedAt
+    self = WatchTransportLabState.empty(updatedAt: preservedUpdatedAt)
+    recentIncomingMessageIds = preservedRing
+  }
 }
 
 struct WatchTransportStatusSnapshot: Equatable {
@@ -50,6 +163,9 @@ struct WatchTransportStatusSnapshot: Equatable {
   let latestAckRecorded: Bool
   let lastError: String?
   let latestPackageTransfer: WatchTransportPackageTransferStatus?
+  let latestStaleIgnoredSummary: String?
+  let staleIgnoredCount: Int
+  let duplicateIgnoredCount: Int
 }
 
 struct WatchTransportPackageTransferStatus: Codable, Equatable {
@@ -173,7 +289,10 @@ enum WatchTransportMessageFactory {
     packageId: String?,
     packageHash: String?,
     createdAt: Date,
-    packageTransfer: WatchTransportPackageTransferStatus? = nil
+    packageTransfer: WatchTransportPackageTransferStatus? = nil,
+    staleIgnoredSummary: String? = nil,
+    staleIgnoredCount: Int = 0,
+    duplicateIgnoredCount: Int = 0
   ) -> [String: Any] {
     var payload = base(
       type: .statusSnapshot,
@@ -188,6 +307,11 @@ enum WatchTransportMessageFactory {
     if let packageTransfer {
       payload["packageTransfer"] = packageTransfer.dictionary
     }
+    if let staleIgnoredSummary {
+      payload["staleIgnoredSummary"] = staleIgnoredSummary
+    }
+    payload["staleIgnoredCount"] = staleIgnoredCount
+    payload["duplicateIgnoredCount"] = duplicateIgnoredCount
     return payload
   }
 
@@ -264,7 +388,8 @@ enum WatchTransportMessageParser {
       sessionId: plan.sessionId,
       planHash: plan.planHash,
       plan: plan,
-      receivedAt: WatchRuntimeDateFormat.string(from: receivedAt)
+      receivedAt: WatchRuntimeDateFormat.string(from: receivedAt),
+      messageCreatedAt: payload["createdAt"] as? String
     )
   }
 

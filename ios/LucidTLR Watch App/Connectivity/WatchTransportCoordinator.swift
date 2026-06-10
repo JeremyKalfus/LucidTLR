@@ -18,23 +18,46 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     latestAckPackageId: nil,
     latestAckRecorded: false,
     lastError: nil,
-    latestPackageTransfer: nil
+    latestPackageTransfer: nil,
+    latestStaleIgnoredSummary: nil,
+    staleIgnoredCount: 0,
+    duplicateIgnoredCount: 0
   )
 
   private let defaults = UserDefaults.standard
-  private let stagedPlanJsonKey = "lucidtlr.watchTransportLab.stagedPlanJson.v1"
-  private let stagedPlanReceivedAtKey = "lucidtlr.watchTransportLab.stagedPlanReceivedAt.v1"
-  private let latestAckSessionIdKey = "lucidtlr.watchTransportLab.latestAckSessionId.v1"
-  private let latestAckPlanHashKey = "lucidtlr.watchTransportLab.latestAckPlanHash.v1"
-  private let latestAckPackageIdKey = "lucidtlr.watchTransportLab.latestAckPackageId.v1"
-  private let latestAckPackageHashKey = "lucidtlr.watchTransportLab.latestAckPackageHash.v1"
-  private let latestAckedAtKey = "lucidtlr.watchTransportLab.latestAckedAt.v1"
-  private let latestPackageTransferJsonKey = "lucidtlr.watchTransportLab.latestPackageTransferJson.v1"
+  private let stateQueue = DispatchQueue(label: "com.lucidtlr.watch-transport-lab.state")
+  private let stateKey = "lucidtlr.watchTransportLab.state.v2"
+  private let legacyScatteredStateKeys = [
+    "lucidtlr.watchTransportLab.stagedPlanJson.v1",
+    "lucidtlr.watchTransportLab.stagedPlanReceivedAt.v1",
+    "lucidtlr.watchTransportLab.latestAckSessionId.v1",
+    "lucidtlr.watchTransportLab.latestAckPlanHash.v1",
+    "lucidtlr.watchTransportLab.latestAckPackageId.v1",
+    "lucidtlr.watchTransportLab.latestAckPackageHash.v1",
+    "lucidtlr.watchTransportLab.latestAckedAt.v1",
+    "lucidtlr.watchTransportLab.latestPackageTransferJson.v1",
+    "lucidtlr.watchTransportLab.lastMessageType.v1",
+    "lucidtlr.watchTransportLab.lastMessageAt.v1",
+    "lucidtlr.watchTransportLab.latestCommitReceiptSessionId.v1",
+    "lucidtlr.watchTransportLab.latestPackageId.v1",
+    "lucidtlr.watchTransportLab.latestPackageHash.v1",
+    "lucidtlr.watchTransportLab.latestAckRecorded.v1",
+    "lucidtlr.watchTransportLab.lastError.v1",
+  ]
 
   private override init() {
     super.init()
+    stateQueue.sync {
+      // The scattered v1 keys had no shared session epoch and allowed stale
+      // old-session evidence to survive into a fresh baseline. They are
+      // superseded by the single encoded v2 state and removed without
+      // migration; this is synthetic lab state only.
+      self.removeLegacyScatteredStateKeysOnQueue()
+    }
     refreshStatus()
   }
+
+  // MARK: - Public API
 
   func activate() throws {
     guard WCSession.isSupported() else {
@@ -48,66 +71,13 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
   }
 
   func refreshStatus() {
-    let session = WCSession.isSupported() ? WCSession.default : nil
-    try? syncReceivedApplicationContextStagedPlanIfPresent()
-    let staged = try? persistedStagedPlan()
-    let ack = latestReceivedAck()
-    let next = WatchTransportStatusSnapshot(
-      activationState: session.map { activationStateLabel($0.activationState) } ?? "unsupported",
-      reachable: session?.isReachable ?? false,
-      lastMessageType: defaults.string(forKey: "lucidtlr.watchTransportLab.lastMessageType.v1"),
-      lastMessageAt: defaults.string(forKey: "lucidtlr.watchTransportLab.lastMessageAt.v1"),
-      latestStagedPlanSessionId: staged?.sessionId,
-      latestStagedPlanHash: staged?.planHash,
-      latestCommitReceiptSessionId: defaults.string(forKey: "lucidtlr.watchTransportLab.latestCommitReceiptSessionId.v1"),
-      latestPackageId: defaults.string(forKey: "lucidtlr.watchTransportLab.latestPackageId.v1"),
-      latestPackageHash: defaults.string(forKey: "lucidtlr.watchTransportLab.latestPackageHash.v1"),
-      latestAckPackageId: ack?.packageId,
-      latestAckRecorded: defaults.bool(forKey: "lucidtlr.watchTransportLab.latestAckRecorded.v1"),
-      lastError: defaults.string(forKey: "lucidtlr.watchTransportLab.lastError.v1"),
-      latestPackageTransfer: latestPackageTransferStatus()
-    )
-
-    DispatchQueue.main.async {
-      self.status = next
-    }
+    syncReceivedApplicationContextStagedPlanIfPresent()
+    publishStatus(from: readState())
   }
 
   func latestStagedPlan() throws -> WatchTransportStagedPlan? {
-    try syncReceivedApplicationContextStagedPlanIfPresent()
+    syncReceivedApplicationContextStagedPlanIfPresent()
     return try persistedStagedPlan()
-  }
-
-  private func persistedStagedPlan() throws -> WatchTransportStagedPlan? {
-    guard let planJson = defaults.string(forKey: stagedPlanJsonKey),
-      let data = planJson.data(using: .utf8) else {
-      return nil
-    }
-
-    let plan = try JSONDecoder().decode(WatchRuntimePlanV3.self, from: data)
-    return WatchTransportStagedPlan(
-      sessionId: plan.sessionId,
-      planHash: plan.planHash,
-      plan: plan,
-      receivedAt: defaults.string(forKey: stagedPlanReceivedAtKey) ?? ""
-    )
-  }
-
-  private func syncReceivedApplicationContextStagedPlanIfPresent() throws {
-    guard WCSession.isSupported() else {
-      return
-    }
-
-    let context = WCSession.default.receivedApplicationContext
-    guard !context.isEmpty,
-      let stagedPlan = try WatchTransportMessageParser.stagedPlan(
-        from: context,
-        receivedAt: Date()
-      ) else {
-      return
-    }
-
-    try persist(stagedPlan, refreshAfterPersist: false)
   }
 
   func sendCommitReceipt(
@@ -123,8 +93,11 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       committedAt: committedAt
     )
     try transferUserInfo(payload)
-    defaults.set(plan.sessionId, forKey: "lucidtlr.watchTransportLab.latestCommitReceiptSessionId.v1")
-    recordLastMessage(type: WatchTransportMessageType.planCommitReceipt.rawValue, at: committedAt)
+    mutateState { state in
+      state.latestCommitReceiptSessionId = plan.sessionId
+      state.lastMessageType = WatchTransportMessageType.planCommitReceipt.rawValue
+      state.lastMessageAt = WatchRuntimeDateFormat.string(from: committedAt)
+    }
   }
 
   func sendStatusSnapshot(
@@ -135,7 +108,7 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     packageHash: String?,
     createdAt: Date
   ) throws {
-    let latestTransfer = latestPackageTransferStatus()
+    let state = readState()
     let payload = WatchTransportMessageFactory.statusSnapshot(
       sessionId: sessionId,
       planHash: planHash,
@@ -143,7 +116,10 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       packageId: packageId,
       packageHash: packageHash,
       createdAt: createdAt,
-      packageTransfer: latestTransfer
+      packageTransfer: state.latestPackageTransfer,
+      staleIgnoredSummary: state.latestStaleIgnored?.summary,
+      staleIgnoredCount: state.staleIgnoredCount,
+      duplicateIgnoredCount: state.duplicateIgnoredCount
     )
     try transferUserInfo(payload)
     recordLastMessage(type: WatchTransportMessageType.statusSnapshot.rawValue, at: createdAt)
@@ -212,15 +188,18 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     )
     _ = try transferFile(fileURL, metadata: metadata)
     let queuedStatus = packageTransferStatus(
-      from: latestPackageTransferStatus() ?? startingStatus,
+      from: readState().latestPackageTransfer ?? startingStatus,
       stage: "fileQueued",
       queuedAt: WatchRuntimeDateFormat.string(from: Date()),
       errorMessage: nil
     )
-    persistPackageTransferStatus(queuedStatus)
-    defaults.set(package.manifest.packageId, forKey: "lucidtlr.watchTransportLab.latestPackageId.v1")
-    defaults.set(package.manifest.packageHash, forKey: "lucidtlr.watchTransportLab.latestPackageHash.v1")
-    recordLastMessage(type: WatchTransportMessageType.packageFile.rawValue, at: createdAt)
+    mutateState { state in
+      state.latestPackageTransfer = queuedStatus
+      state.latestPackageId = package.manifest.packageId
+      state.latestPackageHash = package.manifest.packageHash
+      state.lastMessageType = WatchTransportMessageType.packageFile.rawValue
+      state.lastMessageAt = WatchRuntimeDateFormat.string(from: createdAt)
+    }
     try sendStatusSnapshot(
       sessionId: package.manifest.sessionId,
       planHash: package.manifest.planHash,
@@ -233,7 +212,7 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
 
   @discardableResult
   func recordLatestAckIfMatches(rootDirectory: URL) throws -> Bool {
-    guard let ack = latestReceivedAck() else {
+    guard let ack = readState().latestAck else {
       return false
     }
 
@@ -264,33 +243,21 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       packageHash: ack.packageHash,
       updatedAt: ackDate
     )
-    defaults.set(true, forKey: "lucidtlr.watchTransportLab.latestAckRecorded.v1")
-    refreshStatus()
+    mutateState { state in
+      state.latestAckRecorded = true
+    }
     return true
   }
 
   func clearLabStatus() {
-    for key in [
-      stagedPlanJsonKey,
-      stagedPlanReceivedAtKey,
-      latestAckSessionIdKey,
-      latestAckPlanHashKey,
-      latestAckPackageIdKey,
-      latestAckPackageHashKey,
-      latestAckedAtKey,
-      latestPackageTransferJsonKey,
-      "lucidtlr.watchTransportLab.lastMessageType.v1",
-      "lucidtlr.watchTransportLab.lastMessageAt.v1",
-      "lucidtlr.watchTransportLab.latestCommitReceiptSessionId.v1",
-      "lucidtlr.watchTransportLab.latestPackageId.v1",
-      "lucidtlr.watchTransportLab.latestPackageHash.v1",
-      "lucidtlr.watchTransportLab.latestAckRecorded.v1",
-      "lucidtlr.watchTransportLab.lastError.v1",
-    ] {
-      defaults.removeObject(forKey: key)
+    stateQueue.sync {
+      defaults.removeObject(forKey: stateKey)
+      removeLegacyScatteredStateKeysOnQueue()
     }
-    refreshStatus()
+    publishStatus(from: readState())
   }
+
+  // MARK: - WCSessionDelegate
 
   func session(
     _ session: WCSession,
@@ -361,27 +328,54 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     handleIncoming(applicationContext)
   }
 
+  // MARK: - Incoming messages
+
   private func handleIncoming(_ payload: [String: Any]) {
     let receivedAt = Date()
+    let receivedAtString = WatchRuntimeDateFormat.string(from: receivedAt)
+    let messageTypeRaw = payload["messageType"] as? String ?? "unknown"
+    let incomingMessageId =
+      (payload["messageId"] as? String) ?? (payload["idempotencyKey"] as? String)
+
+    // plan.available intentionally arrives on both applicationContext and a
+    // queued userInfo nudge with the same messageId. That expected redundancy
+    // is deduplicated semantically in applyStagedPlan, so it must not inflate
+    // the anomalous duplicate counter.
+    let isExpectedRedundantPlanDelivery =
+      messageTypeRaw == WatchTransportMessageType.planAvailable.rawValue
+
+    if let incomingMessageId, !isExpectedRedundantPlanDelivery {
+      let isDuplicate = mutateState { state -> Bool in
+        if state.hasSeenIncomingMessageId(incomingMessageId) {
+          state.duplicateIgnoredCount += 1
+          state.lastMessageType = "\(messageTypeRaw).duplicate.ignored"
+          state.lastMessageAt = receivedAtString
+          return true
+        }
+
+        state.noteIncomingMessageId(incomingMessageId)
+        return false
+      }
+
+      if isDuplicate {
+        return
+      }
+    }
 
     do {
       if let stagedPlan = try WatchTransportMessageParser.stagedPlan(
         from: payload,
         receivedAt: receivedAt
       ) {
-        try persist(stagedPlan)
-        recordLastMessage(type: WatchTransportMessageType.planAvailable.rawValue, at: receivedAt)
+        let applied = applyStagedPlan(stagedPlan)
+        if applied {
+          recordLastMessage(type: WatchTransportMessageType.planAvailable.rawValue, at: receivedAt)
+        }
         return
       }
 
       if let ack = WatchTransportMessageParser.ack(from: payload, receivedAt: receivedAt) {
-        persist(ack)
-        do {
-          try recordLatestAckIfMatches(rootDirectory: labRootDirectory())
-        } catch {
-          recordError("Received package ack but did not record it: \(error)")
-        }
-        recordLastMessage(type: WatchTransportMessageType.packageAck.rawValue, at: receivedAt)
+        handleIncomingAck(ack, receivedAt: receivedAt)
         return
       }
 
@@ -409,6 +403,128 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     }
   }
 
+  private func handleIncomingAck(_ ack: WatchTransportReceivedAck, receivedAt: Date) {
+    let state = readState()
+    let indexSessionId = (try? currentLabIndexEntry())?.activeSessionId
+
+    // Session-epoch guard: an ack that matches neither the currently staged
+    // plan nor the current Watch session index is stale old-session evidence.
+    // It is logged and ignored instead of polluting the fresh epoch.
+    if let stagedSessionId = state.stagedPlanSessionId ?? indexSessionId,
+      ack.sessionId != stagedSessionId,
+      ack.sessionId != indexSessionId {
+      mutateState { mutable in
+        mutable.noteStaleIgnored(
+          messageType: WatchTransportMessageType.packageAck.rawValue,
+          sessionId: ack.sessionId,
+          planHash: ack.planHash,
+          reason: "ack_for_stale_old_session",
+          ignoredAt: WatchRuntimeDateFormat.string(from: receivedAt)
+        )
+      }
+      return
+    }
+
+    mutateState { mutable in
+      mutable.latestAck = ack
+      mutable.latestAckRecorded = false
+      mutable.lastMessageType = WatchTransportMessageType.packageAck.rawValue
+      mutable.lastMessageAt = WatchRuntimeDateFormat.string(from: receivedAt)
+    }
+
+    do {
+      try recordLatestAckIfMatches(rootDirectory: labRootDirectory())
+    } catch {
+      recordError("Received package ack but did not record it: \(error)")
+    }
+  }
+
+  // MARK: - Staged plan (applicationContext is the source of truth)
+
+  private func syncReceivedApplicationContextStagedPlanIfPresent() {
+    guard WCSession.isSupported() else {
+      return
+    }
+
+    let context = WCSession.default.receivedApplicationContext
+    guard !context.isEmpty,
+      let stagedPlan = try? WatchTransportMessageParser.stagedPlan(
+        from: context,
+        receivedAt: Date()
+      ) else {
+      return
+    }
+
+    applyStagedPlan(stagedPlan)
+  }
+
+  /// Applies a staged plan from any delivery path with latest-wins semantics.
+  /// `updateApplicationContext` defines the current staged plan; a queued
+  /// `transferUserInfo` plan nudge is ignored when it is stale by identity or
+  /// by message `createdAt`.
+  @discardableResult
+  private func applyStagedPlan(_ stagedPlan: WatchTransportStagedPlan) -> Bool {
+    mutateState { state -> Bool in
+      if state.stagedPlanSessionId == stagedPlan.sessionId,
+        state.stagedPlanHash == stagedPlan.planHash {
+        // Same staged identity redelivered (context + queued nudge): no-op.
+        return false
+      }
+
+      if let existingCreatedAt = state.stagedPlanMessageCreatedAt,
+        let incomingCreatedAt = stagedPlan.messageCreatedAt,
+        incomingCreatedAt < existingCreatedAt {
+        state.noteStaleIgnored(
+          messageType: WatchTransportMessageType.planAvailable.rawValue,
+          sessionId: stagedPlan.sessionId,
+          planHash: stagedPlan.planHash,
+          reason: "stale_plan_nudge_older_than_current_staged_plan",
+          ignoredAt: WatchRuntimeDateFormat.string(from: Date())
+        )
+        return false
+      }
+
+      // New staged plan epoch: reset the whole session-scoped state so old
+      // package/ack/transfer evidence cannot survive into the fresh baseline.
+      state.resetForNewStagedPlan()
+      state.stagedPlanJson = Self.encodePlanJson(stagedPlan.plan)
+      state.stagedPlanSessionId = stagedPlan.sessionId
+      state.stagedPlanHash = stagedPlan.planHash
+      state.stagedPlanMessageCreatedAt = stagedPlan.messageCreatedAt
+      state.stagedPlanReceivedAt = stagedPlan.receivedAt
+      return true
+    }
+  }
+
+  private func persistedStagedPlan() throws -> WatchTransportStagedPlan? {
+    let state = readState()
+    guard let planJson = state.stagedPlanJson,
+      let data = planJson.data(using: .utf8) else {
+      return nil
+    }
+
+    let plan = try JSONDecoder().decode(WatchRuntimePlanV3.self, from: data)
+    return WatchTransportStagedPlan(
+      sessionId: plan.sessionId,
+      planHash: plan.planHash,
+      plan: plan,
+      receivedAt: state.stagedPlanReceivedAt ?? "",
+      messageCreatedAt: state.stagedPlanMessageCreatedAt
+    )
+  }
+
+  private static func encodePlanJson(_ plan: WatchRuntimePlanV3) -> String? {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    guard let data = try? encoder.encode(plan) else {
+      return nil
+    }
+
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  // MARK: - Outbound transport
+
   private func transferUserInfo(_ payload: [String: Any]) throws {
     guard WCSession.isSupported() else {
       throw WatchTransportError.watchConnectivityUnsupported
@@ -420,7 +536,6 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       session.activate()
     }
     session.transferUserInfo(payload)
-    refreshStatus()
   }
 
   private func transferFile(_ fileURL: URL, metadata: [String: Any]) throws -> WCSessionFileTransfer {
@@ -433,71 +548,94 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       session.delegate = self
       session.activate()
     }
-    let transfer = session.transferFile(fileURL, metadata: metadata)
-    refreshStatus()
-    return transfer
+    return session.transferFile(fileURL, metadata: metadata)
   }
 
-  private func persist(
-    _ stagedPlan: WatchTransportStagedPlan,
-    refreshAfterPersist: Bool = true
-  ) throws {
+  // MARK: - Single atomic lab state
+
+  private func readState() -> WatchTransportLabState {
+    stateQueue.sync { loadStateOnQueue() }
+  }
+
+  @discardableResult
+  private func mutateState<T>(_ mutate: (inout WatchTransportLabState) -> T) -> T {
+    let (result, next): (T, WatchTransportLabState) = stateQueue.sync {
+      var state = loadStateOnQueue()
+      let original = state
+      let result = mutate(&state)
+      if state != original {
+        saveStateOnQueue(state)
+      }
+      return (result, state)
+    }
+    publishStatus(from: next)
+    return result
+  }
+
+  private func loadStateOnQueue() -> WatchTransportLabState {
+    guard let json = defaults.string(forKey: stateKey),
+      let data = json.data(using: .utf8),
+      let state = try? JSONDecoder().decode(WatchTransportLabState.self, from: data),
+      state.schemaVersion == WatchTransportLabState.currentSchemaVersion else {
+      return WatchTransportLabState.empty(
+        updatedAt: WatchRuntimeDateFormat.string(from: Date())
+      )
+    }
+
+    return state
+  }
+
+  private func saveStateOnQueue(_ state: WatchTransportLabState) {
+    var next = state
+    next.updatedAt = WatchRuntimeDateFormat.string(from: Date())
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    defaults.set(
-      String(decoding: try encoder.encode(stagedPlan.plan), as: UTF8.self),
-      forKey: stagedPlanJsonKey
+    guard let data = try? encoder.encode(next),
+      let json = String(data: data, encoding: .utf8) else {
+      return
+    }
+
+    defaults.set(json, forKey: stateKey)
+  }
+
+  private func removeLegacyScatteredStateKeysOnQueue() {
+    for key in legacyScatteredStateKeys {
+      defaults.removeObject(forKey: key)
+    }
+  }
+
+  private func publishStatus(from state: WatchTransportLabState) {
+    let session = WCSession.isSupported() ? WCSession.default : nil
+    let next = WatchTransportStatusSnapshot(
+      activationState: session.map { activationStateLabel($0.activationState) } ?? "unsupported",
+      reachable: session?.isReachable ?? false,
+      lastMessageType: state.lastMessageType,
+      lastMessageAt: state.lastMessageAt,
+      latestStagedPlanSessionId: state.stagedPlanSessionId,
+      latestStagedPlanHash: state.stagedPlanHash,
+      latestCommitReceiptSessionId: state.latestCommitReceiptSessionId,
+      latestPackageId: state.latestPackageId,
+      latestPackageHash: state.latestPackageHash,
+      latestAckPackageId: state.latestAck?.packageId,
+      latestAckRecorded: state.latestAckRecorded,
+      lastError: state.lastError,
+      latestPackageTransfer: state.latestPackageTransfer,
+      latestStaleIgnoredSummary: state.latestStaleIgnored?.summary,
+      staleIgnoredCount: state.staleIgnoredCount,
+      duplicateIgnoredCount: state.duplicateIgnoredCount
     )
-    defaults.set(stagedPlan.receivedAt, forKey: stagedPlanReceivedAtKey)
-    if refreshAfterPersist {
-      refreshStatus()
+
+    DispatchQueue.main.async {
+      self.status = next
     }
   }
 
-  private func persist(_ ack: WatchTransportReceivedAck) {
-    defaults.set(ack.sessionId, forKey: latestAckSessionIdKey)
-    defaults.set(ack.planHash, forKey: latestAckPlanHashKey)
-    defaults.set(ack.packageId, forKey: latestAckPackageIdKey)
-    defaults.set(ack.packageHash, forKey: latestAckPackageHashKey)
-    defaults.set(ack.ackedAt, forKey: latestAckedAtKey)
-    defaults.set(false, forKey: "lucidtlr.watchTransportLab.latestAckRecorded.v1")
-    refreshStatus()
-  }
+  // MARK: - Package transfer diagnostics
 
-  private func latestReceivedAck() -> WatchTransportReceivedAck? {
-    guard let sessionId = defaults.string(forKey: latestAckSessionIdKey),
-      let planHash = defaults.string(forKey: latestAckPlanHashKey),
-      let packageId = defaults.string(forKey: latestAckPackageIdKey),
-      let packageHash = defaults.string(forKey: latestAckPackageHashKey) else {
-      return nil
+  private func persistPackageTransferStatus(_ transferStatus: WatchTransportPackageTransferStatus) {
+    mutateState { state in
+      state.latestPackageTransfer = transferStatus
     }
-
-    return WatchTransportReceivedAck(
-      sessionId: sessionId,
-      planHash: planHash,
-      packageId: packageId,
-      packageHash: packageHash,
-      ackedAt: defaults.string(forKey: latestAckedAtKey) ?? WatchRuntimeDateFormat.string(from: Date())
-    )
-  }
-
-  private func latestPackageTransferStatus() -> WatchTransportPackageTransferStatus? {
-    guard let json = defaults.string(forKey: latestPackageTransferJsonKey),
-      let data = json.data(using: .utf8) else {
-      return nil
-    }
-
-    return try? JSONDecoder().decode(WatchTransportPackageTransferStatus.self, from: data)
-  }
-
-  private func persistPackageTransferStatus(_ status: WatchTransportPackageTransferStatus) {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    if let data = try? encoder.encode(status),
-      let json = String(data: data, encoding: .utf8) {
-      defaults.set(json, forKey: latestPackageTransferJsonKey)
-    }
-    refreshStatus()
   }
 
   private func packageTransferStatus(
@@ -527,7 +665,7 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
   }
 
   private func updateLatestPackageTransfer(stage: String, errorMessage: String?) {
-    guard let latest = latestPackageTransferStatus() else {
+    guard let latest = readState().latestPackageTransfer else {
       return
     }
 
@@ -562,17 +700,25 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     return WCSession.default.outstandingFileTransfers.count
   }
 
+  // MARK: - Shared helpers
+
   private func recordLastMessage(type: String, at: Date) {
-    defaults.set(type, forKey: "lucidtlr.watchTransportLab.lastMessageType.v1")
-    defaults.set(WatchRuntimeDateFormat.string(from: at), forKey: "lucidtlr.watchTransportLab.lastMessageAt.v1")
-    refreshStatus()
+    mutateState { state in
+      state.lastMessageType = type
+      state.lastMessageAt = WatchRuntimeDateFormat.string(from: at)
+    }
   }
 
   private func recordError(_ message: String) {
-    defaults.set(message, forKey: "lucidtlr.watchTransportLab.lastError.v1")
-    defaults.set(WatchTransportMessageType.transportError.rawValue, forKey: "lucidtlr.watchTransportLab.lastMessageType.v1")
-    defaults.set(WatchRuntimeDateFormat.string(from: Date()), forKey: "lucidtlr.watchTransportLab.lastMessageAt.v1")
-    refreshStatus()
+    mutateState { state in
+      state.lastError = message
+      state.lastMessageType = WatchTransportMessageType.transportError.rawValue
+      state.lastMessageAt = WatchRuntimeDateFormat.string(from: Date())
+    }
+  }
+
+  private func currentLabIndexEntry() throws -> WatchCurrentSessionIndexEntry? {
+    try WatchCurrentSessionIndex(rootDirectory: labRootDirectory()).load()
   }
 
   private func labRootDirectory() throws -> URL {

@@ -80,6 +80,50 @@ interface TransportLabPackageIdentity {
   packageHash: string;
 }
 
+interface TransportStagedPlanRecord {
+  sessionId?: string;
+  planHash?: string;
+  matchesStagedPlan?: boolean;
+}
+
+function transportRecordForCurrentStagedPlan<T extends TransportStagedPlanRecord>(
+  record: T | null | undefined,
+  status: NativeWatchTransportStatus,
+): T | undefined {
+  if (!record) {
+    return undefined;
+  }
+
+  if (record.matchesStagedPlan === false) {
+    return undefined;
+  }
+
+  if (
+    status.latestStagedPlanId &&
+    record.sessionId &&
+    record.sessionId !== status.latestStagedPlanId
+  ) {
+    return undefined;
+  }
+
+  if (
+    status.latestStagedPlanHash &&
+    record.planHash &&
+    record.planHash !== status.latestStagedPlanHash
+  ) {
+    return undefined;
+  }
+
+  return record;
+}
+
+function transportStatusSnapshotForCurrentStagedPlan(
+  record: NativeWatchTransportStatus["latestStatusSnapshot"] | null | undefined,
+  status: NativeWatchTransportStatus,
+): NativeWatchTransportStatus["latestStatusSnapshot"] | undefined {
+  return transportRecordForCurrentStagedPlan(record, status);
+}
+
 function summarizeRecovery(
   states: WatchSessionSyncState[],
 ): WatchModeLabRecoverySummary {
@@ -633,22 +677,39 @@ export async function sendAckForLatestImportedWatchPackage(input: {
 function latestTransportPackageIdentity(
   status: NativeWatchTransportStatus,
 ): TransportLabPackageIdentity | null {
+  const latestReceivedPackage = transportRecordForCurrentStagedPlan(
+    status.latestReceivedPackage,
+    status,
+  );
+  const latestPackageFile = transportRecordForCurrentStagedPlan(
+    status.latestPackageFile,
+    status,
+  );
+  const latestPackageManifest = transportRecordForCurrentStagedPlan(
+    status.latestPackageManifest,
+    status,
+  );
+  const latestStatusSnapshot = transportStatusSnapshotForCurrentStagedPlan(
+    status.latestStatusSnapshot,
+    status,
+  );
+  const latestAck = transportRecordForCurrentStagedPlan(status.latestAck, status);
   const packageIdentity =
-    status.latestReceivedPackage ??
-    status.latestPackageFile ??
-    status.latestPackageManifest ??
-    (status.latestStatusSnapshot?.sessionId &&
-    status.latestStatusSnapshot.planHash &&
-    status.latestStatusSnapshot.packageId &&
-    status.latestStatusSnapshot.packageHash
+    latestReceivedPackage ??
+    latestPackageFile ??
+    latestPackageManifest ??
+    (latestStatusSnapshot?.sessionId &&
+    latestStatusSnapshot.planHash &&
+    latestStatusSnapshot.packageId &&
+    latestStatusSnapshot.packageHash
       ? {
-          sessionId: status.latestStatusSnapshot.sessionId,
-          planHash: status.latestStatusSnapshot.planHash,
-          packageId: status.latestStatusSnapshot.packageId,
-          packageHash: status.latestStatusSnapshot.packageHash,
+          sessionId: latestStatusSnapshot.sessionId,
+          planHash: latestStatusSnapshot.planHash,
+          packageId: latestStatusSnapshot.packageId,
+          packageHash: latestStatusSnapshot.packageHash,
         }
       : undefined) ??
-    status.latestAck;
+    latestAck;
 
   if (
     !packageIdentity?.sessionId ||
@@ -901,12 +962,25 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
   status: NativeWatchTransportStatus;
 }): Promise<WatchModeLabTransportSummary> {
   const { status } = input;
+  const latestCommitReceipt = transportRecordForCurrentStagedPlan(
+    status.latestCommitReceipt,
+    status,
+  );
+  const latestStatusSnapshot = transportStatusSnapshotForCurrentStagedPlan(
+    status.latestStatusSnapshot,
+    status,
+  );
+  const latestPackageManifest = transportRecordForCurrentStagedPlan(
+    status.latestPackageManifest,
+    status,
+  );
+  const latestAck = transportRecordForCurrentStagedPlan(status.latestAck, status);
   const sessionId =
-    status.latestCommitReceipt?.sessionId ??
-    status.latestPackageManifest?.sessionId ??
-    status.latestReceivedPackage?.sessionId ??
-    status.latestAck?.sessionId ??
-    status.latestStatusSnapshot?.sessionId;
+    status.latestStagedPlanId ??
+    latestCommitReceipt?.sessionId ??
+    latestPackageManifest?.sessionId ??
+    latestAck?.sessionId ??
+    latestStatusSnapshot?.sessionId;
   let state = sessionId
     ? await loadWatchSessionSyncStateBySessionId({
         db: input.db,
@@ -914,26 +988,26 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
       })
     : null;
 
-  if (state && status.latestCommitReceipt) {
+  if (state && latestCommitReceipt) {
     const previous = state;
 
     try {
       state = applyWatchCommitReceipt(state, {
-        sessionId: status.latestCommitReceipt.sessionId,
-        planHash: status.latestCommitReceipt.planHash,
-        committedAt: status.latestCommitReceipt.committedAt ?? new Date().toISOString(),
-        commitId: status.latestCommitReceipt.commitId,
-        watchState: status.latestCommitReceipt.watchState,
+        sessionId: latestCommitReceipt.sessionId,
+        planHash: latestCommitReceipt.planHash,
+        committedAt: latestCommitReceipt.committedAt ?? new Date().toISOString(),
+        commitId: latestCommitReceipt.commitId,
+        watchState: latestCommitReceipt.watchState,
       });
       await appendWatchModeLabStateTransition({
         db: input.db,
-        timestamp: status.latestCommitReceipt.committedAt,
+        timestamp: latestCommitReceipt.committedAt,
         eventApplied: "watch_commit_receipt",
         previousState: previous,
         nextState: state,
         metadata: {
           transportLab: true,
-          commitId: status.latestCommitReceipt.commitId,
+          commitId: latestCommitReceipt.commitId,
         },
       });
     } catch (error) {
@@ -953,25 +1027,25 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
     }
   }
 
-  if (state && status.latestStatusSnapshot?.watchState) {
+  if (state && latestStatusSnapshot?.watchState) {
     const previous = state;
 
     try {
       state = applyWatchRunningStatus(state, {
-        sessionId: state.sessionId,
-        planHash: state.planHash,
-        watchState: status.latestStatusSnapshot.watchState,
-        reportedAt: status.latestStatusSnapshot.createdAt ?? new Date().toISOString(),
+        sessionId: latestStatusSnapshot.sessionId ?? state.sessionId,
+        planHash: latestStatusSnapshot.planHash ?? state.planHash,
+        watchState: latestStatusSnapshot.watchState,
+        reportedAt: latestStatusSnapshot.createdAt ?? new Date().toISOString(),
       });
       await appendWatchModeLabStateTransition({
         db: input.db,
-        timestamp: status.latestStatusSnapshot.createdAt,
+        timestamp: latestStatusSnapshot.createdAt,
         eventApplied: "watch_running_status",
         previousState: previous,
         nextState: state,
         metadata: {
           transportLab: true,
-          watchState: status.latestStatusSnapshot.watchState,
+          watchState: latestStatusSnapshot.watchState,
         },
       });
     } catch (error) {
@@ -993,26 +1067,26 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
 
   if (
     state &&
-    status.latestStatusSnapshot?.packageId &&
-    status.latestStatusSnapshot.packageHash &&
-    !status.latestPackageManifest
+    latestStatusSnapshot?.packageId &&
+    latestStatusSnapshot.packageHash &&
+    !latestPackageManifest
   ) {
     const previous = state;
     const incoming = {
-      sessionId: status.latestStatusSnapshot.sessionId ?? state.sessionId,
-      planHash: status.latestStatusSnapshot.planHash ?? state.planHash,
-      packageId: status.latestStatusSnapshot.packageId,
-      packageHash: status.latestStatusSnapshot.packageHash,
+      sessionId: latestStatusSnapshot.sessionId ?? state.sessionId,
+      planHash: latestStatusSnapshot.planHash ?? state.planHash,
+      packageId: latestStatusSnapshot.packageId,
+      packageHash: latestStatusSnapshot.packageHash,
     };
 
     try {
       state = applyWatchSealedManifest(state, {
         ...incoming,
-        sealedAt: status.latestStatusSnapshot.createdAt ?? new Date().toISOString(),
+        sealedAt: latestStatusSnapshot.createdAt ?? new Date().toISOString(),
       });
       await appendWatchModeLabStateTransition({
         db: input.db,
-        timestamp: status.latestStatusSnapshot.createdAt,
+        timestamp: latestStatusSnapshot.createdAt,
         eventApplied: "watch_status_sealed_package",
         previousState: previous,
         nextState: state,
@@ -1028,7 +1102,7 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
       ) {
         await appendIgnoredStalePackageConflict({
           db: input.db,
-          timestamp: status.latestStatusSnapshot.createdAt,
+          timestamp: latestStatusSnapshot.createdAt,
           eventApplied: "watch_status_sealed_package",
           previousState: previous,
           incoming,
@@ -1059,23 +1133,23 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
     }
   }
 
-  if (state && status.latestPackageManifest) {
+  if (state && latestPackageManifest) {
     const previous = state;
     const incoming = {
-      sessionId: status.latestPackageManifest.sessionId,
-      planHash: status.latestPackageManifest.planHash,
-      packageId: status.latestPackageManifest.packageId,
-      packageHash: status.latestPackageManifest.packageHash,
+      sessionId: latestPackageManifest.sessionId,
+      planHash: latestPackageManifest.planHash,
+      packageId: latestPackageManifest.packageId,
+      packageHash: latestPackageManifest.packageHash,
     };
 
     try {
       state = applyWatchSealedManifest(state, {
         ...incoming,
-        sealedAt: status.latestPackageManifest.receivedAt ?? new Date().toISOString(),
+        sealedAt: latestPackageManifest.receivedAt ?? new Date().toISOString(),
       });
       await appendWatchModeLabStateTransition({
         db: input.db,
-        timestamp: status.latestPackageManifest.receivedAt,
+        timestamp: latestPackageManifest.receivedAt,
         eventApplied: "watch_sealed_manifest",
         previousState: previous,
         nextState: state,
@@ -1090,7 +1164,7 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
       ) {
         await appendIgnoredStalePackageConflict({
           db: input.db,
-          timestamp: status.latestPackageManifest.receivedAt,
+          timestamp: latestPackageManifest.receivedAt,
           eventApplied: "watch_sealed_manifest",
           previousState: previous,
           incoming,
@@ -1117,18 +1191,18 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
     }
   }
 
-  if (state && status.latestAck) {
+  if (state && latestAck) {
     const previous = state;
 
     try {
       state = applyAckRecorded(state, {
-        packageId: status.latestAck.packageId,
-        packageHash: status.latestAck.packageHash,
-        ackRecordedAt: status.latestAck.ackedAt ?? new Date().toISOString(),
+        packageId: latestAck.packageId,
+        packageHash: latestAck.packageHash,
+        ackRecordedAt: latestAck.ackedAt ?? new Date().toISOString(),
       });
       await appendWatchModeLabStateTransition({
         db: input.db,
-        timestamp: status.latestAck.ackedAt,
+        timestamp: latestAck.ackedAt,
         eventApplied: "ack_recorded",
         previousState: previous,
         nextState: state,

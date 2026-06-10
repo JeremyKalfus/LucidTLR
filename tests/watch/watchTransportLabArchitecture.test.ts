@@ -217,9 +217,11 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(labTransport).toContain("applyWatchSealedManifest");
     expect(labTransport).toContain("applyPhoneImportSuccess");
     expect(labTransport).toContain("applyAckRecorded");
-    expect(labTransport).toContain("status.latestAck");
+    expect(labTransport).toContain("transportRecordForCurrentStagedPlan");
+    expect(labTransport).toContain("transportStatusSnapshotForCurrentStagedPlan");
+    expect(labTransport).toContain("record.matchesStagedPlan === false");
     expect(labTransport).toContain("watch_status_sealed_package");
-    expect(labTransport).toContain("status.latestStatusSnapshot?.packageId");
+    expect(labTransport).toContain("latestStatusSnapshot?.packageId");
     expect(labTransport).toContain("observedWatchAck");
     expect(labTransport).toContain("findUnresolvedConflictingActiveWatchSyncState");
     expect(labTransport).toContain("isReplaceableTransportLabPackageConflict");
@@ -269,12 +271,57 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     );
     expect(labTransport).toContain("status.latestCommitReceipt");
     expect(labTransport).toContain("applyWatchCommitReceipt");
-    expect(labTransport).toContain("status.latestStatusSnapshot?.watchState");
+    expect(labTransport).toContain("latestStatusSnapshot?.watchState");
     expect(labTransport).toContain("applyWatchRunningStatus");
-    expect(labTransport).toContain("status.latestPackageManifest");
+    expect(labTransport).toContain("latestPackageManifest");
     expect(labTransport).toContain("applyWatchSealedManifest");
-    expect(labTransport).toContain("status.latestAck");
+    expect(labTransport).toContain("latestAck");
     expect(labTransport).toContain("applyAckRecorded");
+  });
+
+  it("filters stale transport evidence before applying ledger transitions", () => {
+    const labTransport = readSource(
+      "src/features/watchModeLab/watchModeTransportLab.ts",
+    );
+    const phoneBridge = readSource("ios/LucidTLR/LucidTLRWatchTransport.swift");
+    const types = readSource(
+      "src/native/watchTransport/NativeWatchTransportTypes.ts",
+    );
+    const applier = labTransport.slice(
+      labTransport.indexOf(
+        "async function applyWatchTransportReceiptSnapshotsFromStatus",
+      ),
+      labTransport.indexOf("async function markTransportPackageImportedInLedger"),
+    );
+
+    expect(labTransport).toContain("record.matchesStagedPlan === false");
+    expect(labTransport).toContain(
+      "record.sessionId !== status.latestStagedPlanId",
+    );
+    expect(labTransport).toContain(
+      "record.planHash !== status.latestStagedPlanHash",
+    );
+    expect(applier).toContain(
+      "const latestCommitReceipt = transportRecordForCurrentStagedPlan",
+    );
+    expect(applier).toContain(
+      "const latestStatusSnapshot = transportStatusSnapshotForCurrentStagedPlan",
+    );
+    expect(applier).toContain(
+      "const latestPackageManifest = transportRecordForCurrentStagedPlan",
+    );
+    expect(applier).toContain(
+      "const latestAck = transportRecordForCurrentStagedPlan",
+    );
+    expect(applier).not.toContain("if (state && status.latestCommitReceipt)");
+    expect(applier).not.toContain("if (state && status.latestPackageManifest)");
+    expect(applier).not.toContain("if (state && status.latestAck)");
+    expect(phoneBridge).toContain("latestStagedPlanHash");
+    expect(phoneBridge).toContain("incomingPlanHash");
+    expect(phoneBridge).toContain(
+      "\"matchesStagedPlan\": self.matchesStagedPlan(payload, status: status)",
+    );
+    expect(types).toContain("matchesStagedPlan?: boolean");
   });
 
   it("keeps package import transaction-gated before ack send", () => {
@@ -378,9 +425,165 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     );
     expect(watchCoordinator).toContain("WCSession.default.receivedApplicationContext");
     expect(watchCoordinator).toContain("persistedStagedPlan");
-    expect(watchCoordinator).toContain("refreshAfterPersist: false");
+    expect(watchCoordinator).toContain("applyStagedPlan");
     expect(watchCoordinator).toContain("requestedSessionId ?? stagedPlan?.sessionId");
     expect(watchCoordinator).toContain("requestedPlanHash ?? stagedPlan?.planHash");
+  });
+
+  it("keeps Watch transport lab state in one atomic session-scoped Codable value", () => {
+    const watchMessages = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportMessages.swift",
+    );
+    const watchCoordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+
+    expect(watchMessages).toContain("struct WatchTransportLabState: Codable");
+    expect(watchMessages).toContain("watch-transport-lab-state-v2");
+    expect(watchMessages).toContain("mutating func resetForNewStagedPlan");
+    expect(watchMessages).toContain("recentIncomingMessageIds");
+    expect(watchMessages).toContain("noteStaleIgnored");
+    expect(watchCoordinator).toContain(
+      "stateKey = \"lucidtlr.watchTransportLab.state.v2\"",
+    );
+    expect(watchCoordinator).toContain("removeLegacyScatteredStateKeys");
+    expect(watchCoordinator).toContain("mutateState");
+
+    // The scattered per-field current-session keys must not be written or
+    // read individually anymore; they only appear in the legacy cleanup list.
+    for (const legacyKeyProperty of [
+      "stagedPlanJsonKey",
+      "stagedPlanReceivedAtKey",
+      "latestAckSessionIdKey",
+      "latestAckPlanHashKey",
+      "latestAckPackageIdKey",
+      "latestAckPackageHashKey",
+      "latestAckedAtKey",
+      "latestPackageTransferJsonKey",
+    ]) {
+      expect(watchCoordinator).not.toContain(legacyKeyProperty);
+    }
+    expect(watchCoordinator).not.toContain("defaults.set(plan.sessionId");
+    expect(watchCoordinator).not.toContain("defaults.set(true, forKey:");
+  });
+
+  it("resets the Watch lab transport epoch when a new plan is staged", () => {
+    const watchMessages = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportMessages.swift",
+    );
+    const watchCoordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+
+    expect(watchCoordinator).toContain("state.resetForNewStagedPlan()");
+    expect(watchMessages).toContain(
+      "self = WatchTransportLabState.empty(updatedAt: preservedUpdatedAt)",
+    );
+    expect(watchMessages).toContain("recentIncomingMessageIds = preservedRing");
+  });
+
+  it("ignores stale queued plan nudges instead of overwriting the newer staged plan", () => {
+    const watchCoordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+    const watchMessages = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportMessages.swift",
+    );
+
+    expect(watchMessages).toContain("messageCreatedAt");
+    expect(watchCoordinator).toContain("incomingCreatedAt < existingCreatedAt");
+    expect(watchCoordinator).toContain(
+      "stale_plan_nudge_older_than_current_staged_plan",
+    );
+  });
+
+  it("deduplicates incoming transport messages with a bounded idempotency ring on both sides", () => {
+    const watchMessages = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportMessages.swift",
+    );
+    const watchCoordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+    const phoneBridge = readSource("ios/LucidTLR/LucidTLRWatchTransport.swift");
+
+    expect(watchMessages).toContain("recentIncomingMessageIdLimit");
+    expect(watchMessages).toContain("hasSeenIncomingMessageId");
+    expect(watchCoordinator).toContain("duplicateIgnoredCount");
+    expect(watchCoordinator).toContain("duplicate.ignored");
+    expect(phoneBridge).toContain("noteIncomingMessageIdAndDetectDuplicate");
+    expect(phoneBridge).toContain("recentIncomingMessageIds");
+    expect(phoneBridge).toContain("recentIncomingMessageIdLimit");
+    expect(phoneBridge).toContain("duplicate.ignored");
+    expect(phoneBridge).toContain("latestIgnoredDuplicate");
+  });
+
+  it("ignores and logs stale old-session ack evidence instead of counting it as current-session success", () => {
+    const watchCoordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+    const watchMessages = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportMessages.swift",
+    );
+
+    expect(watchCoordinator).toContain("ack_for_stale_old_session");
+    expect(watchCoordinator).toContain("noteStaleIgnored");
+    expect(watchMessages).toContain("WatchTransportStaleIgnoredRecord");
+    expect(watchMessages).toContain("staleIgnoredCount");
+    expect(watchMessages).toContain("staleIgnoredSummary");
+  });
+
+  it("verifies received package content hashes at the phone receive boundary", () => {
+    const phoneBridge = readSource("ios/LucidTLR/LucidTLRWatchTransport.swift");
+    const packageBuilder = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportPackageBuilder.swift",
+    );
+
+    // The Watch transport package builder seals with real SHA-256 content
+    // digests, so the phone can fully verify at receive time.
+    expect(packageBuilder).toContain("import CryptoKit");
+    expect(packageBuilder).toContain("SHA256.hash");
+    expect(phoneBridge).toContain("import CryptoKit");
+    expect(phoneBridge).toContain("verifyReceivedPackageFile");
+    expect(phoneBridge).toContain("canonicalJSONString");
+    expect(phoneBridge).toContain("sha256Hex");
+    expect(phoneBridge).toContain("hashVerification");
+    expect(phoneBridge).toContain("verified-sha256");
+    expect(phoneBridge).toContain("receive-boundary hash verification");
+    // A failed verification must never surface as the latest received package.
+    expect(phoneBridge.indexOf("verifyReceivedPackageFile")).toBeLessThan(
+      phoneBridge.indexOf("return .success("),
+    );
+  });
+
+  it("stores received unacked packages under Application Support, not purgeable Caches", () => {
+    const phoneBridge = readSource("ios/LucidTLR/LucidTLRWatchTransport.swift");
+
+    expect(phoneBridge).toContain(".applicationSupportDirectory");
+    expect(phoneBridge).toContain("completeUntilFirstUserAuthentication");
+    expect(phoneBridge).not.toContain("cachesDirectory");
+  });
+
+  it("exports stale-ignored versus duplicate-ignored transport diagnostics", () => {
+    const exportSource = readSource(
+      "src/features/watchModeLab/watchModeLabDebugExport.ts",
+    );
+    const types = readSource(
+      "src/native/watchTransport/NativeWatchTransportTypes.ts",
+    );
+    const phoneLab = readSource("src/screens/WatchModeLabScreen.tsx");
+
+    expect(types).toContain("hashVerification?: string");
+    expect(types).toContain("latestIgnoredDuplicate");
+    expect(types).toContain("watchStaleIgnoredSummary");
+    expect(types).toContain("duplicateIgnoredCount");
+    expect(types).toContain("matchesStagedPlan");
+    expect(exportSource).toContain("receivedPackageHashVerification");
+    expect(exportSource).toContain("phoneDuplicateIgnoredCount");
+    expect(exportSource).toContain("watchStaleIgnoredSummary");
+    expect(exportSource).toContain("watchDuplicateIgnoredCount");
+    expect(phoneLab).toContain("package hash check");
+    expect(phoneLab).toContain("phone dupes ignored");
+    expect(phoneLab).toContain("watch stale ignored");
   });
 
   it("keeps public Watch Mode disabled and public screens disconnected", () => {

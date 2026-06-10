@@ -24,6 +24,12 @@ WatchConnectivity recovery shell only.
 After the current TestFlight drill results are reviewed, harden the synthetic
 transport layer itself rather than adding more point filters.
 
+Status: items 1-5 below are implemented in the Watch interruption hardening
+pass (single `WatchTransportLabState` epoch state, applicationContext-
+authoritative staged plan, bounded idempotency ring, phone receive-boundary
+SHA-256 package verification, Application Support storage). They remain
+unvalidated on physical devices until the next TestFlight drills pass.
+
 1. Replace scattered Watch `UserDefaults` keys with one session-scoped Codable
    transport state.
    - Store staged plan, commit/status summary, latest transfer, ack, last
