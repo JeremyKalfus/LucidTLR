@@ -30,6 +30,10 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
   private let statusKey = "lucidtlr.watchTransportLab.status.v1"
   private let packageFilePathKey = "lucidtlr.watchTransportLab.latestPackageFilePath.v1"
   private let isoFormatter = ISO8601DateFormatter()
+#if targetEnvironment(simulator)
+  private var simulatorTransportDrainTimer: DispatchSourceTimer?
+  private var simulatorTransportLastEpochMillis: Int64 = 0
+#endif
 
   override init() {
     isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -55,6 +59,9 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
       session.delegate = self
       session.activate()
       self.recordLastMessage(type: "transport.activate", at: self.nowString())
+#if targetEnvironment(simulator)
+      self.startSimulatorTransportShimIfNeeded()
+#endif
       resolve(self.currentStatus())
     }
   }
@@ -84,7 +91,7 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
       let payload = self.propertyListMessage(from: message)
       self.activateIfNeeded(session)
 
-      self.performWhenActivated(session, attemptsRemaining: 20) { activated in
+      self.performWhenActivated(session, attemptsRemaining: 120) { activated in
         guard activated else {
           self.recordError("updateApplicationContext failed: WatchConnectivity session has not been activated.")
           resolve(self.currentStatus())
@@ -122,6 +129,9 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
       let payload = self.propertyListMessage(from: message)
       self.activateIfNeeded(session)
       session.transferUserInfo(payload)
+#if targetEnvironment(simulator)
+      self.writeSimulatorTransportUserInfo(payload, to: "to-watch")
+#endif
       self.recordLastMessage(
         type: self.stringValue(payload["messageType"]) ?? "lucidtlr.watch.plan.request",
         at: self.stringValue(payload["createdAt"]) ?? self.nowString()
@@ -167,6 +177,9 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
       let payload = self.propertyListMessage(from: message)
       self.activateIfNeeded(session)
       session.transferUserInfo(payload)
+#if targetEnvironment(simulator)
+      self.writeSimulatorTransportUserInfo(payload, to: "to-watch")
+#endif
       self.recordAck(payload)
       self.recordLastMessage(
         type: self.stringValue(payload["messageType"]) ?? "lucidtlr.watch.package.ack",
@@ -236,30 +249,33 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
   }
 
   func session(_ session: WCSession, didReceive file: WCSessionFile) {
-    let persistedFile = attemptPersistReceivedPackageFile(file)
+    handleReceivedPackageFile(fileURL: file.fileURL, metadata: file.metadata ?? [:])
+  }
+
+  private func handleReceivedPackageFile(fileURL: URL, metadata: [String: Any]) {
+    let persistedFile = attemptPersistReceivedPackageFile(fileURL: fileURL, metadata: metadata)
 
     queue.async {
-      switch persistedFile {
-      case .success(let packageFile):
-        if self.noteIncomingMessageIdAndDetectDuplicate(from: packageFile.metadata) {
-          return
-        }
+      self.applyReceivedPackageFileResult(persistedFile)
+    }
+  }
 
-        self.defaults.set(packageFile.targetPath, forKey: self.packageFilePathKey)
-        self.recordPackageFile(packageFile)
-        self.recordLastMessage(
-          type: self.stringValue(packageFile.metadata["messageType"]) ?? "lucidtlr.watch.package.file",
-          at: self.stringValue(packageFile.metadata["createdAt"]) ?? packageFile.receivedAt
-        )
-      case .failure(let failure):
-        self.recordPackageFileReceiveFailure(
-          metadata: failure.metadata,
-          receivedAt: failure.receivedAt,
-          sourceExistsBeforeCopy: failure.sourceExistsBeforeCopy,
-          errorMessage: failure.errorMessage,
-          hashVerification: failure.hashVerification
-        )
+  private func applyReceivedPackageFileResult(
+    _ persistedFile: Result<ReceivedPackageFile, PackageFileReceiveFailure>
+  ) {
+    switch persistedFile {
+    case .success(let packageFile):
+      if !recordPackageFileIfFresh(packageFile) {
+        return
       }
+    case .failure(let failure):
+      recordPackageFileReceiveFailure(
+        metadata: failure.metadata,
+        receivedAt: failure.receivedAt,
+        sourceExistsBeforeCopy: failure.sourceExistsBeforeCopy,
+        errorMessage: failure.errorMessage,
+        hashVerification: failure.hashVerification
+      )
     }
   }
 
@@ -367,6 +383,7 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     mutateStatus { status in
       status["latestStagedPlanId"] = self.stringValue(payload["sessionId"])
       status["latestStagedPlanHash"] = self.stringValue(payload["planHash"])
+      status.removeValue(forKey: "lastError")
     }
   }
 
@@ -485,14 +502,47 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     }
   }
 
-  private func recordPackageFile(_ packageFile: ReceivedPackageFile) {
+  private func recordPackageFileIfFresh(_ packageFile: ReceivedPackageFile) -> Bool {
+    let payload = packageFile.metadata
+    let messageId = stringValue(payload["messageId"]) ?? stringValue(payload["idempotencyKey"])
+    var didRecord = true
+
     mutateStatus { status in
-      let payload = packageFile.metadata
+      if let messageId {
+        var recentIds = status["recentIncomingMessageIds"] as? [String] ?? []
+        let latestPackageFile = status["latestPackageFile"] as? [String: Any]
+        let latestPackageFileMessageId = self.stringValue(latestPackageFile?["messageId"])
+
+        if recentIds.contains(messageId), latestPackageFileMessageId == messageId {
+          didRecord = false
+          let duplicateCount = ((status["duplicateIgnoredCount"] as? NSNumber)?.intValue ?? 0) + 1
+          status["duplicateIgnoredCount"] = duplicateCount
+          status["latestIgnoredDuplicate"] = [
+            "messageType": self.stringValue(payload["messageType"]) ?? "unknown",
+            "messageId": messageId,
+            "ignoredAt": self.nowString(),
+          ]
+          status["lastMessageType"] =
+            "\(self.stringValue(payload["messageType"]) ?? "unknown").duplicate.ignored"
+          status["lastMessageAt"] = self.nowString()
+          return
+        }
+
+        if !recentIds.contains(messageId) {
+          recentIds.append(messageId)
+          if recentIds.count > Self.recentIncomingMessageIdLimit {
+            recentIds.removeFirst(recentIds.count - Self.recentIncomingMessageIdLimit)
+          }
+          status["recentIncomingMessageIds"] = recentIds
+        }
+      }
+
       let record: [String: Any] = [
         "sessionId": self.stringValue(payload["sessionId"]) ?? "",
         "planHash": self.stringValue(payload["planHash"]) ?? "",
         "packageId": self.stringValue(payload["packageId"]) ?? "",
         "packageHash": self.stringValue(payload["packageHash"]) ?? "",
+        "messageId": messageId ?? "",
         "receivedAt": packageFile.receivedAt,
         "fileByteCount": packageFile.fileByteCount,
         "sourceExistsBeforeCopy": packageFile.sourceExistsBeforeCopy,
@@ -502,8 +552,14 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
       ]
       status["latestReceivedPackage"] = record
       status["latestPackageFile"] = record
+      status["lastMessageType"] =
+        self.stringValue(payload["messageType"]) ?? "lucidtlr.watch.package.file"
+      status["lastMessageAt"] = self.stringValue(payload["createdAt"]) ?? packageFile.receivedAt
       status.removeValue(forKey: "lastError")
+      self.defaults.set(packageFile.targetPath, forKey: self.packageFilePathKey)
     }
+
+    return didRecord
   }
 
   private func recordPackageFileReceiveFailure(
@@ -571,6 +627,218 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     recordLastMessage(type: type, at: stringValue(payload["createdAt"]) ?? receivedAt)
   }
 
+#if targetEnvironment(simulator)
+  private static let simulatorTransportRootCandidates = [
+    URL(fileURLWithPath: "/tmp/lucidtlr-sim-transport", isDirectory: true),
+    URL(fileURLWithPath: "/private/tmp/lucidtlr-sim-transport", isDirectory: true),
+    URL(fileURLWithPath: "/Users/Shared/lucidtlr-sim-transport", isDirectory: true),
+  ]
+
+  private func startSimulatorTransportShimIfNeeded() {
+    guard simulatorTransportDrainTimer == nil else {
+      return
+    }
+
+    do {
+      try ensureSimulatorTransportDirectories()
+    } catch {
+      recordError("Simulator transport shim unavailable: \(error.localizedDescription)")
+    }
+
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    timer.schedule(deadline: .now() + 0.2, repeating: 1.0)
+    timer.setEventHandler { [weak self] in
+      self?.drainSimulatorTransportInbox()
+    }
+    simulatorTransportDrainTimer = timer
+    timer.resume()
+  }
+
+  private func writeSimulatorTransportUserInfo(_ payload: [String: Any], to inboxName: String) {
+    do {
+      let inbox = try simulatorTransportInboxDirectory(inboxName)
+      let fileURL = inbox.appendingPathComponent(
+        "\(nextSimulatorTransportEpochMillis())-\(simulatorTransportSafeMessageId(from: payload)).userinfo.json"
+      )
+      try writeSimulatorTransportDictionary(payload, to: fileURL)
+    } catch {
+      recordError("Simulator transport shim userInfo write failed: \(error.localizedDescription)")
+    }
+  }
+
+  private func drainSimulatorTransportInbox() {
+    do {
+      let inbox = try simulatorTransportInboxDirectory("to-phone")
+      let files = try FileManager.default.contentsOfDirectory(
+        at: inbox,
+        includingPropertiesForKeys: [.isRegularFileKey],
+        options: [.skipsHiddenFiles]
+      )
+        .filter { simulatorTransportIsRegularFile($0) }
+        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+      for fileURL in files {
+        let fileName = fileURL.lastPathComponent
+
+        if fileName.hasSuffix(".userinfo.json") {
+          do {
+            handleIncoming(try simulatorTransportDictionary(from: fileURL))
+          } catch {
+            recordError("Simulator transport shim skipped malformed userInfo \(fileName): \(error.localizedDescription)")
+          }
+          consumeSimulatorTransportFile(fileURL)
+          continue
+        }
+
+        if fileName.hasSuffix(".filemeta.json") {
+          let packageFileName = fileName.replacingOccurrences(
+            of: ".filemeta.json",
+            with: ".package.json"
+          )
+          let packageURL = inbox.appendingPathComponent(packageFileName)
+
+          do {
+            guard FileManager.default.fileExists(atPath: packageURL.path) else {
+              throw simulatorTransportError("missing package file \(packageFileName)")
+            }
+
+            let metadata = try simulatorTransportDictionary(from: fileURL)
+            handleReceivedPackageFile(fileURL: packageURL, metadata: metadata)
+          } catch {
+            recordError("Simulator transport shim skipped malformed file transfer \(fileName): \(error.localizedDescription)")
+          }
+          consumeSimulatorTransportFile(fileURL)
+          consumeSimulatorTransportFile(packageURL)
+        }
+      }
+    } catch {
+      recordError("Simulator transport shim drain failed: \(error.localizedDescription)")
+    }
+  }
+
+  private func ensureSimulatorTransportDirectories() throws {
+    _ = try simulatorTransportRootDirectory()
+  }
+
+  private func simulatorTransportRootDirectory() throws -> URL {
+    var failures: [String] = []
+
+    for root in Self.simulatorTransportRootCandidates {
+      do {
+        try createAndProbeSimulatorTransportRoot(root)
+        return root
+      } catch {
+        failures.append("\(root.path): \(error.localizedDescription)")
+      }
+    }
+
+    throw simulatorTransportError(
+      "no writable shared simulator transport directory (\(failures.joined(separator: "; ")))"
+    )
+  }
+
+  private func createAndProbeSimulatorTransportRoot(_ root: URL) throws {
+    let fileManager = FileManager.default
+
+    for child in ["to-phone", "to-watch", "consumed"] {
+      try fileManager.createDirectory(
+        at: root.appendingPathComponent(child, isDirectory: true),
+        withIntermediateDirectories: true,
+        attributes: nil
+      )
+    }
+
+    let probe = root
+      .appendingPathComponent("consumed", isDirectory: true)
+      .appendingPathComponent(".phone-probe-\(UUID().uuidString)")
+    try Data("ok".utf8).write(to: probe, options: [.atomic])
+    try fileManager.removeItem(at: probe)
+  }
+
+  private func simulatorTransportInboxDirectory(_ inboxName: String) throws -> URL {
+    try simulatorTransportRootDirectory()
+      .appendingPathComponent(inboxName, isDirectory: true)
+  }
+
+  private func simulatorTransportConsumedDirectory() throws -> URL {
+    try simulatorTransportRootDirectory()
+      .appendingPathComponent("consumed", isDirectory: true)
+  }
+
+  private func nextSimulatorTransportEpochMillis() -> Int64 {
+    let now = Int64((Date().timeIntervalSince1970 * 1000).rounded(.down))
+    let next = max(now, simulatorTransportLastEpochMillis + 1)
+    simulatorTransportLastEpochMillis = next
+    return next
+  }
+
+  private func simulatorTransportSafeMessageId(from payload: [String: Any]) -> String {
+    let raw = stringValue(payload["messageId"]) ??
+      stringValue(payload["idempotencyKey"]) ??
+      UUID().uuidString
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+    let safe = raw.unicodeScalars
+      .map { allowed.contains($0) ? String($0) : "-" }
+      .joined()
+    if safe.isEmpty {
+      return UUID().uuidString
+    }
+    if safe.count <= 96 {
+      return safe
+    }
+    return "\(safe.prefix(48))-\(Self.sha256Hex(raw).prefix(24))"
+  }
+
+  private func writeSimulatorTransportDictionary(_ dictionary: [String: Any], to url: URL) throws {
+    let data = try JSONSerialization.data(
+      withJSONObject: propertyListDictionary(dictionary),
+      options: [.sortedKeys]
+    )
+    try data.write(to: url, options: [.atomic])
+  }
+
+  private func simulatorTransportDictionary(from url: URL) throws -> [String: Any] {
+    let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+    guard let dictionary = object as? [String: Any] else {
+      throw simulatorTransportError("JSON root is not a dictionary")
+    }
+    return propertyListDictionary(dictionary)
+  }
+
+  private func consumeSimulatorTransportFile(_ url: URL) {
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      return
+    }
+
+    do {
+      let consumed = try simulatorTransportConsumedDirectory()
+      let destination = consumed.appendingPathComponent(url.lastPathComponent)
+      if FileManager.default.fileExists(atPath: destination.path) {
+        try FileManager.default.removeItem(at: destination)
+      }
+      try FileManager.default.moveItem(at: url, to: destination)
+    } catch {
+      do {
+        try FileManager.default.removeItem(at: url)
+      } catch {
+        recordError("Simulator transport shim could not consume \(url.lastPathComponent): \(error.localizedDescription)")
+      }
+    }
+  }
+
+  private func simulatorTransportIsRegularFile(_ url: URL) -> Bool {
+    (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
+  }
+
+  private func simulatorTransportError(_ message: String) -> NSError {
+    NSError(
+      domain: "LucidTLRSimulatorTransportShim",
+      code: 1,
+      userInfo: [NSLocalizedDescriptionKey: message]
+    )
+  }
+#endif
+
   private func propertyListMessage(from dictionary: NSDictionary) -> [String: Any] {
     propertyListDictionary(dictionary as? [String: Any] ?? [:])
   }
@@ -617,10 +885,11 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
   }
 
   private func attemptPersistReceivedPackageFile(
-    _ file: WCSessionFile
+    fileURL: URL,
+    metadata rawMetadata: [String: Any]
   ) -> Result<ReceivedPackageFile, PackageFileReceiveFailure> {
-    let metadata = propertyListDictionary(file.metadata ?? [:])
-    let sourceExistsBeforeCopy = FileManager.default.fileExists(atPath: file.fileURL.path)
+    let metadata = propertyListDictionary(rawMetadata)
+    let sourceExistsBeforeCopy = FileManager.default.fileExists(atPath: fileURL.path)
     let receivedAt = Self.immediateNowString()
 
     do {
@@ -632,7 +901,7 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
         try FileManager.default.removeItem(at: targetURL)
       }
 
-      try FileManager.default.copyItem(at: file.fileURL, to: targetURL)
+      try FileManager.default.copyItem(at: fileURL, to: targetURL)
       try? FileManager.default.setAttributes(
         [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
         ofItemAtPath: targetURL.path

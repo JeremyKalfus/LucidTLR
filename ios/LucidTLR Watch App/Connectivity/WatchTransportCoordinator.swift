@@ -28,6 +28,11 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
   private let defaults = UserDefaults.standard
   private let stateQueue = DispatchQueue(label: "com.lucidtlr.watch-transport-lab.state")
   private let stateKey = "lucidtlr.watchTransportLab.state.v2"
+#if targetEnvironment(simulator)
+  private let simulatorTransportQueue = DispatchQueue(label: "com.lucidtlr.watch-transport-lab.simulator-shim")
+  private var simulatorTransportDrainTimer: DispatchSourceTimer?
+  private var simulatorTransportLastEpochMillis: Int64 = 0
+#endif
   private let legacyScatteredStateKeys = [
     "lucidtlr.watchTransportLab.stagedPlanJson.v1",
     "lucidtlr.watchTransportLab.stagedPlanReceivedAt.v1",
@@ -69,6 +74,9 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     session.delegate = self
     session.activate()
     recordLastMessage(type: "transport.activate", at: Date())
+#if targetEnvironment(simulator)
+    startSimulatorTransportShimIfNeeded()
+#endif
   }
 
   func refreshStatus() {
@@ -549,6 +557,9 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       session.activate()
     }
     session.transferUserInfo(payload)
+#if targetEnvironment(simulator)
+    writeSimulatorTransportUserInfo(payload, to: "to-phone")
+#endif
   }
 
   private func transferFile(_ fileURL: URL, metadata: [String: Any]) throws -> WCSessionFileTransfer {
@@ -561,8 +572,277 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       session.delegate = self
       session.activate()
     }
-    return session.transferFile(fileURL, metadata: metadata)
+    let transfer = session.transferFile(fileURL, metadata: metadata)
+#if targetEnvironment(simulator)
+    writeSimulatorTransportFile(fileURL, metadata: metadata, to: "to-phone")
+#endif
+    return transfer
   }
+
+#if targetEnvironment(simulator)
+  private static let simulatorTransportRootCandidates = [
+    URL(fileURLWithPath: "/tmp/lucidtlr-sim-transport", isDirectory: true),
+    URL(fileURLWithPath: "/private/tmp/lucidtlr-sim-transport", isDirectory: true),
+    URL(fileURLWithPath: "/Users/Shared/lucidtlr-sim-transport", isDirectory: true),
+  ]
+
+  private func startSimulatorTransportShimIfNeeded() {
+    simulatorTransportQueue.async {
+      guard self.simulatorTransportDrainTimer == nil else {
+        return
+      }
+
+      do {
+        try self.ensureSimulatorTransportDirectories()
+      } catch {
+        self.recordError("Simulator transport shim unavailable: \(error.localizedDescription)")
+      }
+
+      let timer = DispatchSource.makeTimerSource(queue: self.simulatorTransportQueue)
+      timer.schedule(deadline: .now() + 0.2, repeating: 1.0)
+      timer.setEventHandler { [weak self] in
+        self?.drainSimulatorTransportInbox()
+      }
+      self.simulatorTransportDrainTimer = timer
+      timer.resume()
+    }
+  }
+
+  private func writeSimulatorTransportUserInfo(_ payload: [String: Any], to inboxName: String) {
+    simulatorTransportQueue.async {
+      do {
+        let inbox = try self.simulatorTransportInboxDirectory(inboxName)
+        let fileURL = inbox.appendingPathComponent(
+          "\(self.nextSimulatorTransportEpochMillis())-\(self.simulatorTransportSafeMessageId(from: payload)).userinfo.json"
+        )
+        try self.writeSimulatorTransportDictionary(payload, to: fileURL)
+      } catch {
+        self.recordError("Simulator transport shim userInfo write failed: \(error.localizedDescription)")
+      }
+    }
+  }
+
+  private func writeSimulatorTransportFile(
+    _ fileURL: URL,
+    metadata: [String: Any],
+    to inboxName: String
+  ) {
+    simulatorTransportQueue.async {
+      do {
+        let inbox = try self.simulatorTransportInboxDirectory(inboxName)
+        let deliveryName =
+          "\(self.nextSimulatorTransportEpochMillis())-\(self.simulatorTransportSafeMessageId(from: metadata))"
+        let packageURL = inbox.appendingPathComponent("\(deliveryName).package.json")
+        let metadataURL = inbox.appendingPathComponent("\(deliveryName).filemeta.json")
+
+        if FileManager.default.fileExists(atPath: packageURL.path) {
+          try FileManager.default.removeItem(at: packageURL)
+        }
+        if FileManager.default.fileExists(atPath: metadataURL.path) {
+          try FileManager.default.removeItem(at: metadataURL)
+        }
+
+        try FileManager.default.copyItem(at: fileURL, to: packageURL)
+        try self.writeSimulatorTransportDictionary(metadata, to: metadataURL)
+      } catch {
+        self.recordError("Simulator transport shim file write failed: \(error.localizedDescription)")
+      }
+    }
+  }
+
+  private func drainSimulatorTransportInbox() {
+    do {
+      let inbox = try simulatorTransportInboxDirectory("to-watch")
+      let files = try FileManager.default.contentsOfDirectory(
+        at: inbox,
+        includingPropertiesForKeys: [.isRegularFileKey],
+        options: [.skipsHiddenFiles]
+      )
+        .filter { simulatorTransportIsRegularFile($0) }
+        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+      for fileURL in files {
+        let fileName = fileURL.lastPathComponent
+
+        guard fileName.hasSuffix(".userinfo.json") else {
+          continue
+        }
+
+        do {
+          handleIncoming(try simulatorTransportDictionary(from: fileURL))
+        } catch {
+          recordError("Simulator transport shim skipped malformed userInfo \(fileName): \(error.localizedDescription)")
+        }
+        consumeSimulatorTransportFile(fileURL)
+      }
+    } catch {
+      recordError("Simulator transport shim drain failed: \(error.localizedDescription)")
+    }
+  }
+
+  private func ensureSimulatorTransportDirectories() throws {
+    _ = try simulatorTransportRootDirectory()
+  }
+
+  private func simulatorTransportRootDirectory() throws -> URL {
+    var failures: [String] = []
+
+    for root in Self.simulatorTransportRootCandidates {
+      do {
+        try createAndProbeSimulatorTransportRoot(root)
+        return root
+      } catch {
+        failures.append("\(root.path): \(error.localizedDescription)")
+      }
+    }
+
+    throw simulatorTransportError(
+      "no writable shared simulator transport directory (\(failures.joined(separator: "; ")))"
+    )
+  }
+
+  private func createAndProbeSimulatorTransportRoot(_ root: URL) throws {
+    let fileManager = FileManager.default
+
+    for child in ["to-phone", "to-watch", "consumed"] {
+      try fileManager.createDirectory(
+        at: root.appendingPathComponent(child, isDirectory: true),
+        withIntermediateDirectories: true,
+        attributes: nil
+      )
+    }
+
+    let probe = root
+      .appendingPathComponent("consumed", isDirectory: true)
+      .appendingPathComponent(".watch-probe-\(UUID().uuidString)")
+    try Data("ok".utf8).write(to: probe, options: [.atomic])
+    try fileManager.removeItem(at: probe)
+  }
+
+  private func simulatorTransportInboxDirectory(_ inboxName: String) throws -> URL {
+    try simulatorTransportRootDirectory()
+      .appendingPathComponent(inboxName, isDirectory: true)
+  }
+
+  private func simulatorTransportConsumedDirectory() throws -> URL {
+    try simulatorTransportRootDirectory()
+      .appendingPathComponent("consumed", isDirectory: true)
+  }
+
+  private func nextSimulatorTransportEpochMillis() -> Int64 {
+    let now = Int64((Date().timeIntervalSince1970 * 1000).rounded(.down))
+    let next = max(now, simulatorTransportLastEpochMillis + 1)
+    simulatorTransportLastEpochMillis = next
+    return next
+  }
+
+  private func simulatorTransportSafeMessageId(from payload: [String: Any]) -> String {
+    let raw = (payload["messageId"] as? String) ??
+      (payload["idempotencyKey"] as? String) ??
+      UUID().uuidString
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+    let safe = raw.unicodeScalars
+      .map { allowed.contains($0) ? String($0) : "-" }
+      .joined()
+    if safe.isEmpty {
+      return UUID().uuidString
+    }
+    if safe.count <= 96 {
+      return safe
+    }
+    return "\(safe.prefix(48))-\(WatchRuntimeStructuralHash.placeholderHex(raw).prefix(24))"
+  }
+
+  private func writeSimulatorTransportDictionary(_ dictionary: [String: Any], to url: URL) throws {
+    let data = try JSONSerialization.data(
+      withJSONObject: simulatorTransportPropertyListDictionary(dictionary),
+      options: [.sortedKeys]
+    )
+    try data.write(to: url, options: [.atomic])
+  }
+
+  private func simulatorTransportDictionary(from url: URL) throws -> [String: Any] {
+    let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+    guard let dictionary = object as? [String: Any] else {
+      throw simulatorTransportError("JSON root is not a dictionary")
+    }
+    return simulatorTransportPropertyListDictionary(dictionary)
+  }
+
+  private func simulatorTransportPropertyListDictionary(_ dictionary: [String: Any]) -> [String: Any] {
+    var result: [String: Any] = [:]
+
+    for (key, value) in dictionary {
+      if let string = value as? String {
+        result[key] = string
+      } else if let number = value as? NSNumber {
+        result[key] = number
+      } else if let bool = value as? Bool {
+        result[key] = bool
+      } else if let nested = value as? [String: Any] {
+        result[key] = simulatorTransportPropertyListDictionary(nested)
+      } else if let array = value as? [Any] {
+        result[key] = simulatorTransportPropertyListArray(array)
+      }
+    }
+
+    return result
+  }
+
+  private func simulatorTransportPropertyListArray(_ array: [Any]) -> [Any] {
+    array.compactMap { value in
+      if let string = value as? String {
+        return string
+      }
+      if let number = value as? NSNumber {
+        return number
+      }
+      if let bool = value as? Bool {
+        return bool
+      }
+      if let nested = value as? [String: Any] {
+        return simulatorTransportPropertyListDictionary(nested)
+      }
+      if let nestedArray = value as? [Any] {
+        return simulatorTransportPropertyListArray(nestedArray)
+      }
+      return nil
+    }
+  }
+
+  private func consumeSimulatorTransportFile(_ url: URL) {
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      return
+    }
+
+    do {
+      let consumed = try simulatorTransportConsumedDirectory()
+      let destination = consumed.appendingPathComponent(url.lastPathComponent)
+      if FileManager.default.fileExists(atPath: destination.path) {
+        try FileManager.default.removeItem(at: destination)
+      }
+      try FileManager.default.moveItem(at: url, to: destination)
+    } catch {
+      do {
+        try FileManager.default.removeItem(at: url)
+      } catch {
+        recordError("Simulator transport shim could not consume \(url.lastPathComponent): \(error.localizedDescription)")
+      }
+    }
+  }
+
+  private func simulatorTransportIsRegularFile(_ url: URL) -> Bool {
+    (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
+  }
+
+  private func simulatorTransportError(_ message: String) -> NSError {
+    NSError(
+      domain: "LucidTLRSimulatorTransportShim",
+      code: 1,
+      userInfo: [NSLocalizedDescriptionKey: message]
+    )
+  }
+#endif
 
   // MARK: - Single atomic lab state
 

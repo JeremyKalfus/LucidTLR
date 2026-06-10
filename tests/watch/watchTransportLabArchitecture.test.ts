@@ -31,6 +31,37 @@ function walkFiles(relativePath: string): string[] {
   });
 }
 
+function expectSwiftNeedlesInsideSimulatorGate(
+  source: string,
+  needles: string[],
+): void {
+  const lines = source.split("\n");
+  const simulatorGateStack: boolean[] = [];
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("#if")) {
+      simulatorGateStack.push(trimmed.includes("targetEnvironment(simulator)"));
+    } else if (trimmed.startsWith("#elseif") || trimmed.startsWith("#else")) {
+      if (simulatorGateStack.length > 0) {
+        simulatorGateStack[simulatorGateStack.length - 1] = false;
+      }
+    } else if (trimmed.startsWith("#endif")) {
+      simulatorGateStack.pop();
+    }
+
+    for (const needle of needles) {
+      if (line.includes(needle)) {
+        expect(
+          simulatorGateStack.some((isSimulatorGate) => isSimulatorGate),
+          `${needle} at line ${index + 1} must be inside #if targetEnvironment(simulator)`,
+        ).toBe(true);
+      }
+    }
+  });
+}
+
 const phoneTransportFiles = [
   "ios/LucidTLR/LucidTLRWatchTransport.swift",
   "ios/LucidTLR/LucidTLRWatchTransportBridge.m",
@@ -164,20 +195,90 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     const receiveMethodIndex = phoneBridge.indexOf(
       "func session(_ session: WCSession, didReceive file: WCSessionFile)",
     );
-    const immediatePersistIndex = phoneBridge.indexOf(
-      "let persistedFile = attemptPersistReceivedPackageFile(file)",
-      receiveMethodIndex,
+    const helperIndex = phoneBridge.indexOf(
+      "private func handleReceivedPackageFile(fileURL: URL, metadata: [String: Any])",
     );
-    const queuedStatusIndex = phoneBridge.indexOf("queue.async", receiveMethodIndex);
+    const immediatePersistIndex = phoneBridge.indexOf(
+      "let persistedFile = attemptPersistReceivedPackageFile(fileURL: fileURL, metadata: metadata)",
+      helperIndex,
+    );
+    const queuedStatusIndex = phoneBridge.indexOf("queue.async", helperIndex);
 
     expect(receiveMethodIndex).toBeGreaterThan(-1);
-    expect(immediatePersistIndex).toBeGreaterThan(receiveMethodIndex);
+    expect(phoneBridge.slice(receiveMethodIndex, helperIndex)).toContain(
+      "handleReceivedPackageFile(fileURL: file.fileURL, metadata: file.metadata ?? [:])",
+    );
+    expect(immediatePersistIndex).toBeGreaterThan(helperIndex);
     expect(immediatePersistIndex).toBeLessThan(queuedStatusIndex);
     expect(phoneBridge).toContain("attemptPersistReceivedPackageFile");
     expect(phoneBridge).toContain("sourceExistsBeforeCopy");
     expect(phoneBridge).toContain("fileByteCount");
     expect(phoneBridge).toContain("latestPackageFile");
     expect(phoneBridge).toContain("Package file receive failed before queued status update");
+  });
+
+  it("keeps the simulator transport shim compile-gated and scoped to lab transport files", () => {
+    const phoneBridge = readSource("ios/LucidTLR/LucidTLRWatchTransport.swift");
+    const watchCoordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+    const shimNeedles = [
+      "simulatorTransport",
+      "lucidtlr-sim-transport",
+      "startSimulatorTransportShimIfNeeded",
+      "writeSimulatorTransportUserInfo",
+      "drainSimulatorTransportInbox",
+    ];
+
+    expect(phoneBridge).toContain("#if targetEnvironment(simulator)");
+    expect(watchCoordinator).toContain("#if targetEnvironment(simulator)");
+    expectSwiftNeedlesInsideSimulatorGate(phoneBridge, shimNeedles);
+    expectSwiftNeedlesInsideSimulatorGate(watchCoordinator, [
+      ...shimNeedles,
+      "writeSimulatorTransportFile",
+    ]);
+
+    const allowedShimFiles = [
+      "ios/LucidTLR/LucidTLRWatchTransport.swift",
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+      "scripts/watch-sim-drill.mjs",
+      "tests/watch/watchTransportLabArchitecture.test.ts",
+    ];
+    const shimIdentifierHits = [
+      ...walkFiles("ios/LucidTLR"),
+      ...walkFiles("ios/LucidTLR Watch App"),
+      ...walkFiles("src"),
+      ...walkFiles("app"),
+      ...walkFiles("scripts"),
+      ...walkFiles("tests"),
+    ]
+      .filter((file: string) => /\.(swift|m|ts|tsx|mjs)$/.test(file))
+      .filter((file: string) => readSource(file).includes("lucidtlr-sim-transport"))
+      .sort();
+
+    expect(shimIdentifierHits).toEqual(allowedShimFiles.sort());
+  });
+
+  it("shares phone package file receive handling between WCSession and the simulator shim", () => {
+    const phoneBridge = readSource("ios/LucidTLR/LucidTLRWatchTransport.swift");
+    const receiveMethod = phoneBridge.slice(
+      phoneBridge.indexOf("func session(_ session: WCSession, didReceive file: WCSessionFile)"),
+      phoneBridge.indexOf("private func handleReceivedPackageFile"),
+    );
+    const simulatorShimIndex = phoneBridge.indexOf(
+      "private static let simulatorTransportRootCandidates",
+    );
+    const simulatorShim = phoneBridge.slice(
+      simulatorShimIndex,
+      phoneBridge.indexOf("#endif", simulatorShimIndex),
+    );
+
+    expect(receiveMethod).toContain(
+      "handleReceivedPackageFile(fileURL: file.fileURL, metadata: file.metadata ?? [:])",
+    );
+    expect(simulatorShim).toContain(
+      "handleReceivedPackageFile(fileURL: packageURL, metadata: metadata)",
+    );
   });
 
   it("labels phone and Watch transport surfaces as synthetic/internal", () => {
@@ -522,6 +623,10 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(script).toContain("watch-lab-debug-latest.json");
     expect(script).toContain("finalDrillStatus");
     expect(script).toContain("unresolvedCount");
+    expect(script).toContain("simulatorTransportShimRootCandidates");
+    expect(script).toContain("resetSimulatorTransportShim");
+    expect(script).toContain("fs.rmSync(candidate");
+    expect(script).toContain("await resetDrillState");
     expect(packageJson.scripts["drill:sim-baseline"]).toContain(
       "watch-sim-drill.mjs baseline",
     );
@@ -589,6 +694,8 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     );
 
     expect(stageMethod).toContain("session.updateApplicationContext(payload)");
+    expect(stageMethod).toContain("performWhenActivated(session, attemptsRemaining: 120)");
+    expect(phoneBridge).toContain('status.removeValue(forKey: "lastError")');
     expect(stageMethod).not.toContain("session.transferUserInfo(payload)");
     expect(labTransport).toContain('deliveryMethod: "applicationContext"');
     expect(labTransport).not.toContain("applicationContext+transferUserInfo");

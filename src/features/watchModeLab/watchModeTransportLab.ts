@@ -588,7 +588,7 @@ export async function sendAckForLatestImportedWatchPackage(input: {
     db: input.db,
     participantId: input.participantId,
   });
-  const state = unresolved.find(
+  let state = unresolved.find(
     (candidate) => candidate.status === "phone_imported_ack_eligible",
   );
 
@@ -602,11 +602,48 @@ export async function sendAckForLatestImportedWatchPackage(input: {
     });
 
     if (latestPackageIdentity) {
+      let participantFilterBypassedForTransportIdentity = false;
       const recentStates = await loadRecentWatchSessionSyncStates({
         db: input.db,
         participantId: input.participantId,
         limit: 50,
       });
+      state = recentStates.find((candidate) =>
+        isAckEligibleForPackage(candidate, latestPackageIdentity),
+      );
+
+      if (!state?.packageId || !state.packageHash) {
+        const transportIdentityStates = await loadRecentWatchSessionSyncStates({
+          db: input.db,
+          limit: 50,
+        });
+        state = transportIdentityStates.find((candidate) =>
+          isAckEligibleForPackage(candidate, latestPackageIdentity),
+        );
+        participantFilterBypassedForTransportIdentity = Boolean(
+          state?.packageId && state.packageHash,
+        );
+      }
+
+      if (state?.packageId && state.packageHash) {
+        await appendWatchModeLabDebugEvent({
+          db: input.db,
+          timestamp: ackedAt,
+          source: "transport",
+          eventType: "ack_eligible_state_recovered",
+          sessionId: state.sessionId,
+          planHash: state.planHash,
+          packageId: state.packageId,
+          packageHash: state.packageHash,
+          success: true,
+          metadata: {
+            recoveredFromRecentStates: true,
+            participantFilterBypassedForTransportIdentity,
+            previousStatus: state.status,
+          },
+        });
+      }
+
       const terminalState = recentStates.find((candidate) =>
         isTerminalAckForPackage(candidate, latestPackageIdentity),
       );
@@ -636,7 +673,9 @@ export async function sendAckForLatestImportedWatchPackage(input: {
         };
       }
     }
+  }
 
+  if (!state?.packageId || !state.packageHash) {
     throw new Error(
       "No ack-eligible imported Watch package exists. Import must commit transactionally before ack can be sent.",
     );
@@ -787,6 +826,19 @@ function isTerminalAckForPackage(
 ): boolean {
   return (
     (state.status === "ack_recorded" || state.status === "completed") &&
+    state.sessionId === packageIdentity.sessionId &&
+    state.planHash === packageIdentity.planHash &&
+    state.packageId === packageIdentity.packageId &&
+    state.packageHash === packageIdentity.packageHash
+  );
+}
+
+function isAckEligibleForPackage(
+  state: WatchSessionSyncState,
+  packageIdentity: TransportLabPackageIdentity,
+): boolean {
+  return (
+    state.status === "phone_imported_ack_eligible" &&
     state.sessionId === packageIdentity.sessionId &&
     state.planHash === packageIdentity.planHash &&
     state.packageId === packageIdentity.packageId &&

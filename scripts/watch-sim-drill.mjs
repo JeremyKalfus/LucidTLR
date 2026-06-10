@@ -13,6 +13,12 @@ const deepLinkSchemes = ["lucidtlr", "exp+lucidtlr"];
 const labDeepLinkBase = "lucidtlr://debug/watch-mode-lab";
 const latestExportFileName = "watch-lab-debug-latest.json";
 const derivedDataPath = path.join(os.tmpdir(), "lucidtlr-watch-sim-drill");
+const terminalDrillTimeoutMs = 240000;
+const simulatorTransportShimRootCandidates = [
+  "/tmp/lucidtlr-sim-transport",
+  "/private/tmp/lucidtlr-sim-transport",
+  "/Users/Shared/lucidtlr-sim-transport",
+];
 const metroHost =
   process.env.LUCIDTLR_DRILL_METRO_HOST ?? detectMetroHostAddress();
 const env = {
@@ -90,6 +96,10 @@ function simctlJson(args) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 function pickRuntime(platform) {
@@ -332,7 +342,19 @@ function preapproveDeepLinkSchemes(udid) {
 }
 
 function buildAndInstall(pair) {
-  fs.rmSync(derivedDataPath, { recursive: true, force: true });
+  // Skip native build/install entirely when iterating on drills with
+  // already-installed apps (set LUCIDTLR_DRILL_SKIP_BUILD=1).
+  if (process.env.LUCIDTLR_DRILL_SKIP_BUILD === "1") {
+    log("skipping xcodebuild/install (LUCIDTLR_DRILL_SKIP_BUILD=1)");
+    return;
+  }
+
+  // Incremental by default: derived data is preserved across invocations so
+  // unchanged sources rebuild in seconds, not minutes. Set
+  // LUCIDTLR_DRILL_CLEAN_BUILD=1 to force a clean build.
+  if (process.env.LUCIDTLR_DRILL_CLEAN_BUILD === "1") {
+    fs.rmSync(derivedDataPath, { recursive: true, force: true });
+  }
   run("xcodebuild", [
     "-workspace",
     "ios/LucidTLR.xcworkspace",
@@ -438,6 +460,8 @@ async function ensureMetro() {
 }
 
 function launchApps(pair) {
+  terminatePhone(pair);
+  terminateWatch(pair);
   tryRun("xcrun", ["simctl", "launch", pair.watchUdid, watchBundleId]);
 }
 
@@ -445,7 +469,7 @@ function openDevClient(pair) {
   const url = `exp+lucidtlr://expo-development-client/?url=${encodeURIComponent(
     `http://${metroHost}:8081`,
   )}`;
-  simctl(["openurl", pair.phoneUdid, url]);
+  openSimulatorUrl(pair.phoneUdid, url, "dev client");
 }
 
 function terminatePhone(pair) {
@@ -456,9 +480,104 @@ function terminateWatch(pair) {
   tryRun("xcrun", ["simctl", "terminate", pair.watchUdid, watchBundleId]);
 }
 
+function resetSimulatorTransportShim() {
+  for (const candidate of simulatorTransportShimRootCandidates) {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      try {
+        fs.rmSync(candidate, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if (
+          attempt === 5 ||
+          !["EBUSY", "ENOTEMPTY"].includes(error?.code)
+        ) {
+          throw error;
+        }
+        sleepSync(250);
+      }
+    }
+  }
+  fs.mkdirSync(path.join(simulatorTransportShimRootCandidates[0], "to-phone"), {
+    recursive: true,
+  });
+  fs.mkdirSync(path.join(simulatorTransportShimRootCandidates[0], "to-watch"), {
+    recursive: true,
+  });
+  fs.mkdirSync(path.join(simulatorTransportShimRootCandidates[0], "consumed"), {
+    recursive: true,
+  });
+}
+
+function simulatorTransportFilesIn(subdir) {
+  const directory = path.join(simulatorTransportShimRootCandidates[0], subdir);
+
+  try {
+    return fs
+      .readdirSync(directory)
+      .filter((entry) => !entry.startsWith("."));
+  } catch {
+    return [];
+  }
+}
+
+async function startAutomationUntilSimulatorTransportActivity(
+  pair,
+  label,
+  runLabel,
+  timeoutMs = 90000,
+) {
+  const deadline = Date.now() + timeoutMs;
+  let nextOpenAt = 0;
+
+  while (Date.now() < deadline) {
+    if (Date.now() >= nextOpenAt) {
+      openAutomation(pair, "baseline", `${runLabel}-${Date.now()}`);
+      nextOpenAt = Date.now() + 15000;
+    }
+
+    const queued = simulatorTransportFilesIn("to-phone");
+    const consumed = simulatorTransportFilesIn("consumed");
+
+    if (queued.length > 0 || consumed.length > 0) {
+      log(
+        `${label}: observed simulator transport activity (queued=${queued.length}, consumed=${consumed.length})`,
+      );
+      return;
+    }
+
+    await sleep(100);
+  }
+
+  throw new Error(
+    `${label}: timed out waiting for Watch simulator transport activity before reload`,
+  );
+}
+
+function openSimulatorUrl(udid, url, label) {
+  let lastError = "";
+
+  const attempts = 6;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = tryRun("xcrun", ["simctl", "openurl", udid, url]);
+
+    if (result.ok) {
+      return;
+    }
+
+    lastError = [result.stdout, result.stderr].filter(Boolean).join("\n");
+    log(`openurl ${label} attempt ${attempt}/${attempts} failed; retrying`);
+    sleepSync(5000);
+  }
+
+  throw new Error(
+    `xcrun simctl openurl ${udid} ${url} failed\n${lastError}`,
+  );
+}
+
 function openAutomation(pair, autorun, runId) {
   const url = `${labDeepLinkBase}?autorun=${autorun}&exportTo=file&runId=${encodeURIComponent(runId)}`;
-  simctl(["openurl", pair.phoneUdid, url]);
+  openSimulatorUrl(pair.phoneUdid, url, autorun);
 }
 
 function exportFilePath(pair) {
@@ -470,34 +589,6 @@ function exportFilePath(pair) {
   ]);
 
   return path.join(container, "Documents", latestExportFileName);
-}
-
-async function waitForExport(pair, options = {}) {
-  const timeoutMs = options.timeoutMs ?? 120000;
-  const deadline = Date.now() + timeoutMs;
-  const filePath = exportFilePath(pair);
-  let lastError = "";
-
-  while (Date.now() < deadline) {
-    try {
-      if (fs.existsSync(filePath)) {
-        const bundle = JSON.parse(fs.readFileSync(filePath, "utf8"));
-        if (
-          !options.afterExportedAt ||
-          String(bundle.exportedAt) > options.afterExportedAt
-        ) {
-          return bundle;
-        }
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-    await sleep(1500);
-  }
-
-  throw new Error(
-    `Timed out waiting for ${filePath}${lastError ? ` (${lastError})` : ""}`,
-  );
 }
 
 function latestExportedAt(pair) {
@@ -515,11 +606,56 @@ function latestExportedAt(pair) {
 
 async function runAutomation(pair, autorun, label, options = {}) {
   const afterExportedAt = latestExportedAt(pair);
-  openAutomation(pair, autorun, `${label}-${Date.now()}`);
-  return await waitForExport(pair, {
-    afterExportedAt,
-    timeoutMs: options.timeoutMs,
-  });
+  const runId = `${label}-${Date.now()}`;
+  const timeoutMs = options.timeoutMs ?? 120000;
+  const deadline = Date.now() + timeoutMs;
+  const filePath = exportFilePath(pair);
+  let nextOpenAt = 0;
+  let lastError = "";
+
+  while (Date.now() < deadline) {
+    if (Date.now() >= nextOpenAt) {
+      openAutomation(pair, autorun, runId);
+      nextOpenAt = Date.now() + 15000;
+    }
+
+    try {
+      if (fs.existsSync(filePath)) {
+        const bundle = JSON.parse(fs.readFileSync(filePath, "utf8"));
+        if (
+          !afterExportedAt ||
+          String(bundle.exportedAt) > afterExportedAt
+        ) {
+          const finalDrillStatus = bundle.summaries?.finalDrillStatus;
+          if (
+            options.requireTerminal &&
+            finalDrillStatus !== "pass" &&
+            finalDrillStatus !== "fail"
+          ) {
+            await sleep(1500);
+            continue;
+          }
+          return bundle;
+        }
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await sleep(1500);
+  }
+
+  throw new Error(
+    `Timed out waiting for ${filePath}${lastError ? ` (${lastError})` : ""}`,
+  );
+}
+
+async function resetDrillState(pair, label) {
+  terminateWatch(pair);
+  await sleep(500);
+  resetSimulatorTransportShim();
+  tryRun("xcrun", ["simctl", "launch", pair.watchUdid, watchBundleId]);
+  return await runAutomation(pair, "reset", label, { timeoutMs: 60000 });
 }
 
 function assertBundle(bundle, label, options = {}) {
@@ -588,43 +724,46 @@ function assertBundle(bundle, label, options = {}) {
 }
 
 async function drillBaseline(pair) {
-  await runAutomation(pair, "reset", "baseline-reset", { timeoutMs: 60000 });
+  await resetDrillState(pair, "baseline-reset");
   const bundle = await runAutomation(pair, "baseline", "baseline", {
-    timeoutMs: 150000,
+    requireTerminal: true,
+    timeoutMs: terminalDrillTimeoutMs,
   });
   assertBundle(bundle, "drill:sim-baseline");
   return bundle;
 }
 
 async function drillPhoneReload(pair) {
-  await runAutomation(pair, "reset", "phone-reload-reset", { timeoutMs: 60000 });
-  const afterExportedAt = latestExportedAt(pair);
-  openAutomation(pair, "baseline", `phone-reload-start-${Date.now()}`);
-  await sleep(3000);
+  await resetDrillState(pair, "phone-reload-reset");
+  await startAutomationUntilSimulatorTransportActivity(
+    pair,
+    "drill:sim-phone-reload",
+    "phone-reload-start",
+  );
   terminatePhone(pair);
   await sleep(1500);
   tryRun("xcrun", ["simctl", "launch", pair.phoneUdid, appBundleId]);
-  openAutomation(pair, "baseline", `phone-reload-resume-${Date.now()}`);
-  const bundle = await waitForExport(pair, {
-    afterExportedAt,
-    timeoutMs: 180000,
+  const bundle = await runAutomation(pair, "baseline", "phone-reload-resume", {
+    requireTerminal: true,
+    timeoutMs: terminalDrillTimeoutMs,
   });
   assertBundle(bundle, "drill:sim-phone-reload");
   return bundle;
 }
 
 async function drillWatchReload(pair) {
-  await runAutomation(pair, "reset", "watch-reload-reset", { timeoutMs: 60000 });
-  const afterExportedAt = latestExportedAt(pair);
-  openAutomation(pair, "baseline", `watch-reload-start-${Date.now()}`);
-  await sleep(2500);
+  await resetDrillState(pair, "watch-reload-reset");
+  await startAutomationUntilSimulatorTransportActivity(
+    pair,
+    "drill:sim-watch-reload",
+    "watch-reload-start",
+  );
   terminateWatch(pair);
   await sleep(1500);
   tryRun("xcrun", ["simctl", "launch", pair.watchUdid, watchBundleId]);
-  openAutomation(pair, "baseline", `watch-reload-resume-${Date.now()}`);
-  const bundle = await waitForExport(pair, {
-    afterExportedAt,
-    timeoutMs: 180000,
+  const bundle = await runAutomation(pair, "baseline", "watch-reload-resume", {
+    requireTerminal: true,
+    timeoutMs: terminalDrillTimeoutMs,
   });
   assertBundle(bundle, "drill:sim-watch-reload");
   return bundle;
@@ -633,7 +772,8 @@ async function drillWatchReload(pair) {
 async function drillDuplicate(pair) {
   await drillBaseline(pair);
   const bundle = await runAutomation(pair, "baseline", "duplicate-rerun", {
-    timeoutMs: 150000,
+    requireTerminal: true,
+    timeoutMs: terminalDrillTimeoutMs,
   });
   assertBundle(bundle, "drill:sim-duplicate", {
     requireDuplicate: true,
@@ -642,16 +782,14 @@ async function drillDuplicate(pair) {
 }
 
 async function drillUnreachable(pair) {
-  await runAutomation(pair, "reset", "unreachable-reset", { timeoutMs: 60000 });
+  await resetDrillState(pair, "unreachable-reset");
   terminateWatch(pair);
-  const afterExportedAt = latestExportedAt(pair);
   openAutomation(pair, "baseline", `unreachable-start-${Date.now()}`);
   await sleep(5000);
   tryRun("xcrun", ["simctl", "launch", pair.watchUdid, watchBundleId]);
-  openAutomation(pair, "baseline", `unreachable-resume-${Date.now()}`);
-  const bundle = await waitForExport(pair, {
-    afterExportedAt,
-    timeoutMs: 180000,
+  const bundle = await runAutomation(pair, "baseline", "unreachable-resume", {
+    requireTerminal: true,
+    timeoutMs: terminalDrillTimeoutMs,
   });
   assertBundle(bundle, "drill:sim-unreachable", {
     rejectNothingRunning: true,
@@ -680,6 +818,8 @@ async function main() {
   launchApps(pair);
   openDevClient(pair);
   await sleep(8000);
+  openDevClient(pair);
+  await sleep(5000);
 
   switch (drill) {
     case "baseline":
@@ -719,6 +859,9 @@ process.on("exit", () => {
 
 try {
   await main();
+  if (metroProcess) {
+    metroProcess.kill("SIGTERM");
+  }
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   if (metroProcess) {
