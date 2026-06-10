@@ -1127,9 +1127,11 @@ export function WatchModeLabScreen() {
         </LabNote>
         <LabNote>
           Reset Clean Phone Baseline marks unresolved phone-side synthetic
-          transport rows abandoned_local_only and clears phone transport status.
-          For a true cold start, also use the Watch lab discard action if the
-          Watch still shows an active/unacked synthetic session.
+          transport rows abandoned_local_only only while they are still early
+          staging/running states. Package-bearing states are preserved so they
+          can still be imported and acked. For a true cold start, also tap
+          Discard Watch transport/session state on the Watch lab if the Watch
+          still shows an active/unacked synthetic session.
         </LabNote>
         <PrimaryPillButton
           disabled={busyLabel !== null}

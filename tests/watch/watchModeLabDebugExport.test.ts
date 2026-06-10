@@ -159,7 +159,8 @@ describe("Watch Mode Lab debug export", () => {
     expect(screen).toContain("Reset Clean Phone Baseline");
     expect(screen).toContain("resetWatchModeLabTransportBaselineState");
     expect(screen).toContain("watchSideDiscardStillRequiredForColdStart");
-    expect(screen).toContain("Watch lab discard action");
+    expect(screen).toContain("Discard Watch transport/session state");
+    expect(screen).toContain("Package-bearing states are preserved");
     expect(screen).toContain("one-button happy path");
     expect(screen).toContain("does not replace force-quit");
     expect(screen).toContain("automated_transport_baseline_started");

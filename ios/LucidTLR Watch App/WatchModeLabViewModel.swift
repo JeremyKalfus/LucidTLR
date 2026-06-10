@@ -406,6 +406,11 @@ final class WatchModeLabViewModel: ObservableObject {
       try transportCoordinator.activate()
       transportCoordinator.refreshStatus()
       guard let stagedPlan = try transportCoordinator.latestStagedPlan() else {
+        try? transportCoordinator.sendTransportError(
+          errorCode: "watch_baseline_no_staged_plan",
+          errorMessage: "Watch baseline loop could not find a staged synthetic plan. Run One-Button Baseline on phone first, then retry the Watch baseline loop.",
+          createdAt: Date()
+        )
         statusMessage = "No staged synthetic plan is available. Run One-Button Baseline on phone first."
         refreshRows()
         return
@@ -467,6 +472,7 @@ final class WatchModeLabViewModel: ObservableObject {
       }
       refreshRows()
     } catch {
+      reportWatchBaselineError(error)
       handle(error: error)
     }
   }
@@ -571,10 +577,14 @@ final class WatchModeLabViewModel: ObservableObject {
   func discardCurrentSyntheticSessionWithExplicitConfirmation() {
     do {
       let index = try labIndex()
-      try index.discardSyntheticLabSession(
-        explicitConfirmation: true,
-        discardedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
-      )
+      let entry = try index.load()
+      if entry != nil {
+        try index.discardSyntheticLabSession(
+          explicitConfirmation: true,
+          discardedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+        )
+      }
+      transportCoordinator.clearLabStatus()
       currentSessionIndex = index
       coordinator = nil
       sessionStore = nil
@@ -582,7 +592,9 @@ final class WatchModeLabViewModel: ObservableObject {
       activeManifest = nil
       activePreflightResult = nil
       sleepShieldViewModel = nil
-      statusMessage = "Discarded synthetic lab session with explicit local-only confirmation. No Watch package deletion was performed."
+      statusMessage = entry == nil
+        ? "Cleared Watch synthetic transport lab state. No current session index existed and no package deletion was performed."
+        : "Discarded synthetic Watch lab session and cleared Watch transport lab state with explicit local-only confirmation. No package deletion was performed."
       refreshRows()
     } catch {
       handle(error: error)
@@ -939,6 +951,14 @@ final class WatchModeLabViewModel: ObservableObject {
   private func reportTransportPackageError(_ error: Error) {
     try? transportCoordinator.sendTransportError(
       errorCode: "watch_package_transfer_failed_before_queue",
+      errorMessage: String(describing: error),
+      createdAt: Date()
+    )
+  }
+
+  private func reportWatchBaselineError(_ error: Error) {
+    try? transportCoordinator.sendTransportError(
+      errorCode: "watch_baseline_loop_failed",
       errorMessage: String(describing: error),
       createdAt: Date()
     )

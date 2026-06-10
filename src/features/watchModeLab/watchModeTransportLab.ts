@@ -304,7 +304,7 @@ export async function stageSyntheticWatchModeTransportPlan(input: {
       db: input.db,
       message,
       direction: "outbound",
-      deliveryMethod: "applicationContext+transferUserInfo",
+      deliveryMethod: "applicationContext",
       metadata: {
         planByteCount: message.planJson.length,
         kind: input.kind,
@@ -315,7 +315,7 @@ export async function stageSyntheticWatchModeTransportPlan(input: {
       db: input.db,
       message,
       direction: "outbound",
-      deliveryMethod: "applicationContext+transferUserInfo",
+      deliveryMethod: "applicationContext",
       success: false,
       errorMessage:
         error instanceof Error ? error.message : "Synthetic plan staging failed.",
@@ -346,7 +346,7 @@ export async function stageSyntheticWatchModeTransportPlan(input: {
     planHash: plan.planHash,
     metadata: {
       kind: input.kind,
-      deliveryMethod: "applicationContext+transferUserInfo",
+      deliveryMethod: "applicationContext",
     },
   });
   await appendWatchModeLabTransportStatusSnapshot({
@@ -419,10 +419,63 @@ export async function importLatestReceivedSyntheticWatchPackage(input: {
   importedAt?: string;
 }): Promise<WatchModeLabTransportImportSummary> {
   const importedAt = input.importedAt ?? new Date().toISOString();
+  const transportStatus = await watchTransport.getTransportStatus();
   const sealedPackage = await watchTransport.getLatestReceivedSyntheticPackage();
 
   if (!sealedPackage) {
     throw new Error("No received synthetic Watch package file is available.");
+  }
+
+  if (
+    transportStatus.latestStagedPlanId &&
+    sealedPackage.manifest.sessionId !== transportStatus.latestStagedPlanId
+  ) {
+    await appendWatchModeLabDebugEvent({
+      db: input.db,
+      timestamp: importedAt,
+      source: "importer",
+      eventType: "stale_received_package_import_blocked",
+      sessionId: sealedPackage.manifest.sessionId,
+      planHash: sealedPackage.manifest.planHash,
+      packageId: sealedPackage.manifest.packageId,
+      packageHash: sealedPackage.manifest.packageHash,
+      success: false,
+      errorMessage: "Received package session does not match current staged session.",
+      metadata: {
+        transportLab: true,
+        currentStagedSessionId: transportStatus.latestStagedPlanId,
+        currentStagedPlanHash: transportStatus.latestStagedPlanHash,
+      },
+    });
+    throw new Error(
+      `Latest received Watch package belongs to stale session ${sealedPackage.manifest.sessionId}; current staged session is ${transportStatus.latestStagedPlanId}. Retry the Watch baseline loop or explicitly clear/discard lab state before importing.`,
+    );
+  }
+
+  if (
+    transportStatus.latestStagedPlanHash &&
+    sealedPackage.manifest.planHash !== transportStatus.latestStagedPlanHash
+  ) {
+    await appendWatchModeLabDebugEvent({
+      db: input.db,
+      timestamp: importedAt,
+      source: "importer",
+      eventType: "stale_received_package_import_blocked",
+      sessionId: sealedPackage.manifest.sessionId,
+      planHash: sealedPackage.manifest.planHash,
+      packageId: sealedPackage.manifest.packageId,
+      packageHash: sealedPackage.manifest.packageHash,
+      success: false,
+      errorMessage: "Received package planHash does not match current staged plan.",
+      metadata: {
+        transportLab: true,
+        currentStagedSessionId: transportStatus.latestStagedPlanId,
+        currentStagedPlanHash: transportStatus.latestStagedPlanHash,
+      },
+    });
+    throw new Error(
+      "Latest received Watch package planHash does not match the current staged plan. Retry the Watch baseline loop or explicitly clear/discard lab state before importing.",
+    );
   }
 
   await appendWatchModeLabDebugEvent({
@@ -771,6 +824,11 @@ export async function resetWatchModeLabTransportBaselineState(input: {
     participantId: input.participantId,
   });
   const resettableStates = unresolved.filter(isTransportBaselineResettableState);
+  const preservedPackageBearingStates = unresolved.filter(
+    (state) =>
+      state.metadata.transportLab === true &&
+      !isTransportBaselineResettableState(state),
+  );
 
   for (const state of resettableStates) {
     const abandoned = applyUserAbandonLocalOnly(state, {
@@ -808,17 +866,18 @@ export async function resetWatchModeLabTransportBaselineState(input: {
       transportLab: true,
       explicit: true,
       abandonedCount: resettableStates.length,
+      preservedPackageBearingCount: preservedPackageBearingStates.length,
       packageDeletion: false,
       note:
-        "Phone-side synthetic baseline state reset only; Watch-local current session index must be discarded on Watch for a true cold start.",
+        "Phone-side synthetic baseline reset only; package-bearing states are preserved for import/ack, and Watch-local lab state must be discarded on Watch for a true cold start.",
     },
   });
 
   return {
     message:
       resettableStates.length > 0
-        ? `Reset phone-side synthetic transport baseline state by marking ${resettableStates.length} unresolved lab state(s) abandoned_local_only. No packages were deleted.`
-        : "Reset phone-side synthetic transport baseline state. No unresolved lab states needed abandonment and no packages were deleted.",
+        ? `Reset phone-side synthetic transport baseline state by marking ${resettableStates.length} early unresolved lab state(s) abandoned_local_only. Package-bearing states were preserved for import/ack. No packages were deleted.`
+        : "Reset phone-side synthetic transport baseline state. No early unresolved lab states needed abandonment; package-bearing states were preserved for import/ack and no packages were deleted.",
     abandonedCount: resettableStates.length,
     status,
     recovery,
@@ -832,7 +891,14 @@ function isTransportLabState(state: WatchSessionSyncState): boolean {
 function isTransportBaselineResettableState(
   state: WatchSessionSyncState,
 ): boolean {
-  return state.metadata.transportLab === true;
+  return (
+    state.metadata.transportLab === true &&
+    ![
+      "watch_sealed_waiting_import",
+      "phone_importing",
+      "phone_imported_ack_eligible",
+    ].includes(state.status)
+  );
 }
 
 function hasDifferentPackageIdentity(

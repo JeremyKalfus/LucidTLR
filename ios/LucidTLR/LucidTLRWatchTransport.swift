@@ -90,7 +90,6 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
         self.recordError("updateApplicationContext failed: \(error.localizedDescription)")
       }
 
-      session.transferUserInfo(payload)
       self.recordStagedPlan(payload)
       self.recordLastMessage(
         type: self.stringValue(payload["messageType"]) ?? "lucidtlr.watch.plan.available",

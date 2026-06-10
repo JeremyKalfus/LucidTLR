@@ -117,9 +117,8 @@ describe("Watch Mode v3 recovery and internal lab architecture", () => {
     expect(combined).toContain("Recover current synthetic session");
     expect(combined).toContain("Seal current synthetic session");
     expect(combined).toContain("Record synthetic ack");
-    expect(combined).toContain(
-      "Discard synthetic lab session with explicit confirmation",
-    );
+    expect(combined).toContain("Discard Watch transport/session state");
+    expect(combined).toContain("transportCoordinator.clearLabStatus()");
     expect(combined).toContain("requireCanStartSession(sessionId:");
   });
 

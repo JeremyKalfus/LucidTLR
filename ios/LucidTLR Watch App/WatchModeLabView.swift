@@ -68,7 +68,7 @@ struct WatchModeLabView: View {
         Button("Record synthetic ack") {
           viewModel.recordSyntheticAck()
         }
-        Button("Discard synthetic lab session with explicit confirmation") {
+        Button("Discard Watch transport/session state") {
           viewModel.discardCurrentSyntheticSessionWithExplicitConfirmation()
         }
 

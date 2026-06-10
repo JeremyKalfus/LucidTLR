@@ -233,6 +233,9 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(labTransport).toContain("resetWatchModeLabTransportBaselineState");
     expect(labTransport).toContain("watch_mode_lab_clean_transport_baseline_reset");
     expect(labTransport).toContain("isTransportBaselineResettableState");
+    expect(labTransport).toContain("preservedPackageBearingCount");
+    expect(labTransport).toContain('"watch_sealed_waiting_import"');
+    expect(labTransport).toContain('"phone_imported_ack_eligible"');
     expect(labTransport).toContain(
       "isIgnorableTerminalTransportLabPackageConflict",
     );
@@ -373,7 +376,8 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(phoneLab).toContain("Reset Clean Phone Baseline");
     expect(phoneLab).toContain("resetCleanTransportBaselineState");
     expect(phoneLab).toContain("abandoned_local_only");
-    expect(phoneLab).toContain("Watch lab discard action");
+    expect(phoneLab).toContain("Discard Watch transport/session state");
+    expect(phoneLab).toContain("Package-bearing states are preserved");
     expect(phoneLab).toContain("runOneButtonTransportBaseline");
     expect(phoneLab).toContain("doesNotReplaceInterruptionTesting");
     expect(phoneLab).toContain("currentBaselineSessionId");
@@ -387,8 +391,12 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(phoneLab).toContain("automated_transport_baseline_waiting_for_watch");
     expect(phoneLab).toContain("automated_transport_baseline_waiting_for_package_file");
     expect(watchLab).toContain("Run Watch baseline loop");
+    expect(watchLab).toContain("Discard Watch transport/session state");
     expect(watchModel).toContain("runWatchBaselineTransportLoop");
     expect(watchModel).toContain("latestStagedPlan");
+    expect(watchModel).toContain("watch_baseline_no_staged_plan");
+    expect(watchModel).toContain("watch_baseline_loop_failed");
+    expect(watchModel).toContain("transportCoordinator.clearLabStatus()");
     expect(watchModel).toContain("discardStaleBaselineCurrentSessionIfNeeded");
     expect(watchModel).toContain("after discarding stale synthetic current session");
     expect(watchModel).toContain("retransferExistingBaselinePackageIfPossible");
@@ -428,6 +436,22 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(watchCoordinator).toContain("applyStagedPlan");
     expect(watchCoordinator).toContain("requestedSessionId ?? stagedPlan?.sessionId");
     expect(watchCoordinator).toContain("requestedPlanHash ?? stagedPlan?.planHash");
+  });
+
+  it("uses applicationContext as the current staged-plan source instead of queuing plan.available userInfo", () => {
+    const phoneBridge = readSource("ios/LucidTLR/LucidTLRWatchTransport.swift");
+    const labTransport = readSource(
+      "src/features/watchModeLab/watchModeTransportLab.ts",
+    );
+    const stageMethod = phoneBridge.slice(
+      phoneBridge.indexOf("func stageSyntheticPlan"),
+      phoneBridge.indexOf("@objc(requestWatchStatus"),
+    );
+
+    expect(stageMethod).toContain("session.updateApplicationContext(payload)");
+    expect(stageMethod).not.toContain("session.transferUserInfo(payload)");
+    expect(labTransport).toContain('deliveryMethod: "applicationContext"');
+    expect(labTransport).not.toContain("applicationContext+transferUserInfo");
   });
 
   it("keeps Watch transport lab state in one atomic session-scoped Codable value", () => {

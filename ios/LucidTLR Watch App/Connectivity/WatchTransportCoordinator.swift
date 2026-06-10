@@ -337,10 +337,10 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     let incomingMessageId =
       (payload["messageId"] as? String) ?? (payload["idempotencyKey"] as? String)
 
-    // plan.available intentionally arrives on both applicationContext and a
-    // queued userInfo nudge with the same messageId. That expected redundancy
-    // is deduplicated semantically in applyStagedPlan, so it must not inflate
-    // the anomalous duplicate counter.
+    // plan.available is latest-wins applicationContext state. Older TestFlight
+    // builds may still redeliver queued userInfo nudges, so plan.available is
+    // deduplicated semantically in applyStagedPlan instead of counted as an
+    // anomalous duplicate.
     let isExpectedRedundantPlanDelivery =
       messageTypeRaw == WatchTransportMessageType.planAvailable.rawValue
 
