@@ -62,6 +62,7 @@ export interface NativeWatchTransportStatus {
     createdAt?: string;
     packageTransfer?: NativeWatchPackageTransferStatus;
     matchesStagedPlan?: boolean;
+    autoReply?: boolean;
     watchStaleIgnoredSummary?: string;
     watchStaleIgnoredCount?: number;
     watchDuplicateIgnoredCount?: number;

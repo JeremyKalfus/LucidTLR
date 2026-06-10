@@ -64,6 +64,8 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
       "WatchTransportMessages.swift",
       "WatchTransportPackageBuilder.swift",
       "WatchTransportCoordinator.swift",
+      "WatchBaselineLoopRunner.swift",
+      "WatchAutoBaselineController.swift",
     ]) {
       expect(project).toContain(`${fileName} in Sources`);
     }
@@ -282,6 +284,50 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(labTransport).toContain("applyAckRecorded");
   });
 
+  it("marks plan.request auto-replies truthful and keeps them out of ledger application", () => {
+    const swiftMessages = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportMessages.swift",
+    );
+    const watchCoordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+    const phoneBridge = readSource("ios/LucidTLR/LucidTLRWatchTransport.swift");
+    const types = readSource(
+      "src/native/watchTransport/NativeWatchTransportTypes.ts",
+    );
+    const labTransport = readSource(
+      "src/features/watchModeLab/watchModeTransportLab.ts",
+    );
+    const applier = labTransport.slice(
+      labTransport.indexOf(
+        "async function applyWatchTransportReceiptSnapshotsFromStatus",
+      ),
+      labTransport.indexOf("async function markTransportPackageImportedInLedger"),
+    );
+    const planRequestBranch = watchCoordinator.slice(
+      watchCoordinator.indexOf("== .planRequest"),
+      watchCoordinator.indexOf("if let type = WatchTransportMessageParser.messageType"),
+    );
+
+    expect(swiftMessages).toContain("autoReply: Bool = false");
+    expect(swiftMessages).toContain('payload["autoReply"] = true');
+    expect(planRequestBranch).toContain("currentLabIndexEntry");
+    expect(planRequestBranch).toContain("entry?.runtimeState ?? .idle");
+    expect(planRequestBranch).toContain("entry?.sealedPackageId");
+    expect(planRequestBranch).toContain("entry?.sealedPackageHash");
+    expect(planRequestBranch).toContain("autoReply: true");
+    expect(planRequestBranch).not.toMatch(/watchState:\s*\.idle,/);
+    expect(phoneBridge).toContain('payload["autoReply"]');
+    expect(phoneBridge).toContain('snapshot["autoReply"]');
+    expect(types).toContain("autoReply?: boolean");
+    expect(labTransport).toContain("latestStatusSnapshotIsAutoReply");
+    expect(labTransport).toContain("auto_reply_snapshot_observed");
+    expect(applier).toContain("!latestStatusSnapshotIsAutoReply");
+    expect(applier.indexOf("!latestStatusSnapshotIsAutoReply")).toBeLessThan(
+      applier.indexOf("applyWatchRunningStatus"),
+    );
+  });
+
   it("filters stale transport evidence before applying ledger transitions", () => {
     const labTransport = readSource(
       "src/features/watchModeLab/watchModeTransportLab.ts",
@@ -371,6 +417,9 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     const watchModel = readSource(
       "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
     );
+    const watchRunner = readSource(
+      "ios/LucidTLR Watch App/WatchBaselineLoopRunner.swift",
+    );
 
     expect(phoneLab).toContain("Run One-Button Baseline");
     expect(phoneLab).toContain("Reset Clean Phone Baseline");
@@ -388,25 +437,112 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(phoneLab).toContain("requestWatchModeLabTransportStatus");
     expect(phoneLab).toContain("importLatestReceivedSyntheticWatchPackage");
     expect(phoneLab).toContain("sendAckForLatestImportedWatchPackage");
+    expect(phoneLab).toContain("waitForBaselineWatchEvidence");
+    expect(phoneLab).toContain("watch-lab-debug-latest.json");
     expect(phoneLab).toContain("automated_transport_baseline_waiting_for_watch");
     expect(phoneLab).toContain("automated_transport_baseline_waiting_for_package_file");
     expect(watchLab).toContain("Run Watch baseline loop");
+    expect(watchLab).toContain("auto baseline");
     expect(watchLab).toContain("Discard Watch transport/session state");
     expect(watchModel).toContain("runWatchBaselineTransportLoop");
-    expect(watchModel).toContain("latestStagedPlan");
-    expect(watchModel).toContain("watch_baseline_no_staged_plan");
-    expect(watchModel).toContain("watch_baseline_loop_failed");
+    expect(watchModel).toContain("baselineRunner.run");
+    expect(watchModel).toContain("setAutoBaselineEnabled");
+    expect(watchModel).toContain("last auto run");
     expect(watchModel).toContain("transportCoordinator.clearLabStatus()");
-    expect(watchModel).toContain("discardStaleBaselineCurrentSessionIfNeeded");
-    expect(watchModel).toContain("after discarding stale synthetic current session");
-    expect(watchModel).toContain("retransferExistingBaselinePackageIfPossible");
-    expect(watchModel).toContain("readManifest");
-    expect(watchModel).toContain("Retransferred existing sealed baseline package");
-    expect(watchModel).toContain("sendCommitReceipt");
-    expect(watchModel).toContain("transferSyntheticPackage");
-    expect(watchModel).toContain("transferSealedPackage");
-    expect(watchModel).toContain("sendStatusSnapshot");
+    expect(watchRunner).toContain("latestStagedPlan");
+    expect(watchRunner).toContain("discardStaleBaselineCurrentSessionIfNeeded");
+    expect(watchRunner).toContain("after discarding stale synthetic current session");
+    expect(watchRunner).toContain("retransferExistingBaselinePackageIfPossible");
+    expect(watchRunner).toContain("readManifest");
+    expect(watchRunner).toContain("Retransferred existing sealed baseline package");
+    expect(watchRunner).toContain("sendCommitReceipt");
+    expect(watchRunner).toContain("transferSealedPackage");
+    expect(watchRunner).toContain("sendStatusSnapshot");
     expect(watchModel).toContain("requireCanStartSession(sessionId:");
+  });
+
+  it("wires event-driven Watch auto-baseline inside the lab gate", () => {
+    const project = readSource("ios/LucidTLR.xcodeproj/project.pbxproj");
+    const coordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+    const controller = readSource(
+      "ios/LucidTLR Watch App/WatchAutoBaselineController.swift",
+    );
+    const runner = readSource(
+      "ios/LucidTLR Watch App/WatchBaselineLoopRunner.swift",
+    );
+    const app = readSource("ios/LucidTLR Watch App/LucidTLRWatchApp.swift");
+
+    expect(project).toContain("WatchBaselineLoopRunner.swift in Sources");
+    expect(project).toContain("WatchAutoBaselineController.swift in Sources");
+    expect(coordinator).toContain("var onNewStagedPlan");
+    expect(coordinator).toContain("if applied, let onNewStagedPlan");
+    expect(coordinator).toContain("DispatchQueue.main.async");
+    expect(controller).toContain(
+      "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
+    );
+    expect(controller).toContain(
+      "lucidtlr.watchLab.autoBaselineEnabled.v1",
+    );
+    expect(controller).toContain("isAutoBaselineEnabled = true");
+    expect(controller).toContain("coordinator.onNewStagedPlan");
+    expect(controller).toContain("isRunning");
+    expect(controller).toContain("runner.run()");
+    expect(app).toContain("WatchAutoBaselineController.shared.start()");
+    expect(runner).toContain("WatchBaselineLoopRunner");
+    expect(runner).toContain("retransferredExistingPackage");
+  });
+
+  it("reports Watch auto-baseline failures with stage labels", () => {
+    const runner = readSource(
+      "ios/LucidTLR Watch App/WatchBaselineLoopRunner.swift",
+    );
+
+    expect(runner).toContain("enum WatchBaselineLoopStage");
+    for (const stage of ["commit", "seal", "transfer", "receipt", "snapshot"]) {
+      expect(runner).toContain(`case ${stage}`);
+    }
+    expect(runner).toContain("watch_auto_baseline_failed");
+    expect(runner).toContain("stage=\\(stage.rawValue):");
+    expect(runner).toContain("reportStageError");
+  });
+
+  it("adds paired-simulator drill scripts and npm wiring", () => {
+    const script = readSource("scripts/watch-sim-drill.mjs");
+    const packageJson = JSON.parse(readSource("package.json"));
+
+    expect(script).toContain("xcrun");
+    expect(script).toContain("simctl");
+    expect(script).toContain("list\", \"pairs");
+    expect(script).toContain("xcodebuild");
+    expect(script).toContain("npx");
+    expect(script).toContain("expo");
+    expect(script).toContain("lucidtlr://debug/watch-mode-lab");
+    expect(script).toContain("watch-lab-debug-latest.json");
+    expect(script).toContain("finalDrillStatus");
+    expect(script).toContain("unresolvedCount");
+    expect(packageJson.scripts["drill:sim-baseline"]).toContain(
+      "watch-sim-drill.mjs baseline",
+    );
+    expect(packageJson.scripts["drill:sim-phone-reload"]).toContain(
+      "watch-sim-drill.mjs phone-reload",
+    );
+    expect(packageJson.scripts["drill:sim-watch-reload"]).toContain(
+      "watch-sim-drill.mjs watch-reload",
+    );
+    expect(packageJson.scripts["drill:sim-duplicate"]).toContain(
+      "watch-sim-drill.mjs duplicate",
+    );
+    expect(packageJson.scripts["drill:sim-unreachable"]).toContain(
+      "watch-sim-drill.mjs unreachable",
+    );
+    expect(packageJson.scripts["drill:sim-all"]).toContain(
+      "watch-sim-drill.mjs all",
+    );
+    expect(packageJson.scripts["drill:sim-soak"]).toContain(
+      "watch-sim-drill.mjs soak",
+    );
   });
 
   it("documents the next synthetic transport recovery drills before real providers", () => {
@@ -434,8 +570,12 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(watchCoordinator).toContain("WCSession.default.receivedApplicationContext");
     expect(watchCoordinator).toContain("persistedStagedPlan");
     expect(watchCoordinator).toContain("applyStagedPlan");
-    expect(watchCoordinator).toContain("requestedSessionId ?? stagedPlan?.sessionId");
-    expect(watchCoordinator).toContain("requestedPlanHash ?? stagedPlan?.planHash");
+    expect(watchCoordinator).toContain(
+      "requestedSessionId ?? entry?.activeSessionId ?? stagedPlan?.sessionId",
+    );
+    expect(watchCoordinator).toContain(
+      "requestedPlanHash ?? entry?.planHash ?? stagedPlan?.planHash",
+    );
   });
 
   it("uses applicationContext as the current staged-plan source instead of queuing plan.available userInfo", () => {

@@ -240,7 +240,26 @@ const GUIDED_TRANSPORT_DRILL_STEPS = [
   "Export Watch Lab Debug Bundle.",
 ] as const;
 
-export function WatchModeLabScreen() {
+export interface WatchModeLabAutomationParams {
+  autorun?: "baseline" | "import-ack" | "reset";
+  exportTo?: "file";
+  runId?: string;
+}
+
+export const WATCH_MODE_LAB_AUTOMATION_EXPORT_FILE_NAME =
+  "watch-lab-debug-latest.json";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+export function WatchModeLabScreen({
+  automationParams,
+}: {
+  automationParams?: WatchModeLabAutomationParams;
+} = {}) {
   if (!isWatchModeLabAvailable()) {
     return <Redirect href="/" />;
   }
@@ -268,6 +287,7 @@ export function WatchModeLabScreen() {
   const [guidedDrillActive, setGuidedDrillActive] = React.useState(false);
   const [guidedStepIndex, setGuidedStepIndex] = React.useState(0);
   const labOpenedRecordedRef = React.useRef(false);
+  const automationRunRef = React.useRef<string | null>(null);
 
   const reloadRecoveryState = React.useCallback(async () => {
     const db = await getLocalDb();
@@ -440,6 +460,54 @@ export function WatchModeLabScreen() {
     }
   }
 
+  async function waitForBaselineWatchEvidence(input: {
+    db: Awaited<ReturnType<typeof getLocalDb>>;
+    baselineSessionId: string | undefined;
+    baselinePlanHash: string | undefined;
+    timeoutMs?: number;
+  }): Promise<WatchModeLabTransportSummary> {
+    const deadline = Date.now() + (input.timeoutMs ?? 45000);
+    let summary = await loadWatchModeLabTransportSummary({
+      db: input.db,
+      participantId,
+    });
+    let baselineSessionId =
+      input.baselineSessionId ?? currentBaselineSessionId(summary);
+    let baselinePlanHash =
+      input.baselinePlanHash ??
+      currentBaselinePlanHash(summary, baselineSessionId);
+
+    while (Date.now() < deadline) {
+      const commitReceipt = matchingBaselineCommitReceipt(
+        summary.status,
+        baselineSessionId,
+        baselinePlanHash,
+      );
+      const hasPackageFile = hasPersistedPackageFileForBaseline(
+        summary.status,
+        baselineSessionId,
+        baselinePlanHash,
+      );
+
+      if (commitReceipt && hasPackageFile) {
+        return summary;
+      }
+
+      await sleep(2500);
+      summary = await loadWatchModeLabTransportSummary({
+        db: input.db,
+        participantId,
+      });
+      baselineSessionId =
+        baselineSessionId ?? currentBaselineSessionId(summary);
+      baselinePlanHash =
+        baselinePlanHash ??
+        currentBaselinePlanHash(summary, baselineSessionId);
+    }
+
+    return summary;
+  }
+
   async function runOneButtonTransportBaseline() {
     setBusyLabel("Running baseline...");
 
@@ -527,9 +595,10 @@ export function WatchModeLabScreen() {
         });
       }
 
-      summary = await requestWatchModeLabTransportStatus({
+      summary = await waitForBaselineWatchEvidence({
         db,
-        participantId,
+        baselineSessionId,
+        baselinePlanHash,
       });
       setTransportSummary(summary);
       setRecoverySummary(summary.recovery);
@@ -943,13 +1012,22 @@ export function WatchModeLabScreen() {
       : "Share sheet unavailable; copied the JSON to clipboard.";
   }
 
-  async function exportDebugBundle() {
+  async function exportDebugBundle(options?: {
+    exportToFile?: boolean;
+    skipShare?: boolean;
+  }) {
     setBusyLabel("Exporting debug bundle...");
     setExportInfo(null);
     setExportError(null);
 
     try {
       const db = await getLocalDb();
+      const latestTransportSummary = await loadWatchModeLabTransportSummary({
+        db,
+        participantId,
+      });
+      setTransportSummary(latestTransportSummary);
+      setRecoverySummary(latestTransportSummary.recovery);
       const exportLogEntry: WatchModeLabActionLogEntry = {
         at: new Date().toISOString(),
         action: "export_debug_bundle",
@@ -964,7 +1042,7 @@ export function WatchModeLabScreen() {
         latestPlanSummary: planSummary,
         latestImportSummary: importSummary,
         latestValidationSummary: validationSummary,
-        transportStatus: transportSummary?.status,
+        transportStatus: latestTransportSummary.status ?? transportSummary?.status,
         actionLog: [...actionLog, exportLogEntry],
       });
       const json = JSON.stringify(bundle, null, 2);
@@ -975,6 +1053,7 @@ export function WatchModeLabScreen() {
       if (FileSystem.documentDirectory) {
         const exportDirectory = `${FileSystem.documentDirectory}lucidtlr-exports/`;
         const fileUri = `${exportDirectory}${fileName}`;
+        const latestFileUri = `${FileSystem.documentDirectory}${WATCH_MODE_LAB_AUTOMATION_EXPORT_FILE_NAME}`;
 
         await FileSystem.makeDirectoryAsync(exportDirectory, {
           intermediates: true,
@@ -982,26 +1061,43 @@ export function WatchModeLabScreen() {
         await FileSystem.writeAsStringAsync(fileUri, json, {
           encoding: FileSystem.EncodingType.UTF8,
         });
-
-        try {
-          await Share.share({
-            title: fileName,
-            message: shareMessage,
-            url: fileUri,
+        if (options?.exportToFile) {
+          await FileSystem.writeAsStringAsync(latestFileUri, json, {
+            encoding: FileSystem.EncodingType.UTF8,
           });
-          resultMessage = `Saved ${fileName} locally and opened the share sheet.`;
-        } catch {
-          resultMessage = await copyDebugBundleFallback(json, fileUri);
+        }
+
+        if (options?.skipShare) {
+          resultMessage = options.exportToFile
+            ? `Saved ${fileName} and ${WATCH_MODE_LAB_AUTOMATION_EXPORT_FILE_NAME} locally.`
+            : `Saved ${fileName} locally.`;
+        } else {
+          try {
+            await Share.share({
+              title: fileName,
+              message: shareMessage,
+              url: fileUri,
+            });
+            resultMessage = options?.exportToFile
+              ? `Saved ${fileName} and ${WATCH_MODE_LAB_AUTOMATION_EXPORT_FILE_NAME} locally, then opened the share sheet.`
+              : `Saved ${fileName} locally and opened the share sheet.`;
+          } catch {
+            resultMessage = await copyDebugBundleFallback(json, fileUri);
+          }
         }
       } else {
-        try {
+        if (options?.skipShare) {
+          resultMessage = "Document directory unavailable; debug bundle file was not written.";
+        } else {
+          try {
           await Share.share({
             title: fileName,
             message: `${shareMessage}\n\n${json}`,
           });
           resultMessage = `Opened share sheet for ${fileName}.`;
-        } catch {
-          resultMessage = await copyDebugBundleFallback(json);
+          } catch {
+            resultMessage = await copyDebugBundleFallback(json);
+          }
         }
       }
 
@@ -1031,6 +1127,118 @@ export function WatchModeLabScreen() {
       setBusyLabel(null);
     }
   }
+
+  async function runImportAckAutomation() {
+    setBusyLabel("Importing and acking...");
+
+    try {
+      const db = await getLocalDb();
+      const imported = await importLatestReceivedSyntheticWatchPackage({
+        db,
+        participantId,
+      });
+
+      setImportSummary(imported.importSummary);
+      setTransportSummary({
+        status: imported.status,
+        recovery: imported.recovery,
+      });
+      setRecoverySummary(imported.recovery);
+      recordLabAction({
+        action: "automation_import_ack_imported_package",
+        result: "ok",
+        message: `Automation imported package with status ${imported.importSummary.status}; ack eligible: ${imported.importSummary.ackEligible ? "yes" : "no"}.`,
+        details: {
+          sessionId: imported.importSummary.sessionId,
+          packageId: imported.importSummary.packageId,
+          packageHash: imported.importSummary.packageHash,
+          ackEligible: imported.importSummary.ackEligible,
+        },
+      });
+
+      const acked = await sendAckForLatestImportedWatchPackage({
+        db,
+        participantId,
+      });
+
+      setTransportSummary({
+        status: acked.status,
+        recovery: acked.recovery,
+      });
+      setRecoverySummary(acked.recovery);
+      recordLabAction({
+        action: "automation_import_ack_ack_sent",
+        result: "ok",
+        message: acked.message,
+        details: {
+          unresolvedCount: acked.recovery.unresolvedCount,
+          latestAckPackageId: acked.status.latestAck?.packageId,
+        },
+      });
+    } catch (error) {
+      recordLabAction({
+        action: "automation_import_ack_failed",
+        result: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Automation import/ack failed.",
+      });
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
+  async function runDeepLinkAutomation() {
+    if (!automationParams?.autorun) {
+      return;
+    }
+
+    recordLabAction({
+      action: "deep_link_automation_started",
+      result: "ok",
+      message: `Started deep-link automation: ${automationParams.autorun}.`,
+      details: {
+        autorun: automationParams.autorun,
+        exportTo: automationParams.exportTo,
+        runId: automationParams.runId,
+      },
+    });
+
+    if (automationParams.autorun === "reset") {
+      await resetCleanTransportBaselineState();
+    } else if (automationParams.autorun === "baseline") {
+      await runOneButtonTransportBaseline();
+    } else if (automationParams.autorun === "import-ack") {
+      await runImportAckAutomation();
+    }
+
+    if (automationParams.exportTo === "file") {
+      await exportDebugBundle({
+        exportToFile: true,
+        skipShare: true,
+      });
+    }
+  }
+
+  React.useEffect(() => {
+    if (!automationParams?.autorun) {
+      return;
+    }
+
+    const runKey = [
+      automationParams.autorun,
+      automationParams.exportTo ?? "no-export",
+      automationParams.runId ?? "no-run-id",
+    ].join("|");
+
+    if (automationRunRef.current === runKey) {
+      return;
+    }
+
+    automationRunRef.current = runKey;
+    void runDeepLinkAutomation();
+  }, [automationParams?.autorun, automationParams?.exportTo, automationParams?.runId]);
 
   return (
     <Screen>

@@ -84,18 +84,26 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
       let payload = self.propertyListMessage(from: message)
       self.activateIfNeeded(session)
 
-      do {
-        try session.updateApplicationContext(payload)
-      } catch {
-        self.recordError("updateApplicationContext failed: \(error.localizedDescription)")
-      }
+      self.performWhenActivated(session, attemptsRemaining: 20) { activated in
+        guard activated else {
+          self.recordError("updateApplicationContext failed: WatchConnectivity session has not been activated.")
+          resolve(self.currentStatus())
+          return
+        }
 
-      self.recordStagedPlan(payload)
-      self.recordLastMessage(
-        type: self.stringValue(payload["messageType"]) ?? "lucidtlr.watch.plan.available",
-        at: self.stringValue(payload["createdAt"]) ?? self.nowString()
-      )
-      resolve(self.currentStatus())
+        do {
+          try session.updateApplicationContext(payload)
+          self.recordStagedPlan(payload)
+          self.recordLastMessage(
+            type: self.stringValue(payload["messageType"]) ?? "lucidtlr.watch.plan.available",
+            at: self.stringValue(payload["createdAt"]) ?? self.nowString()
+          )
+        } catch {
+          self.recordError("updateApplicationContext failed: \(error.localizedDescription)")
+        }
+
+        resolve(self.currentStatus())
+      }
     }
   }
 
@@ -266,6 +274,31 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
     }
   }
 
+  private func performWhenActivated(
+    _ session: WCSession,
+    attemptsRemaining: Int,
+    perform: @escaping (Bool) -> Void
+  ) {
+    if session.activationState == .activated {
+      perform(true)
+      return
+    }
+
+    if attemptsRemaining <= 0 {
+      perform(false)
+      return
+    }
+
+    activateIfNeeded(session)
+    queue.asyncAfter(deadline: .now() + 0.25) {
+      self.performWhenActivated(
+        session,
+        attemptsRemaining: attemptsRemaining - 1,
+        perform: perform
+      )
+    }
+  }
+
   private func currentStatus() -> [String: Any] {
     guard let session = supportedSession() else {
       return unavailableStatus("WatchConnectivity is not supported on this device.")
@@ -429,6 +462,11 @@ final class LucidTLRWatchTransport: NSObject, WCSessionDelegate {
       }
       if let duplicateIgnoredCount = payload["duplicateIgnoredCount"] as? NSNumber {
         snapshot["watchDuplicateIgnoredCount"] = duplicateIgnoredCount
+      }
+      if let autoReply = payload["autoReply"] as? NSNumber {
+        snapshot["autoReply"] = autoReply
+      } else if let autoReply = payload["autoReply"] as? Bool {
+        snapshot["autoReply"] = autoReply
       }
       status["latestStatusSnapshot"] = snapshot
     }

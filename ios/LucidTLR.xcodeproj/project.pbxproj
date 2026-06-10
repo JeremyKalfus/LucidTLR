@@ -75,6 +75,8 @@
 		B72000000000000000000003 /* WatchTransportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000013 /* WatchTransportCoordinator.swift */; };
 		A70000000000000000000001 /* WatchModeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000011 /* WatchModeLabView.swift */; };
 		A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000012 /* WatchModeLabViewModel.swift */; };
+		A71000000000000000000001 /* WatchBaselineLoopRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000011 /* WatchBaselineLoopRunner.swift */; };
+		A71000000000000000000002 /* WatchAutoBaselineController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000012 /* WatchAutoBaselineController.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
@@ -174,6 +176,8 @@
 		B72000000000000000000013 /* WatchTransportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportCoordinator.swift; sourceTree = "<group>"; };
 		A70000000000000000000011 /* WatchModeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabView.swift; sourceTree = "<group>"; };
 		A70000000000000000000012 /* WatchModeLabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabViewModel.swift; sourceTree = "<group>"; };
+		A71000000000000000000011 /* WatchBaselineLoopRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBaselineLoopRunner.swift; sourceTree = "<group>"; };
+		A71000000000000000000012 /* WatchAutoBaselineController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAutoBaselineController.swift; sourceTree = "<group>"; };
 		A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = LucidTLR/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = LucidTLR/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
@@ -275,6 +279,8 @@
 				A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */,
 				A70000000000000000000011 /* WatchModeLabView.swift */,
 				A70000000000000000000012 /* WatchModeLabViewModel.swift */,
+				A71000000000000000000011 /* WatchBaselineLoopRunner.swift */,
+				A71000000000000000000012 /* WatchAutoBaselineController.swift */,
 				B72000000000000000000020 /* Connectivity */,
 				A30000000000000000000020 /* Runtime */,
 				A60000000000000000000020 /* Storage */,
@@ -693,6 +699,8 @@
 				A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */,
 				A70000000000000000000001 /* WatchModeLabView.swift in Sources */,
 				A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */,
+				A71000000000000000000001 /* WatchBaselineLoopRunner.swift in Sources */,
+				A71000000000000000000002 /* WatchAutoBaselineController.swift in Sources */,
 				B72000000000000000000001 /* WatchTransportMessages.swift in Sources */,
 				B72000000000000000000002 /* WatchTransportPackageBuilder.swift in Sources */,
 				B72000000000000000000003 /* WatchTransportCoordinator.swift in Sources */,

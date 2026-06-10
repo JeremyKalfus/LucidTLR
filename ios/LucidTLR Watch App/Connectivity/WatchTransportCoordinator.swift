@@ -4,6 +4,7 @@ import WatchConnectivity
 
 final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDelegate {
   static let shared = WatchTransportCoordinator()
+  var onNewStagedPlan: ((WatchTransportStagedPlan) -> Void)?
 
   @Published private(set) var status = WatchTransportStatusSnapshot(
     activationState: "notActivated",
@@ -106,7 +107,8 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     watchState: WatchRuntimeState,
     packageId: String?,
     packageHash: String?,
-    createdAt: Date
+    createdAt: Date,
+    autoReply: Bool = false
   ) throws {
     let state = readState()
     let payload = WatchTransportMessageFactory.statusSnapshot(
@@ -119,7 +121,8 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       packageTransfer: state.latestPackageTransfer,
       staleIgnoredSummary: state.latestStaleIgnored?.summary,
       staleIgnoredCount: state.staleIgnoredCount,
-      duplicateIgnoredCount: state.duplicateIgnoredCount
+      duplicateIgnoredCount: state.duplicateIgnoredCount,
+      autoReply: autoReply
     )
     try transferUserInfo(payload)
     recordLastMessage(type: WatchTransportMessageType.statusSnapshot.rawValue, at: createdAt)
@@ -381,15 +384,17 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
 
       if WatchTransportMessageParser.messageType(from: payload) == .planRequest {
         let stagedPlan = try? latestStagedPlan()
+        let entry = try? currentLabIndexEntry()
         let requestedSessionId = payload["sessionId"] as? String
         let requestedPlanHash = payload["planHash"] as? String
         try? sendStatusSnapshot(
-          sessionId: requestedSessionId ?? stagedPlan?.sessionId,
-          planHash: requestedPlanHash ?? stagedPlan?.planHash,
-          watchState: .idle,
-          packageId: nil,
-          packageHash: nil,
-          createdAt: receivedAt
+          sessionId: requestedSessionId ?? entry?.activeSessionId ?? stagedPlan?.sessionId,
+          planHash: requestedPlanHash ?? entry?.planHash ?? stagedPlan?.planHash,
+          watchState: entry?.runtimeState ?? .idle,
+          packageId: entry?.sealedPackageId,
+          packageHash: entry?.sealedPackageHash,
+          createdAt: receivedAt,
+          autoReply: true
         )
         recordLastMessage(type: WatchTransportMessageType.planRequest.rawValue, at: receivedAt)
         return
@@ -464,7 +469,7 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
   /// by message `createdAt`.
   @discardableResult
   private func applyStagedPlan(_ stagedPlan: WatchTransportStagedPlan) -> Bool {
-    mutateState { state -> Bool in
+    let applied = mutateState { state -> Bool in
       if state.stagedPlanSessionId == stagedPlan.sessionId,
         state.stagedPlanHash == stagedPlan.planHash {
         // Same staged identity redelivered (context + queued nudge): no-op.
@@ -494,6 +499,14 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
       state.stagedPlanReceivedAt = stagedPlan.receivedAt
       return true
     }
+
+    if applied, let onNewStagedPlan {
+      DispatchQueue.main.async {
+        onNewStagedPlan(stagedPlan)
+      }
+    }
+
+    return applied
   }
 
   private func persistedStagedPlan() throws -> WatchTransportStagedPlan? {

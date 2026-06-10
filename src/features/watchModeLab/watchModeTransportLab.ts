@@ -1036,6 +1036,8 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
     status.latestStatusSnapshot,
     status,
   );
+  const latestStatusSnapshotIsAutoReply =
+    latestStatusSnapshot?.autoReply === true;
   const latestPackageManifest = transportRecordForCurrentStagedPlan(
     status.latestPackageManifest,
     status,
@@ -1053,6 +1055,22 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
         sessionId,
       })
     : null;
+
+  if (latestStatusSnapshotIsAutoReply) {
+    await appendWatchModeLabDebugEvent({
+      db: input.db,
+      timestamp: latestStatusSnapshot.createdAt,
+      source: "transport",
+      eventType: "auto_reply_snapshot_observed",
+      sessionId: latestStatusSnapshot.sessionId,
+      planHash: latestStatusSnapshot.planHash,
+      metadata: {
+        sessionId: latestStatusSnapshot.sessionId,
+        planHash: latestStatusSnapshot.planHash,
+        watchState: latestStatusSnapshot.watchState,
+      },
+    });
+  }
 
   if (state && latestCommitReceipt) {
     const previous = state;
@@ -1093,7 +1111,11 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
     }
   }
 
-  if (state && latestStatusSnapshot?.watchState) {
+  if (
+    state &&
+    latestStatusSnapshot?.watchState &&
+    !latestStatusSnapshotIsAutoReply
+  ) {
     const previous = state;
 
     try {
@@ -1133,6 +1155,7 @@ async function applyWatchTransportReceiptSnapshotsFromStatus(input: {
 
   if (
     state &&
+    !latestStatusSnapshotIsAutoReply &&
     latestStatusSnapshot?.packageId &&
     latestStatusSnapshot.packageHash &&
     !latestPackageManifest

@@ -81,6 +81,14 @@ struct WatchModeLabView: View {
         Button("Activate transport") {
           viewModel.activateTransport()
         }
+        Toggle(
+          "auto baseline",
+          isOn: Binding(
+            get: { viewModel.autoBaselineEnabled },
+            set: { viewModel.setAutoBaselineEnabled($0) }
+          )
+        )
+        .font(.caption2)
         Button("Run Watch baseline loop") {
           viewModel.runWatchBaselineTransportLoop()
         }

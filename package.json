@@ -10,7 +10,14 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify:watch-testflight-lab": "node scripts/verify-watch-testflight-lab.mjs"
+    "verify:watch-testflight-lab": "node scripts/verify-watch-testflight-lab.mjs",
+    "drill:sim-baseline": "node scripts/watch-sim-drill.mjs baseline",
+    "drill:sim-phone-reload": "node scripts/watch-sim-drill.mjs phone-reload",
+    "drill:sim-watch-reload": "node scripts/watch-sim-drill.mjs watch-reload",
+    "drill:sim-duplicate": "node scripts/watch-sim-drill.mjs duplicate",
+    "drill:sim-unreachable": "node scripts/watch-sim-drill.mjs unreachable",
+    "drill:sim-all": "node scripts/watch-sim-drill.mjs all",
+    "drill:sim-soak": "node scripts/watch-sim-drill.mjs soak"
   },
   "dependencies": {
     "@expo/metro-runtime": "56.0.13",

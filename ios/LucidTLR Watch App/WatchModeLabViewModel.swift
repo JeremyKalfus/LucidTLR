@@ -14,8 +14,10 @@ struct WatchModeLabStatusRow: Identifiable, Equatable {
   let value: String
 }
 
+@MainActor
 final class WatchModeLabViewModel: ObservableObject {
   @Published var displayMode: WatchModeLabDisplayMode = .menu
+  @Published var autoBaselineEnabled: Bool
   @Published private(set) var statusMessage = "Internal TestFlight Lab -- synthetic only."
   @Published private(set) var statusRows: [WatchModeLabStatusRow] = [
     WatchModeLabStatusRow(id: "scope", label: "scope", value: "synthetic only"),
@@ -32,6 +34,31 @@ final class WatchModeLabViewModel: ObservableObject {
   private var activeManifest: WatchPackageManifestV3?
   private var activePreflightResult: WatchRuntimePreflightResult?
   private let transportCoordinator = WatchTransportCoordinator.shared
+  private let baselineRunner: WatchBaselineLoopRunner
+  private let autoBaselineController: WatchAutoBaselineController
+  private var cancellables = Set<AnyCancellable>()
+
+  init() {
+    let autoBaselineController = WatchAutoBaselineController.shared
+    self.baselineRunner = WatchBaselineLoopRunner()
+    self.autoBaselineController = autoBaselineController
+    self.autoBaselineEnabled = autoBaselineController.isAutoBaselineEnabled
+
+    autoBaselineController.$isAutoBaselineEnabled
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] isEnabled in
+        self?.autoBaselineEnabled = isEnabled
+        self?.refreshRows()
+      }
+      .store(in: &cancellables)
+
+    autoBaselineController.$lastRunSummary
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.refreshRows()
+      }
+      .store(in: &cancellables)
+  }
 
   func showInstructions() {
     displayMode = .instructions
@@ -401,177 +428,25 @@ final class WatchModeLabViewModel: ObservableObject {
     }
   }
 
+  func setAutoBaselineEnabled(_ isEnabled: Bool) {
+    autoBaselineController.setAutoBaselineEnabled(isEnabled)
+  }
+
   func runWatchBaselineTransportLoop() {
     do {
-      try transportCoordinator.activate()
-      transportCoordinator.refreshStatus()
-      guard let stagedPlan = try transportCoordinator.latestStagedPlan() else {
-        try? transportCoordinator.sendTransportError(
-          errorCode: "watch_baseline_no_staged_plan",
-          errorMessage: "Watch baseline loop could not find a staged synthetic plan. Run One-Button Baseline on phone first, then retry the Watch baseline loop.",
-          createdAt: Date()
-        )
-        statusMessage = "No staged synthetic plan is available. Run One-Button Baseline on phone first."
-        refreshRows()
-        return
-      }
-
-      let plan = stagedPlan.plan
-      if try retransferExistingBaselinePackageIfPossible(plan: plan) {
-        return
-      }
-      let discardedStaleSessionId = try discardStaleBaselineCurrentSessionIfNeeded(
-        for: plan
-      )
-
-      let nextCoordinator = try makeCoordinator(
-        plan: plan,
-        preflightScenario: .allPass,
-        requiresStartPreflight: false
-      )
-      try nextCoordinator.commit(plan: plan)
-      try currentSessionIndex?.recordCommit(
-        plan: plan,
-        runtimeState: .planCommitted,
-        updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
-      )
-      coordinator = nextCoordinator
-      activePlan = plan
-      activeManifest = nil
+      let result = try baselineRunner.run()
+      coordinator = result.coordinator
+      sessionStore = result.sessionStore
+      currentSessionIndex = result.currentSessionIndex
+      activePlan = result.plan
+      activeManifest = result.activeManifest
       activePreflightResult = nil
-
-      guard let committedEntry = try currentSessionIndex?.load() else {
-        throw WatchTransportError.noCommittedSession
-      }
-
-      try transportCoordinator.sendCommitReceipt(
-        plan: plan,
-        commitId: committedEntry.commitId,
-        watchState: committedEntry.runtimeState,
-        committedAt: WatchRuntimeDateFormat.date(from: committedEntry.updatedAt) ?? Date()
-      )
-      do {
-        try transferSyntheticPackage()
-      } catch {
-        reportTransportPackageError(error)
-        throw error
-      }
-      let sealedEntry = try currentSessionIndex?.load()
-      try transportCoordinator.sendStatusSnapshot(
-        sessionId: sealedEntry?.activeSessionId ?? plan.sessionId,
-        planHash: sealedEntry?.planHash ?? plan.planHash,
-        watchState: sealedEntry?.runtimeState ?? coordinator?.state ?? .sealedWaitingForPhone,
-        packageId: sealedEntry?.sealedPackageId ?? activeManifest?.packageId,
-        packageHash: sealedEntry?.sealedPackageHash ?? activeManifest?.packageHash,
-        createdAt: Date()
-      )
-      if let discardedStaleSessionId {
-        statusMessage = "Ran Watch baseline loop after discarding stale synthetic current session \(discardedStaleSessionId); committed latest staged plan, sent receipt/status, sealed and transferred package. Synthetic lab only; no real sensors or cues."
-      } else {
-        statusMessage = "Ran Watch baseline loop: committed staged plan, sent receipt/status, sealed and transferred package. Synthetic lab only; no real sensors or cues."
-      }
+      sleepShieldViewModel = nil
+      statusMessage = result.statusMessage
       refreshRows()
     } catch {
-      reportWatchBaselineError(error)
       handle(error: error)
     }
-  }
-
-  private func retransferExistingBaselinePackageIfPossible(
-    plan: WatchRuntimePlanV3
-  ) throws -> Bool {
-    let rootDirectory = try labRootDirectory()
-    let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
-    currentSessionIndex = index
-
-    guard let entry = try index.load(),
-      entry.isActiveUnacked,
-      entry.activeSessionId == plan.sessionId else {
-      return false
-    }
-
-    guard entry.planHash == plan.planHash else {
-      throw WatchTransportError.invalidPlanPayload
-    }
-
-    guard let sealedPackageId = entry.sealedPackageId,
-      let sealedPackageHash = entry.sealedPackageHash else {
-      return false
-    }
-
-    let existingSessionStore = try WatchSessionDirectoryStore(
-      rootDirectory: rootDirectory,
-      sessionId: entry.activeSessionId
-    )
-    let packageStore = WatchPackageStore(sessionStore: existingSessionStore)
-
-    guard let manifest = try packageStore.readManifest(),
-      manifest.packageId == sealedPackageId,
-      manifest.packageHash == sealedPackageHash else {
-      throw WatchTransportError.packageHashMismatch
-    }
-
-    sessionStore = existingSessionStore
-    activePlan = plan
-    activeManifest = manifest
-    activePreflightResult = nil
-
-    try transportCoordinator.sendCommitReceipt(
-      plan: plan,
-      commitId: entry.commitId,
-      watchState: entry.runtimeState,
-      committedAt: WatchRuntimeDateFormat.date(from: entry.updatedAt) ?? Date()
-    )
-
-    do {
-      try transferSealedPackage(
-        manifest: manifest,
-        sessionStore: existingSessionStore,
-        runtimeState: entry.runtimeState
-      )
-    } catch {
-      reportTransportPackageError(error)
-      throw error
-    }
-
-    try transportCoordinator.sendStatusSnapshot(
-      sessionId: entry.activeSessionId,
-      planHash: entry.planHash,
-      watchState: entry.runtimeState,
-      packageId: sealedPackageId,
-      packageHash: sealedPackageHash,
-      createdAt: Date()
-    )
-
-    statusMessage = "Retransferred existing sealed baseline package for the staged synthetic plan. No new session or package was created."
-    refreshRows()
-    return true
-  }
-
-  private func discardStaleBaselineCurrentSessionIfNeeded(
-    for plan: WatchRuntimePlanV3
-  ) throws -> String? {
-    let rootDirectory = try labRootDirectory()
-    let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
-    currentSessionIndex = index
-
-    guard let entry = try index.load(),
-      entry.isActiveUnacked,
-      entry.activeSessionId != plan.sessionId else {
-      return nil
-    }
-
-    try index.discardSyntheticLabSession(
-      explicitConfirmation: true,
-      discardedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
-    )
-    coordinator = nil
-    sessionStore = nil
-    activeManifest = nil
-    activePreflightResult = nil
-    sleepShieldViewModel = nil
-    activePlan = plan
-    return entry.activeSessionId
   }
 
   func discardCurrentSyntheticSessionWithExplicitConfirmation() {
@@ -834,6 +709,8 @@ final class WatchModeLabViewModel: ObservableObject {
       WatchModeLabStatusRow(id: "transportOutstanding", label: "WC outstanding", value: packageTransferOutstandingLabel(transportStatus.latestPackageTransfer)),
       WatchModeLabStatusRow(id: "transportPackageError", label: "package error", value: transportStatus.latestPackageTransfer?.errorMessage ?? transportStatus.lastError ?? "none"),
       WatchModeLabStatusRow(id: "transportAck", label: "ack status", value: transportStatus.latestAckRecorded ? "matching ack recorded" : transportStatus.latestAckPackageId ?? "no ack"),
+      WatchModeLabStatusRow(id: "autoBaseline", label: "auto baseline", value: autoBaselineEnabled ? "on" : "off"),
+      WatchModeLabStatusRow(id: "lastAutoBaseline", label: "last auto run", value: autoBaselineController.lastRunSummary),
       WatchModeLabStatusRow(id: "transportStaleIgnored", label: "stale ignored", value: transportStatus.latestStaleIgnoredSummary ?? "none"),
       WatchModeLabStatusRow(id: "transportStaleIgnoredCount", label: "stale ignored count", value: "\(transportStatus.staleIgnoredCount)"),
       WatchModeLabStatusRow(id: "transportDuplicateIgnoredCount", label: "dupes ignored", value: "\(transportStatus.duplicateIgnoredCount)"),
@@ -951,14 +828,6 @@ final class WatchModeLabViewModel: ObservableObject {
   private func reportTransportPackageError(_ error: Error) {
     try? transportCoordinator.sendTransportError(
       errorCode: "watch_package_transfer_failed_before_queue",
-      errorMessage: String(describing: error),
-      createdAt: Date()
-    )
-  }
-
-  private func reportWatchBaselineError(_ error: Error) {
-    try? transportCoordinator.sendTransportError(
-      errorCode: "watch_baseline_loop_failed",
       errorMessage: String(describing: error),
       createdAt: Date()
     )

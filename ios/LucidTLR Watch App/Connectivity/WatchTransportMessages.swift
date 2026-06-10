@@ -292,7 +292,8 @@ enum WatchTransportMessageFactory {
     packageTransfer: WatchTransportPackageTransferStatus? = nil,
     staleIgnoredSummary: String? = nil,
     staleIgnoredCount: Int = 0,
-    duplicateIgnoredCount: Int = 0
+    duplicateIgnoredCount: Int = 0,
+    autoReply: Bool = false
   ) -> [String: Any] {
     var payload = base(
       type: .statusSnapshot,
@@ -309,6 +310,9 @@ enum WatchTransportMessageFactory {
     }
     if let staleIgnoredSummary {
       payload["staleIgnoredSummary"] = staleIgnoredSummary
+    }
+    if autoReply {
+      payload["autoReply"] = true
     }
     payload["staleIgnoredCount"] = staleIgnoredCount
     payload["duplicateIgnoredCount"] = duplicateIgnoredCount

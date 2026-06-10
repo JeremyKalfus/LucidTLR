@@ -72,6 +72,7 @@ export interface WatchTransportStatusSnapshotMessage
   watchState: string;
   packageId?: string;
   packageHash?: string;
+  autoReply?: boolean;
 }
 
 export interface WatchTransportPackageManifestMessage

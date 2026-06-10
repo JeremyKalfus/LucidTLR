@@ -47,11 +47,19 @@ const internalFlags = read("src/features/internalBuild/internalBuildFlags.ts");
 const watchLabScreen = read("src/screens/WatchModeLabScreen.tsx");
 const phoneLabRoute = read("app/debug/watch-mode-lab.tsx");
 const contentView = read("ios/LucidTLR Watch App/ContentView.swift");
+const watchApp = read("ios/LucidTLR Watch App/LucidTLRWatchApp.swift");
+const watchCoordinator = read("ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift");
+const watchMessages = read("ios/LucidTLR Watch App/Connectivity/WatchTransportMessages.swift");
+const watchBaselineRunner = read("ios/LucidTLR Watch App/WatchBaselineLoopRunner.swift");
+const watchAutoBaselineController = read("ios/LucidTLR Watch App/WatchAutoBaselineController.swift");
 const project = read("ios/LucidTLR.xcodeproj/project.pbxproj");
 const home = read("src/screens/HomeScreen.tsx");
 const appState = read("src/state/AppState.tsx");
 const importer = read("src/features/watchHistory/importWatchPackage.ts");
 const transportLab = read("src/features/watchModeLab/watchModeTransportLab.ts");
+const nativeWatchTransportTypes = read("src/native/watchTransport/NativeWatchTransportTypes.ts");
+const phoneBridge = read("ios/LucidTLR/LucidTLRWatchTransport.swift");
+const packageJson = readJson("package.json");
 
 check(
   "WATCH_MODE_ENABLED remains false",
@@ -117,9 +125,59 @@ check(
   ) && contentView.includes("#else") && contentView.includes("placeholder"),
 );
 check(
+  "Watch auto-baseline controller is lab gated and started by the Watch app",
+  watchAutoBaselineController.includes(
+    "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
+  ) &&
+    watchAutoBaselineController.includes(
+      "lucidtlr.watchLab.autoBaselineEnabled.v1",
+    ) &&
+    watchAutoBaselineController.includes("coordinator.onNewStagedPlan") &&
+    watchAutoBaselineController.includes("isRunning") &&
+    watchApp.includes("WatchAutoBaselineController.shared.start()"),
+);
+check(
+  "Watch staged-plan callback only fires for newly applied plan epochs",
+  watchCoordinator.includes("var onNewStagedPlan") &&
+    watchCoordinator.includes("if applied, let onNewStagedPlan") &&
+    watchCoordinator.includes("DispatchQueue.main.async"),
+);
+check(
+  "plan.request auto-replies are truthful and marked autoReply",
+  watchCoordinator.includes("currentLabIndexEntry") &&
+    watchCoordinator.includes("entry?.runtimeState ?? .idle") &&
+    watchCoordinator.includes("entry?.sealedPackageId") &&
+    watchCoordinator.includes("entry?.sealedPackageHash") &&
+    watchCoordinator.includes("autoReply: true") &&
+    watchMessages.includes("autoReply: Bool = false") &&
+    watchMessages.includes('payload["autoReply"] = true'),
+);
+check(
+  "phone records and ledger-skips auto-reply snapshots",
+  phoneBridge.includes('payload["autoReply"]') &&
+    phoneBridge.includes('snapshot["autoReply"]') &&
+    nativeWatchTransportTypes.includes("autoReply?: boolean") &&
+    transportLab.includes("latestStatusSnapshotIsAutoReply") &&
+    transportLab.includes("auto_reply_snapshot_observed") &&
+    transportLab.includes("!latestStatusSnapshotIsAutoReply"),
+);
+check(
+  "Watch baseline runner reports stage-labeled auto-baseline failures",
+  watchBaselineRunner.includes("watch_auto_baseline_failed") &&
+    watchBaselineRunner.includes("stage=\\(stage.rawValue):") &&
+    ["commit", "seal", "transfer", "receipt", "snapshot"].every((stage) =>
+      watchBaselineRunner.includes(`case ${stage}`),
+    ),
+);
+check(
   "Xcode project consumes LUCIDTLR_INTERNAL_TESTFLIGHT_SWIFT_FLAGS",
   project.includes("$(LUCIDTLR_INTERNAL_TESTFLIGHT_SWIFT_FLAGS)") &&
     project.includes("OTHER_SWIFT_FLAGS"),
+);
+check(
+  "Watch auto-baseline sources are in the Watch target",
+  project.includes("WatchBaselineLoopRunner.swift in Sources") &&
+    project.includes("WatchAutoBaselineController.swift in Sources"),
 );
 check(
   "Home blocks public Watch TLR start",
@@ -156,6 +214,8 @@ check(
 const labScopedFiles = [
   "ios/LucidTLR/LucidTLRWatchTransport.swift",
   ...listFiles("ios/LucidTLR Watch App/Connectivity", (file) => file.endsWith(".swift")),
+  "ios/LucidTLR Watch App/WatchBaselineLoopRunner.swift",
+  "ios/LucidTLR Watch App/WatchAutoBaselineController.swift",
   "src/native/watchTransport/WatchTransportMessages.ts",
   "src/native/watchTransport/NativeWatchTransportTypes.ts",
   "src/native/watchTransport/watchTransportClient.ts",
@@ -200,6 +260,22 @@ check(
   transportLab.includes("result.ackEligible") &&
     transportLab.includes("No ack-eligible imported Watch package exists") &&
     transportLab.includes("buildPackageAckTransportMessage"),
+);
+check(
+  "paired simulator drill scripts are wired",
+  [
+    "drill:sim-baseline",
+    "drill:sim-phone-reload",
+    "drill:sim-watch-reload",
+    "drill:sim-duplicate",
+    "drill:sim-unreachable",
+    "drill:sim-all",
+    "drill:sim-soak",
+  ].every((scriptName) =>
+    String(packageJson.scripts?.[scriptName] ?? "").includes("scripts/watch-sim-drill.mjs"),
+  ) &&
+    read("scripts/watch-sim-drill.mjs").includes("lucidtlr://debug/watch-mode-lab") &&
+    read("scripts/watch-sim-drill.mjs").includes("watch-lab-debug-latest.json"),
 );
 
 if (failures.length > 0) {
