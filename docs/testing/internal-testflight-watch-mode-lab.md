@@ -72,6 +72,64 @@ Do not pass `--what-to-test` to `eas submit` for this project right now; EAS map
 that parameter to a changelog field that is Enterprise-plan only. Paste the text
 below into the Internal TestFlight build notes manually.
 
+## Phase A Close-Out And Build 15 Notebook
+
+Date: June 10, 2026.
+
+Phase A source close-out:
+
+- Simulator shim commit: `fb98036` (`Add simulator-only transport shim for lab
+  drills`), pushed to `origin/main`.
+- Participant-id reload verdict: lab-only artifact. The drill can reset before a
+  persisted onboarding participant exists, so a phone app relaunch may get a new
+  transient participant id. Real onboarded users keep the persisted participant
+  row across app restart through `AppState` hydration and `getLocalParticipant`.
+- Final simulator soak: `npm run drill:sim-soak`, 10/10 consecutive full-matrix
+  runs passed.
+- Final soak timing: started `2026-06-10T19:16:46Z`, ended
+  `2026-06-10T19:26:05Z`, duration about 9m19s after incremental build cache was
+  warm.
+- Matrix per run: baseline, phone reload, Watch reload, duplicate re-run,
+  unreachable-watch/reconnect.
+- Fixed non-counted flakes before the final soak:
+  - `ENOTEMPTY` while wiping `/tmp/lucidtlr-sim-transport`; fixed by stopping
+    the Watch writer before reset and retrying transient directory removal.
+  - One fresh-export timeout from terminating the phone app before each reset;
+    fixed by keeping the phone dev-client alive and only stopping the Watch
+    writer before shim wipe.
+
+Verification:
+
+- `npm run typecheck` passed.
+- `npm test` passed: 38 files, 240 tests.
+- `npm run verify:watch-testflight-lab` passed.
+- `git diff --check` passed.
+- `graphify update .` passed.
+- Exact iPhone simulator build passed:
+  `xcodebuild -workspace ios/LucidTLR.xcworkspace -scheme LucidTLR -configuration Debug -destination 'platform=iOS Simulator,id=68B5B474-6340-4B1A-B63E-E18127856B8D' -derivedDataPath /tmp/lucidtlr-xcodebuild-lab-reset-hardening-iphone build`
+- Exact Watch simulator build passed:
+  `xcodebuild -workspace ios/LucidTLR.xcworkspace -scheme 'LucidTLR Watch App' -configuration Debug -destination 'platform=watchOS Simulator,id=8E651A1B-E7F2-4669-B578-C3AA8779B099' -derivedDataPath /tmp/lucidtlr-xcodebuild-lab-reset-hardening-watch build`
+
+Build 15:
+
+- EAS build ID: `7277fe80-1003-4b0c-8bd1-68ae9cb948c1`
+- EAS build URL:
+  `https://expo.dev/accounts/jeremykalfus/projects/lucidtlr/builds/7277fe80-1003-4b0c-8bd1-68ae9cb948c1`
+- IPA artifact:
+  `https://expo.dev/artifacts/eas/keQkevjeP4pAqm8qGNgTWJBjugCk_a1CVausyCEb1lc.ipa`
+- EAS submission ID: `93babb06-8926-4072-a71c-7ab6f239f37f`
+- EAS submission URL:
+  `https://expo.dev/accounts/jeremykalfus/projects/lucidtlr/submissions/93babb06-8926-4072-a71c-7ab6f239f37f`
+- App Store Connect TestFlight URL:
+  `https://appstoreconnect.apple.com/apps/6777900695/testflight/ios`
+- Submit status: uploaded to App Store Connect; Apple processing pending.
+
+Next Jeremy action: install build 15 on iPhone and Watch, then run the Phase B
+physical drill matrix: clean baseline, phone force-quit/reopen recovery, Watch
+kill/reopen recovery, duplicate re-run, and unreachable-watch then reconnect.
+Export the debug bundle after each drill and send the JSON files. Hardware
+failures go to review, not repeated on-device iteration.
+
 ## TestFlight What To Test
 
 Paste this into the Internal TestFlight build notes:
