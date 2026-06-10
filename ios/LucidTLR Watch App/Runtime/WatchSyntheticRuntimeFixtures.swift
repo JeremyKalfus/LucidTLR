@@ -127,7 +127,7 @@ enum WatchSyntheticRuntimeFixtures {
       createdAt: createdAt,
       protocolVersion: "tlr-protocol-v3-synthetic-fixture",
       watchPolicyVersion: "watch-policy-v3-synthetic-fixture",
-      remModelVersion: "lucidtlr-watch-rem-informed-v3-contract-2026-06-07",
+      remModelVersion: "lucidtlr-rem-v0-2026-06",
       planHash: WatchRuntimeStructuralHash.placeholderHex("plan|\(sessionId)|\(sessionType)"),
       selectedCueId: "harp-flourish",
       cue: WatchRuntimeCueV3(
@@ -168,7 +168,7 @@ enum WatchSyntheticRuntimeFixtures {
         rawMotionPersistence: false
       ),
       remPolicy: WatchRuntimeRemPolicyV3(
-        classifierVersion: "lucidtlr-rem-probability-v3-contract",
+        classifierVersion: "lucidtlr-rem-v0-2026-06",
         threshold: 0.7,
         persistenceRule: "2_of_last_3",
         minimumSleepProbability: 0.6,
@@ -217,7 +217,7 @@ enum WatchSyntheticRuntimeFixtures {
       ],
       model: WatchRuntimeModelV3(
         modelId: "lucidtlr-watch-rem-informed-v3",
-        modelVersion: "lucidtlr-watch-rem-informed-v3-contract-2026-06-07",
+        modelVersion: "lucidtlr-rem-v0-2026-06",
         sha256: nil,
         evaluatorType: "deterministic-swift"
       ),

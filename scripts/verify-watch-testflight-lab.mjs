@@ -60,6 +60,15 @@ const transportLab = read("src/features/watchModeLab/watchModeTransportLab.ts");
 const nativeWatchTransportTypes = read("src/native/watchTransport/NativeWatchTransportTypes.ts");
 const phoneBridge = read("ios/LucidTLR/LucidTLRWatchTransport.swift");
 const packageJson = readJson("package.json");
+const realProviderFiles = [
+  "ios/LucidTLR Watch App/Runtime/RealBatteryProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/RealPowerModeProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/HealthKitHeartRateProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/CoreMotionProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/RealCueOutputProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/RealWatchRuntimePreflightProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/RealtimeWatchClock.swift",
+];
 
 check(
   "WATCH_MODE_ENABLED remains false",
@@ -180,6 +189,23 @@ check(
     project.includes("WatchAutoBaselineController.swift in Sources"),
 );
 check(
+  "Phase C real provider sources are in the Watch target",
+  realProviderFiles.every((file) => project.includes(`${path.basename(file)} in Sources`)),
+  realProviderFiles
+    .filter((file) => !project.includes(`${path.basename(file)} in Sources`))
+    .join(", "),
+);
+check(
+  "Watch cue audio assets are in the Watch target resources",
+  [
+    "clear_bell_chime.mp3 in Resources",
+    "ui_success_chime.mp3 in Resources",
+    "sci_fi_confirmation.wav in Resources",
+    "harp_flourish.mp3 in Resources",
+    "dx_harp_c5.mp3 in Resources",
+  ].every((entry) => project.includes(entry)),
+);
+check(
   "Home blocks public Watch TLR start",
   /if \(selectedMode === "watch"\) \{\s*showWatchDisabledMessage\(\);\s*return;\s*\}\s*startSession\("tlr"\);/s.test(
     home,
@@ -209,6 +235,61 @@ check(
       "ios/LucidTLR/LucidTLRWatchTransport.swift",
     ]),
   watchConnectivityImportFiles.join(", "),
+);
+
+const realProviderFrameworkTokens = [
+  "import HealthKit",
+  "import CoreMotion",
+  "import AVFoundation",
+  "HKWorkoutSession",
+  "startAccelerometerUpdates",
+  "WKInterfaceDevice.play",
+  "AVAudioPlayer",
+];
+const realProviderFrameworkScanFiles = [
+  ...listFiles("ios/LucidTLR Watch App", (file) => file.endsWith(".swift")),
+  "ios/LucidTLR/LucidTLRWatchTransport.swift",
+];
+const realProviderFrameworkHits = realProviderFrameworkScanFiles
+  .filter((file) =>
+    realProviderFrameworkTokens.some((token) => read(file).includes(token)),
+  )
+  .sort();
+check(
+  "real provider frameworks are isolated to explicit Phase C provider files",
+  realProviderFrameworkHits.every((file) => realProviderFiles.includes(file)),
+  realProviderFrameworkHits.join(", "),
+);
+
+const realProviderReferenceTokens = [
+  "RealBatteryProvider",
+  "RealPowerModeProvider",
+  "HealthKitHeartRateProvider",
+  "CoreMotionProvider",
+  "RealCueOutputProvider",
+  "RealWatchRuntimePreflightProvider",
+  "RealtimeWatchClock",
+];
+const realProviderReferenceAllowedFiles = [
+  ...realProviderFiles,
+  "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
+];
+const realProviderReferenceHits = [
+  ...listFiles("ios/LucidTLR Watch App", (file) => file.endsWith(".swift")),
+  ...listFiles("ios/LucidTLR", (file) => file.endsWith(".swift")),
+  ...listFiles("src", (file) => /\.(ts|tsx)$/.test(file)),
+  ...listFiles("app", (file) => /\.(ts|tsx)$/.test(file)),
+]
+  .filter((file) =>
+    realProviderReferenceTokens.some((token) => read(file).includes(token)),
+  )
+  .sort();
+check(
+  "real providers are referenced only from provider/preflight/lab-gated paths",
+  realProviderReferenceHits.every((file) =>
+    realProviderReferenceAllowedFiles.includes(file),
+  ),
+  realProviderReferenceHits.join(", "),
 );
 
 const labScopedFiles = [

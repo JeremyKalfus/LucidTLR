@@ -25,12 +25,13 @@ struct RemProbabilityEvaluator {
       )
     }
 
-    let plausibleHeartRate = heartRate >= 50 && heartRate <= 90
+    let plausibleHeartRate = heartRate >= 45 && heartRate <= 110
     let lowMovement = aggregation.roughMovementIntensity < plan.movement.largeMovementThreshold * 0.35
+    let stableLowMovement = aggregation.stableLowMovementSeconds >= plan.movement.stableLowMovementRequiredSeconds
     let lateEnoughForFixtureRem = elapsedSessionSeconds >= 120
 
     let sleepProbability: Double
-    if lowMovement && aggregation.stableLowMovementSeconds >= plan.movement.stableLowMovementRequiredSeconds {
+    if lowMovement && stableLowMovement {
       sleepProbability = 0.86
     } else if lowMovement {
       sleepProbability = 0.68
@@ -39,10 +40,10 @@ struct RemProbabilityEvaluator {
     }
 
     let remProbability: Double
-    if lateEnoughForFixtureRem && plausibleHeartRate && lowMovement {
-      remProbability = 0.84
-    } else if plausibleHeartRate && lowMovement {
-      remProbability = 0.42
+    if plausibleHeartRate && lowMovement {
+      let stabilityBonus = stableLowMovement ? 0.24 : 0.08
+      let elapsedBonus = lateEnoughForFixtureRem ? 0.24 : 0.04
+      remProbability = min(0.86, 0.28 + stabilityBonus + elapsedBonus)
     } else {
       remProbability = 0.18
     }

@@ -28,6 +28,7 @@ final class WatchSessionCoordinator {
   private let logStoreFactory: (String) throws -> WatchRuntimeLogStore
   private let preflightProvider: WatchRuntimePreflightProviding?
   private let requiresStartPreflight: Bool
+  private let forcedCueAfterSeconds: TimeInterval?
 
   private var plan: WatchRuntimePlanV3?
   private var startedAt: Date?
@@ -40,6 +41,7 @@ final class WatchSessionCoordinator {
   private var movementPauseActive = false
   private var cueAssociatedPauseActive = false
   private var tlrDeferredUntil: Date?
+  private var forcedCueResolved = false
   private(set) var lastPreflightResult: WatchRuntimePreflightResult?
 
   init(
@@ -52,7 +54,8 @@ final class WatchSessionCoordinator {
     packageSealer: WatchPackageSealing = WatchPackageSealer(),
     logStoreFactory: @escaping (String) throws -> WatchRuntimeLogStore = { WatchRuntimeLogStore(sessionId: $0) },
     preflightProvider: WatchRuntimePreflightProviding? = nil,
-    requiresStartPreflight: Bool = true
+    requiresStartPreflight: Bool = true,
+    forcedCueAfterSeconds: TimeInterval? = nil
   ) {
     self.clock = clock
     self.heartRateProvider = heartRateProvider
@@ -64,6 +67,7 @@ final class WatchSessionCoordinator {
     self.logStoreFactory = logStoreFactory
     self.preflightProvider = preflightProvider
     self.requiresStartPreflight = requiresStartPreflight
+    self.forcedCueAfterSeconds = forcedCueAfterSeconds
   }
 
   var sessionType: String? {
@@ -259,6 +263,7 @@ final class WatchSessionCoordinator {
       elapsedSessionSeconds: elapsedAtStart,
       aggregation: aggregation
     )
+    let forcedCueDue = isForcedCueDue(elapsedSessionSeconds: elapsedAtStart)
 
     handleMovementIfNeeded(plan: plan, epochStart: epochStart, epochEnd: epochEnd, aggregation: aggregation)
 
@@ -269,14 +274,17 @@ final class WatchSessionCoordinator {
       aggregation: aggregation,
       remEvaluation: remEvaluation,
       movementPauseActive: movementPauseActive,
-      cueAssociatedMovementPauseActive: cueAssociatedPauseActive
+      cueAssociatedMovementPauseActive: cueAssociatedPauseActive,
+      forcedCueDue: forcedCueDue
     )
     appendEvent(
       .cueDecision,
       payload: [
         "reason": .stringValue(decision.reason.rawValue),
         "shouldAttemptCue": .boolValue(decision.shouldAttemptCue),
+        "forcedCueDue": .boolValue(forcedCueDue),
         "remProbability": remEvaluation.remProbability.map(WatchRuntimeJSONValue.doubleValue) ?? .null,
+        "classifierVersion": .stringValue(remEvaluation.classifierVersion),
       ]
     )
 
@@ -287,6 +295,10 @@ final class WatchSessionCoordinator {
         .cueSuppressed,
         payload: ["reason": .stringValue(decision.reason.rawValue)]
       )
+    }
+
+    if forcedCueDue {
+      forcedCueResolved = true
     }
 
     let epochEvent = appendEvent(
@@ -552,5 +564,13 @@ final class WatchSessionCoordinator {
     }
 
     return date >= earliestCueAt && date <= latestCueAt
+  }
+
+  private func isForcedCueDue(elapsedSessionSeconds: Int) -> Bool {
+    guard let forcedCueAfterSeconds, !forcedCueResolved else {
+      return false
+    }
+
+    return TimeInterval(elapsedSessionSeconds) >= forcedCueAfterSeconds
   }
 }

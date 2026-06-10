@@ -22,12 +22,12 @@ struct WatchModeLabView: View {
   private var labMenu: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 8) {
-        Text("Internal TestFlight Lab -- synthetic only")
+        Text("Internal TestFlight Lab")
           .font(.caption)
           .fontWeight(.semibold)
           .accessibilityAddTraits(.isHeader)
 
-        Text("Synthetic WatchConnectivity transport only. No real Watch sensors, workout runtime, live cue timing, haptics, audio, uploads, or package deletion. Public Watch Mode remains disabled.")
+        Text("Synthetic transport drills plus device-only real-provider forced-cue sessions. Public Watch Mode remains disabled. No uploads or package deletion.")
           .font(.caption2)
           .foregroundStyle(.secondary)
 
@@ -45,6 +45,23 @@ struct WatchModeLabView: View {
         }
         Button("Run synthetic sleep_log with preflight") {
           viewModel.runTenMinuteSleepLogSession()
+        }
+        Stepper(
+          value: Binding(
+            get: { viewModel.forcedCueAfterMinutes },
+            set: { viewModel.forcedCueAfterMinutes = $0 }
+          ),
+          in: 1...90,
+          step: 1
+        ) {
+          Text("forced cue +\(viewModel.forcedCueAfterMinutes) min")
+        }
+        .font(.caption2)
+        Button("Run real-provider session (forced cue)") {
+          viewModel.runRealProviderForcedCueSession()
+        }
+        Button("End real-provider session -> transfer") {
+          viewModel.endRealProviderSessionAndTransfer()
         }
         Button("Enter black sleep shield") {
           viewModel.enterSleepShield()

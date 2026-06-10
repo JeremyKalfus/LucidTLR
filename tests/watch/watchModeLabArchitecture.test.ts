@@ -19,7 +19,17 @@ const watchLabSwiftFiles = [
   "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
 ];
 
-describe("Watch Mode v3 hidden synthetic lab architecture", () => {
+const realProviderSwiftFiles = [
+  "ios/LucidTLR Watch App/Runtime/RealBatteryProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/RealPowerModeProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/HealthKitHeartRateProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/CoreMotionProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/RealCueOutputProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/RealWatchRuntimePreflightProvider.swift",
+  "ios/LucidTLR Watch App/Runtime/RealtimeWatchClock.swift",
+];
+
+describe("Watch Mode v3 hidden lab architecture", () => {
   it("adds a gated phone lab route and hidden settings affordance", () => {
     const route = readSource("app/debug/watch-mode-lab.tsx");
     const screen = readSource("src/screens/WatchModeLabScreen.tsx");
@@ -67,7 +77,7 @@ describe("Watch Mode v3 hidden synthetic lab architecture", () => {
     }
   });
 
-  it("keeps Watch lab files synthetic-only and free of real provider frameworks", () => {
+  it("keeps Watch lab entrypoints gated while allowing the Phase C provider switch", () => {
     const forbidden = [
       "import HealthKit",
       "import CoreMotion",
@@ -86,10 +96,86 @@ describe("Watch Mode v3 hidden synthetic lab architecture", () => {
     expect(combined).toContain("SyntheticMotionProvider");
     expect(combined).toContain("SyntheticBatteryProvider");
     expect(combined).toContain("SyntheticCueOutputProvider");
+    expect(combined).toContain("Run real-provider session (forced cue)");
+    expect(combined).toContain("HealthKitHeartRateProvider");
+    expect(combined).toContain("CoreMotionProvider");
+    expect(combined).toContain("RealCueOutputProvider");
     expect(combined).toContain("WatchFileBackedLogStore");
     expect(combined).toContain("WatchPackageStore");
     expect(combined).toContain("SleepShieldView");
     expect(combined).toContain("retained until matching ack");
+  });
+
+  it("adds real provider files to the Watch target behind explicit allowlists", () => {
+    const project = readSource("ios/LucidTLR.xcodeproj/project.pbxproj");
+
+    for (const file of realProviderSwiftFiles) {
+      const fileName = path.basename(file);
+
+      expect(fileExists(file)).toBe(true);
+      expect(project).toContain(`${fileName} in Sources`);
+    }
+
+    const frameworkTokens = [
+      "import HealthKit",
+      "import CoreMotion",
+      "import AVFoundation",
+      "HKWorkoutSession",
+      "startAccelerometerUpdates",
+      "WKInterfaceDevice.play",
+      "AVAudioPlayer",
+    ];
+    const frameworkHits = [
+      ...realProviderSwiftFiles,
+      ...watchLabSwiftFiles,
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+      "ios/LucidTLR/LucidTLRWatchTransport.swift",
+    ].filter((file) =>
+      frameworkTokens.some((token) => readSource(file).includes(token)),
+    );
+
+    expect(frameworkHits.sort()).toEqual(
+      realProviderSwiftFiles
+        .filter((file) =>
+          frameworkTokens.some((token) => readSource(file).includes(token)),
+        )
+        .sort(),
+    );
+  });
+
+  it("references real providers only from provider/preflight/lab-gated paths", () => {
+    const providerTokens = [
+      "RealBatteryProvider",
+      "RealPowerModeProvider",
+      "HealthKitHeartRateProvider",
+      "CoreMotionProvider",
+      "RealCueOutputProvider",
+      "RealWatchRuntimePreflightProvider",
+      "RealtimeWatchClock",
+    ];
+    const allowedCombined = [
+      ...realProviderSwiftFiles,
+      "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
+    ].map(readSource).join("\n");
+    const forbiddenCombined = [
+      "src/screens/HomeScreen.tsx",
+      "src/screens/ActiveNightSessionScreen.tsx",
+      "src/screens/PresleepTrainingScreen.tsx",
+      "src/screens/MorningReviewScreen.tsx",
+      "src/screens/DataScreen.tsx",
+      "src/screens/SettingsScreen.tsx",
+      "src/features/watchModeLab/watchModeTransportLab.ts",
+      "src/screens/WatchModeLabScreen.tsx",
+      "app/debug/watch-mode-lab.tsx",
+      "ios/LucidTLR/LucidTLRWatchTransport.swift",
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+      "ios/LucidTLR Watch App/ContentView.swift",
+    ].map(readSource).join("\n");
+
+    for (const token of providerTokens) {
+      expect(allowedCombined).toContain(token);
+      expect(forbiddenCombined).not.toContain(token);
+    }
   });
 
   it("gates the Watch lab behind debug while keeping the placeholder default", () => {
@@ -101,7 +187,7 @@ describe("Watch Mode v3 hidden synthetic lab architecture", () => {
       "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
     );
     expect(contentView).toContain("WatchModeLabView()");
-    expect(contentView).toContain("Synthetic Lab");
+    expect(contentView).toContain("Internal Lab");
     expect(
       contentView.indexOf(
         "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
@@ -109,15 +195,15 @@ describe("Watch Mode v3 hidden synthetic lab architecture", () => {
     ).toBeLessThan(contentView.indexOf("WatchModeLabView()"));
   });
 
-  it("documents the hidden lab as synthetic-only and required before real providers", () => {
+  it("documents the hidden lab as public-disabled with Phase C real providers gated", () => {
     const future = readSource("docs/future/watch-mode-implementation-watch-owned-v3.md");
 
     expect(future).toContain("## Hidden Watch Mode Lab");
-    expect(future).toContain("synthetic-only");
+    expect(future).toContain("transport drills");
     expect(future).toContain("not public Watch Mode");
-    expect(future).toContain("must not use real Watch sensors");
+    expect(future).toContain("Phase C real-provider");
     expect(future).toContain("WatchConnectivity");
-    expect(future).toContain("required before real providers");
+    expect(future).toContain("Watch Mode remains disabled");
   });
 
   it("keeps public Watch Mode disabled and public phone screens disconnected", () => {

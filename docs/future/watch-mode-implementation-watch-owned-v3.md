@@ -106,9 +106,10 @@ required assets/model presence, and local durable plan commit presence.
 
 Low Power Mode blocks start. A workout-backed runtime is required. Cueing is
 haptic-first; audio remains optional and experimental, and audio preflight is
-required only when audio is enabled for that night. The current Phase 6B
-scaffolding is synthetic/lab-only and must not start HealthKit, workout,
-CoreMotion, WatchConnectivity, haptic, or audio behavior.
+required only when audio is enabled for that night. Phase C may start
+HealthKit, workout, CoreMotion, haptic, and audio behavior only from the
+internal Watch lab's real-provider forced-cue session after Jeremy's explicit
+approval. Transport drills remain synthetic.
 
 Public Watch Mode must remain disabled until the preflight gate and later real
 providers pass simulator builds plus physical hardware validation. A passing
@@ -201,19 +202,21 @@ not ack-sent, and ack recording completes only for a matching package hash.
 
 ## Hidden Watch Mode Lab
 
-The hidden Watch Mode Lab is synthetic-only and is not public Watch Mode. It may
-exercise plan building, synthetic Watch-owned runtime execution, the black sleep
-shield, file-backed Watch storage, package sealing, and local phone package
-import fixtures. In the Internal TestFlight Lab lane it may also exercise
-synthetic WatchConnectivity plan staging, commit receipts, status snapshots,
-package transfer, and package ack retry. It must not use real Watch sensors,
-HealthKit, workout sessions, CoreMotion, haptic/audio output, package deletion,
-live cue timing, uploads, or public Home/AppState Watch session creation.
+The hidden Watch Mode Lab is not public Watch Mode. It may exercise plan
+building, synthetic Watch-owned runtime execution, the black sleep shield,
+file-backed Watch storage, package sealing, and local phone package import
+fixtures. In the Internal TestFlight Lab lane it may also exercise synthetic
+transport drills: WatchConnectivity plan staging, commit receipts, status
+snapshots, package transfer, and package ack retry. Phase C real-provider
+sessions are limited to the Watch lab forced-cue action and may use HealthKit
+heart-rate reads, a workout session, CoreMotion, haptic output, and cue audio
+for couch/overnight validation. The lab must not use package deletion, uploads,
+public Home/AppState Watch session creation, or live iPhone-driven cue timing.
 
-The lab is required before real providers so plan/runtime/storage/import
-surfaces can be inspected without implying Watch Mode is ready for overnight
-use. Lab package imports remain local-only, deterministic, idempotent, and
-transaction-wrapped; public Watch Mode remains disabled.
+The lab lets provider/runtime/storage/import surfaces be inspected without
+implying Watch Mode is ready for public overnight use. Lab package imports
+remain local-only, deterministic, idempotent, and transaction-wrapped; Public
+Watch Mode remains disabled.
 
 The lab is available in development builds and in the internal TestFlight lab
 lane. Normal production builds must keep the hidden phone route unavailable and
@@ -230,19 +233,21 @@ rejection before import all worked on device.
 Jeremy-based real-device reliability testing should use Internal TestFlight Lab
 builds rather than only dev builds, because TestFlight removes Metro,
 dev-client, and Xcode-run state from the lifecycle and is closer to eventual
-distribution. The lane enables only synthetic lab surfaces; public Watch Mode,
-real HealthKit/workout, real CoreMotion, real haptics, real audio, uploads, and
-package deletion remain disabled. WatchConnectivity in this lane is limited to
-synthetic sync artifacts and must not be used for live cue timing.
+distribution. In Phase C, the lane enables synthetic transport surfaces plus the
+Watch-only real-provider forced-cue action. Public Watch Mode, uploads, package
+deletion, and live iPhone-driven cue timing remain disabled. WatchConnectivity
+in this lane is limited to sync artifacts and must not be used for live cue
+timing.
 
 ## Implementation Sequencing
 
 The synthetic Watch-owned runtime core with fake providers must compile and pass
 tests before real providers are added. The file-backed Watch storage layer and
 phone-side package importer must compile and pass tests before hidden lab or
-real providers are added. Real HealthKit, workout, CoreMotion, haptic, audio,
-WatchConnectivity, and package-transfer providers remain later phases and must
-stay behind the same provider protocols.
+real providers are added. Real HealthKit, workout, CoreMotion, haptic, and audio
+providers stay behind the same provider protocols and remain lab-gated until
+hardware validation passes. WatchConnectivity and package transfer remain the
+frozen sync path, not live cue timing.
 
 ## Cue Output
 

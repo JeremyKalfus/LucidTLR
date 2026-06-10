@@ -36,7 +36,8 @@ struct CuePolicyEngine {
     aggregation: WatchEpochAggregation,
     remEvaluation: WatchRemEvaluation,
     movementPauseActive: Bool,
-    cueAssociatedMovementPauseActive: Bool
+    cueAssociatedMovementPauseActive: Bool,
+    forcedCueDue: Bool = false
   ) -> WatchCuePolicyDecision {
     if plan.sessionType == "sleep_log" {
       return decision(false, .sleepLogCueingDisabled, outputChannel: "none")
@@ -46,7 +47,11 @@ struct CuePolicyEngine {
       return decision(false, .beforeTlrInterval, outputChannel: "none")
     }
 
-    if aggregation.sensorQuality.rawValue != plan.remPolicy.sensorQualityRequired {
+    if forcedCueDue && aggregation.motionSampleCount == 0 {
+      return decision(false, .sensorQualityNotGood, outputChannel: "none")
+    }
+
+    if !forcedCueDue && aggregation.sensorQuality.rawValue != plan.remPolicy.sensorQualityRequired {
       return decision(false, .sensorQualityNotGood, outputChannel: "none")
     }
 
@@ -74,6 +79,10 @@ struct CuePolicyEngine {
       return decision(false, .cueBudgetExhausted, outputChannel: "none")
     }
 
+    if forcedCueDue {
+      return decision(true, .forcedCueDue, outputChannel: outputChannel(for: plan))
+    }
+
     let remPassed =
       (remEvaluation.remProbability ?? 0) >= plan.remPolicy.threshold &&
       (remEvaluation.sleepProbability ?? 0) >= plan.remPolicy.minimumSleepProbability
@@ -84,7 +93,7 @@ struct CuePolicyEngine {
       return decision(false, .remPersistenceNotMet, outputChannel: "none")
     }
 
-    return decision(true, .remPersistencePassed, outputChannel: "haptic")
+    return decision(true, .remPersistencePassed, outputChannel: outputChannel(for: plan))
   }
 
   private func persistencePasses(rule: String) -> Bool {
@@ -106,5 +115,25 @@ struct CuePolicyEngine {
       reason: reason,
       outputChannel: outputChannel
     )
+  }
+
+  private func outputChannel(for plan: WatchRuntimePlanV3) -> String {
+    if plan.cueOutput.hapticEnabled && plan.cueOutput.defaultOutput == "haptic" {
+      return "haptic"
+    }
+
+    if plan.cueOutput.audioEnabled && plan.cueOutput.defaultOutput == "audio" {
+      return "audio"
+    }
+
+    if plan.cueOutput.hapticEnabled {
+      return "haptic"
+    }
+
+    if plan.cueOutput.audioEnabled {
+      return "audio"
+    }
+
+    return "none"
   }
 }

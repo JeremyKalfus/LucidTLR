@@ -61,6 +61,9 @@
 	<string>Expo Dev Launcher uses the local network to discover and connect to development servers running on your computer.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>LucidTLR uses microphone access only for local debug feasibility audio analysis when explicitly enabled on the hidden development screen.</string>
+	<!-- DRAFT - Jeremy approval required -->
+	<key>NSHealthShareUsageDescription</key>
+	<string>LucidTLR uses your heart rate during sleep sessions to estimate sleep stages for cue timing. Your data stays on your devices unless you explicitly choose to share it for research.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

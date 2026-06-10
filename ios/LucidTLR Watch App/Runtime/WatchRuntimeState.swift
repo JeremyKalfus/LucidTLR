@@ -73,6 +73,7 @@ enum WatchCueDecisionReason: String, Codable, Equatable {
   case cueBudgetExhausted = "cue_budget_exhausted"
   case remPersistenceNotMet = "rem_persistence_not_met"
   case remPersistencePassed = "rem_persistence_passed"
+  case forcedCueDue = "forced_cue_due"
 }
 
 struct WatchSyntheticRunResult: Equatable {

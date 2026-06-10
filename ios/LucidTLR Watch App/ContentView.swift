@@ -28,7 +28,7 @@ struct ContentView: View {
         .foregroundStyle(.secondary)
 
       #if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB
-      Button("Synthetic Lab") {
+      Button("Internal Lab") {
         showingSyntheticLab = true
       }
       .font(.caption2)

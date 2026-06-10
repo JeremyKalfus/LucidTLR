@@ -24,7 +24,13 @@ The current app must not call:
 - phone-side Watch start/sync/import native methods,
 - Watch-owned session plan builders,
 - Watch REM classifier/cue-policy code,
-- Watch app HealthKit, WatchConnectivity, runtime logging, or cue delivery code.
+- Watch app HealthKit, WatchConnectivity, runtime logging, or cue delivery code
+  from public Watch Mode surfaces.
+
+Exception: after Jeremy's explicit 2026-06-10 approval, the internal
+TestFlight Watch lab may run Phase C real-provider forced-cue sessions for
+couch/overnight validation. This exception does not enable public Home/AppState
+Watch starts, uploads, package deletion, or live iPhone-driven Watch cue timing.
 
 ## Consequences
 
@@ -34,4 +40,3 @@ packages are intentionally invalidated by removal of the old native import path.
 
 ADR 001 remains useful as future architecture reference, but it no longer
 describes the current implementation status.
-

@@ -290,7 +290,7 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(phoneLab).toContain("Internal TestFlight Lab");
     expect(phoneLab).toContain("Phone reload recovery");
     expect(watchLab).toContain("Transport -- synthetic only");
-    expect(watchLab).toContain("Synthetic WatchConnectivity transport only");
+    expect(watchLab).toContain("Synthetic transport drills plus device-only real-provider forced-cue sessions");
     expect(combined).toContain("Public Watch Mode remains disabled");
   });
 
@@ -650,7 +650,7 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     );
   });
 
-  it("documents the next synthetic transport recovery drills before real providers", () => {
+  it("keeps the completed synthetic transport drill doc as the pre-provider gate history", () => {
     const nextSteps = readSource(
       "docs/testing/watch-mode-synthetic-transport-next-steps.md",
     );

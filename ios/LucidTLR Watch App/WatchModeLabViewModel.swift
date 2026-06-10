@@ -18,13 +18,14 @@ struct WatchModeLabStatusRow: Identifiable, Equatable {
 final class WatchModeLabViewModel: ObservableObject {
   @Published var displayMode: WatchModeLabDisplayMode = .menu
   @Published var autoBaselineEnabled: Bool
-  @Published private(set) var statusMessage = "Internal TestFlight Lab -- synthetic only."
+  @Published private(set) var statusMessage = "Internal TestFlight Lab."
   @Published private(set) var statusRows: [WatchModeLabStatusRow] = [
-    WatchModeLabStatusRow(id: "scope", label: "scope", value: "synthetic only"),
+    WatchModeLabStatusRow(id: "scope", label: "scope", value: "internal lab only"),
     WatchModeLabStatusRow(id: "public", label: "public Watch Mode", value: "disabled"),
-    WatchModeLabStatusRow(id: "transport", label: "WatchConnectivity", value: "synthetic lab only"),
+    WatchModeLabStatusRow(id: "transport", label: "WatchConnectivity", value: "frozen lab path"),
   ]
   @Published private(set) var selectedPreflightScenario: SyntheticPreflightScenario = .allPass
+  @Published var forcedCueAfterMinutes = 10
   @Published var sleepShieldViewModel: SleepShieldViewModel?
 
   private var coordinator: WatchSessionCoordinator?
@@ -33,6 +34,14 @@ final class WatchModeLabViewModel: ObservableObject {
   private var activePlan: WatchRuntimePlanV3?
   private var activeManifest: WatchPackageManifestV3?
   private var activePreflightResult: WatchRuntimePreflightResult?
+  private var activeProviderSet = "synthetic"
+  private var realHeartRateProvider: HealthKitHeartRateProvider?
+  private var realMotionProvider: CoreMotionProvider?
+  private var realBatteryProvider: RealBatteryProvider?
+  private var realPowerModeProvider: RealPowerModeProvider?
+  private var realCueOutputProvider: RealCueOutputProvider?
+  private var realEpochTimer: Timer?
+  private var realStatusTimer: Timer?
   private let transportCoordinator = WatchTransportCoordinator.shared
   private let baselineRunner: WatchBaselineLoopRunner
   private let autoBaselineController: WatchAutoBaselineController
@@ -135,6 +144,52 @@ final class WatchModeLabViewModel: ObservableObject {
         requiresStartPreflight: true
       )
       statusMessage = "Ran synthetic sleep_log session with preflight, cueing disabled, and sealed a package."
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  func runRealProviderForcedCueSession() {
+    #if targetEnvironment(simulator)
+    runSyntheticForcedCueFallbackSession()
+    #else
+    Task { @MainActor in
+      await startDeviceRealProviderForcedCueSession()
+    }
+    #endif
+  }
+
+  func endRealProviderSessionAndTransfer() {
+    do {
+      guard activeProviderSet == "real",
+        let coordinator,
+        let activePlan,
+        let sessionStore else {
+        statusMessage = "No active real-provider session is running."
+        refreshRows()
+        return
+      }
+
+      invalidateRealProviderTimers()
+      activeManifest = try coordinator.stopAndSeal(reason: .userWake)
+      stopRealProviders()
+
+      if let activeManifest {
+        try currentSessionIndex?.recordSealedPackage(
+          manifest: activeManifest,
+          runtimeState: coordinator.state,
+          updatedAt: Date()
+        )
+        try transferSealedPackage(
+          manifest: activeManifest,
+          sessionStore: sessionStore,
+          runtimeState: coordinator.state,
+          updatedAt: Date()
+        )
+      }
+
+      statusMessage = "Ended real-provider session \(activePlan.sessionId), sealed package, and queued transfer through the frozen transport path."
+      refreshRows()
     } catch {
       handle(error: error)
     }
@@ -488,7 +543,8 @@ final class WatchModeLabViewModel: ObservableObject {
   private func transferSealedPackage(
     manifest: WatchPackageManifestV3,
     sessionStore: WatchSessionDirectoryStore,
-    runtimeState: WatchRuntimeState
+    runtimeState: WatchRuntimeState,
+    updatedAt: Date = WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
   ) throws {
     let package = try WatchTransportPackageBuilder.buildTransferPackage(
       sessionStore: sessionStore,
@@ -501,7 +557,7 @@ final class WatchModeLabViewModel: ObservableObject {
     try currentSessionIndex?.recordSealedPackage(
       manifest: package.manifest,
       runtimeState: runtimeState,
-      updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      updatedAt: updatedAt
     )
     activeManifest = package.manifest
     try transportCoordinator.transferPackage(
@@ -615,11 +671,184 @@ final class WatchModeLabViewModel: ObservableObject {
     refreshRows()
   }
 
+  private func runSyntheticForcedCueFallbackSession() {
+    do {
+      let startDate = WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+      let plan = phaseCForcedCuePlan(
+        sessionId: uniqueSessionId(prefix: "watch-lab-forced-cue-sim"),
+        startedAt: startDate
+      )
+      let nextCoordinator = try makeCoordinator(
+        plan: plan,
+        preflightScenario: .allPass,
+        requiresStartPreflight: true,
+        forcedCueAfterSeconds: TimeInterval(forcedCueAfterMinutes * 60)
+      )
+      activeProviderSet = "synthetic simulator fallback"
+      try nextCoordinator.commit(plan: plan)
+      try currentSessionIndex?.recordCommit(
+        plan: plan,
+        runtimeState: .planCommitted,
+        updatedAt: startDate
+      )
+      try nextCoordinator.startCommittedPlan()
+      try currentSessionIndex?.recordRuntimeState(
+        sessionId: plan.sessionId,
+        runtimeState: nextCoordinator.state,
+        updatedAt: startDate
+      )
+
+      let epochCount = max(
+        1,
+        Int(ceil((Double(forcedCueAfterMinutes * 60) + 60.0) / Double(plan.epoching.epochSeconds)))
+      )
+      try nextCoordinator.runEpochs(epochCount)
+      activeManifest = try nextCoordinator.stopAndSeal(reason: .completed)
+      if let activeManifest {
+        try currentSessionIndex?.recordSealedPackage(
+          manifest: activeManifest,
+          runtimeState: nextCoordinator.state,
+          updatedAt: WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
+        )
+      }
+
+      coordinator = nextCoordinator
+      activePlan = plan
+      activePreflightResult = nextCoordinator.lastPreflightResult
+      sleepShieldViewModel = SleepShieldViewModel(coordinator: nextCoordinator)
+      statusMessage = "Simulator fallback ran a synthetic forced-cue session. Real providers are device-only."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  #if !targetEnvironment(simulator)
+  private func startDeviceRealProviderForcedCueSession() async {
+    do {
+      invalidateRealProviderTimers()
+      stopRealProviders()
+
+      let startDate = Date()
+      let plan = phaseCForcedCuePlan(
+        sessionId: uniqueSessionId(prefix: "watch-lab-real-forced-cue"),
+        startedAt: startDate
+      )
+      let prepared = try makeRealCoordinator(
+        plan: plan,
+        forcedCueAfterSeconds: TimeInterval(forcedCueAfterMinutes * 60)
+      )
+
+      let authorization = try await prepared.heartRateProvider.requestAuthorization()
+      activeProviderSet = "real"
+      activePlan = plan
+      activeManifest = nil
+      activePreflightResult = nil
+      realHeartRateProvider = prepared.heartRateProvider
+      realMotionProvider = prepared.motionProvider
+      realBatteryProvider = prepared.batteryProvider
+      realPowerModeProvider = prepared.powerModeProvider
+      realCueOutputProvider = prepared.cueOutputProvider
+      coordinator = prepared.coordinator
+      sessionStore = prepared.sessionStore
+      currentSessionIndex = prepared.index
+
+      try prepared.heartRateProvider.startWorkoutRuntime(at: startDate)
+      try prepared.motionProvider.start(sampleHz: plan.epoching.motionSampleHz)
+      try prepared.coordinator.commit(plan: plan)
+      try prepared.index.recordCommit(
+        plan: plan,
+        runtimeState: .planCommitted,
+        updatedAt: startDate
+      )
+      try prepared.coordinator.startCommittedPlan()
+      activePreflightResult = prepared.coordinator.lastPreflightResult
+      try prepared.index.recordRuntimeState(
+        sessionId: plan.sessionId,
+        runtimeState: prepared.coordinator.state,
+        updatedAt: Date()
+      )
+
+      startRealProviderTimers(plan: plan)
+      statusMessage = "Started real-provider forced-cue session. HealthKit authorization: \(authorization.rawValue). Forced cue scheduled at +\(forcedCueAfterMinutes) min."
+      refreshRows()
+    } catch {
+      stopRealProviders()
+      handle(error: error)
+    }
+  }
+  #endif
+
+  private func startRealProviderTimers(plan: WatchRuntimePlanV3) {
+    invalidateRealProviderTimers()
+
+    realEpochTimer = Timer.scheduledTimer(
+      withTimeInterval: TimeInterval(plan.epoching.epochSeconds),
+      repeats: true
+    ) { [weak self] _ in
+      Task { @MainActor in
+        self?.stepRealProviderEpoch()
+      }
+    }
+
+    realStatusTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+      Task { @MainActor in
+        self?.refreshRows()
+      }
+    }
+  }
+
+  private func stepRealProviderEpoch() {
+    guard activeProviderSet == "real", let coordinator, let activePlan else {
+      return
+    }
+
+    do {
+      _ = try coordinator.stepEpoch()
+      try currentSessionIndex?.recordRuntimeState(
+        sessionId: activePlan.sessionId,
+        runtimeState: coordinator.state,
+        updatedAt: Date()
+      )
+
+      if let sealedManifest = coordinator.sealedManifest, let sessionStore {
+        activeManifest = sealedManifest
+        invalidateRealProviderTimers()
+        stopRealProviders()
+        try transferSealedPackage(
+          manifest: sealedManifest,
+          sessionStore: sessionStore,
+          runtimeState: coordinator.state,
+          updatedAt: Date()
+        )
+        statusMessage = "Real-provider session safe-sealed and queued transfer through the frozen transport path."
+      }
+
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  private func invalidateRealProviderTimers() {
+    realEpochTimer?.invalidate()
+    realEpochTimer = nil
+    realStatusTimer?.invalidate()
+    realStatusTimer = nil
+  }
+
+  private func stopRealProviders() {
+    realHeartRateProvider?.stopWorkoutRuntime(at: Date())
+    realMotionProvider?.stop()
+  }
+
   private func makeCoordinator(
     plan: WatchRuntimePlanV3,
     preflightScenario: SyntheticPreflightScenario,
-    requiresStartPreflight: Bool = true
+    requiresStartPreflight: Bool = true,
+    forcedCueAfterSeconds: TimeInterval? = nil
   ) throws -> WatchSessionCoordinator {
+    activeProviderSet = "synthetic"
     let startDate = WatchSyntheticRuntimeFixtures.fixtureStartDateForStorage()
     let rootDirectory = try labRootDirectory()
     let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
@@ -646,9 +875,72 @@ final class WatchModeLabViewModel: ObservableObject {
       packageSealer: packageStore,
       logStoreFactory: { _ in try WatchFileBackedLogStore(sessionStore: nextSessionStore) },
       preflightProvider: SyntheticPreflightProvider(scenario: preflightScenario),
-      requiresStartPreflight: requiresStartPreflight
+      requiresStartPreflight: requiresStartPreflight,
+      forcedCueAfterSeconds: forcedCueAfterSeconds
     )
   }
+
+  #if !targetEnvironment(simulator)
+  private func makeRealCoordinator(
+    plan: WatchRuntimePlanV3,
+    forcedCueAfterSeconds: TimeInterval
+  ) throws -> (
+    coordinator: WatchSessionCoordinator,
+    sessionStore: WatchSessionDirectoryStore,
+    index: WatchCurrentSessionIndex,
+    heartRateProvider: HealthKitHeartRateProvider,
+    motionProvider: CoreMotionProvider,
+    batteryProvider: RealBatteryProvider,
+    powerModeProvider: RealPowerModeProvider,
+    cueOutputProvider: RealCueOutputProvider
+  ) {
+    let rootDirectory = try labRootDirectory()
+    let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
+    try index.requireCanStartSession(sessionId: plan.sessionId)
+    let nextSessionStore = try WatchSessionDirectoryStore(
+      rootDirectory: rootDirectory,
+      sessionId: plan.sessionId
+    )
+    let packageStore = WatchPackageStore(sessionStore: nextSessionStore)
+    let heartRateProvider = HealthKitHeartRateProvider()
+    let motionProvider = CoreMotionProvider()
+    let batteryProvider = RealBatteryProvider()
+    let powerModeProvider = RealPowerModeProvider()
+    let cueOutputProvider = RealCueOutputProvider()
+    let coordinator = WatchSessionCoordinator(
+      clock: RealtimeWatchClock(),
+      heartRateProvider: heartRateProvider,
+      motionProvider: motionProvider,
+      batteryProvider: batteryProvider,
+      powerModeProvider: powerModeProvider,
+      cueOutputProvider: cueOutputProvider,
+      packageSealer: packageStore,
+      logStoreFactory: { _ in try WatchFileBackedLogStore(sessionStore: nextSessionStore) },
+      preflightProvider: RealWatchRuntimePreflightProvider(
+        batteryProvider: batteryProvider,
+        powerModeProvider: powerModeProvider,
+        heartRateProvider: heartRateProvider,
+        motionProvider: motionProvider,
+        cueOutputProvider: cueOutputProvider,
+        planCommitted: true,
+        storageAvailable: true
+      ),
+      requiresStartPreflight: true,
+      forcedCueAfterSeconds: forcedCueAfterSeconds
+    )
+
+    return (
+      coordinator,
+      nextSessionStore,
+      index,
+      heartRateProvider,
+      motionProvider,
+      batteryProvider,
+      powerModeProvider,
+      cueOutputProvider
+    )
+  }
+  #endif
 
   private func labRootDirectory() throws -> URL {
     let root = try WatchStoragePaths.defaultRootDirectory()
@@ -668,6 +960,7 @@ final class WatchModeLabViewModel: ObservableObject {
   }
 
   private func refreshRows() {
+    let now = Date()
     let state = coordinator?.state.rawValue ?? "idle"
     let epochCount = coordinator?.epochCount ?? 0
     let manifest = activeManifest ?? coordinator?.sealedManifest
@@ -683,7 +976,8 @@ final class WatchModeLabViewModel: ObservableObject {
     }
 
     var rows = [
-      WatchModeLabStatusRow(id: "scope", label: "scope", value: "synthetic only"),
+      WatchModeLabStatusRow(id: "scope", label: "scope", value: "internal lab only"),
+      WatchModeLabStatusRow(id: "providerSet", label: "provider set", value: activeProviderSet),
       WatchModeLabStatusRow(id: "storage", label: "storage", value: "file-backed JSONL"),
       WatchModeLabStatusRow(id: "session", label: "session", value: activePlan?.sessionId ?? "none"),
       WatchModeLabStatusRow(id: "currentIndexSession", label: "current index", value: currentIndexEntry?.activeSessionId ?? "none"),
@@ -691,6 +985,11 @@ final class WatchModeLabViewModel: ObservableObject {
       WatchModeLabStatusRow(id: "currentIndexUnacked", label: "active/unacked", value: currentIndexEntry?.isActiveUnacked == true ? "yes" : "no"),
       WatchModeLabStatusRow(id: "state", label: "runtime state", value: state),
       WatchModeLabStatusRow(id: "epochs", label: "epoch count", value: "\(epochCount)"),
+      WatchModeLabStatusRow(id: "forcedCue", label: "forced cue", value: "+\(forcedCueAfterMinutes) min"),
+      WatchModeLabStatusRow(id: "cueStatus", label: "cue fired/suppressed", value: latestCueStatusLabel()),
+      WatchModeLabStatusRow(id: "hrFreshness", label: "HR freshness", value: heartRateFreshnessLabel(at: now)),
+      WatchModeLabStatusRow(id: "motionActivity", label: "motion activity", value: motionActivityLabel(at: now)),
+      WatchModeLabStatusRow(id: "realProviderError", label: "real provider error", value: realHeartRateProvider?.lastError ?? "none"),
       WatchModeLabStatusRow(id: "packageId", label: "packageId", value: manifest?.packageId ?? "not sealed"),
       WatchModeLabStatusRow(id: "packageHash", label: "packageHash", value: manifest.map { String($0.packageHash.prefix(24)) } ?? "not sealed"),
       WatchModeLabStatusRow(id: "events", label: "event count", value: manifest.map { "\($0.eventCount)" } ?? "0"),
@@ -744,6 +1043,120 @@ final class WatchModeLabViewModel: ObservableObject {
     ]
   }
 
+  private func phaseCForcedCuePlan(
+    sessionId: String,
+    startedAt: Date
+  ) -> WatchRuntimePlanV3 {
+    let createdAt = WatchRuntimeDateFormat.string(from: startedAt)
+    let latestCueAt = WatchRuntimeDateFormat.string(
+      from: startedAt.addingTimeInterval(12 * 60 * 60)
+    )
+    let cueHash = "a4e2932b7e4e76a837b2c4d011dcba508c5f6d7d496698180bfa109a5c6749be"
+    let classifierVersion = "lucidtlr-rem-v0-2026-06"
+
+    return WatchRuntimePlanV3(
+      schemaVersion: WatchRuntimePlanV3Schema.schemaVersion,
+      sessionId: sessionId,
+      participantId: "internal-lab-phase-c",
+      sessionType: "tlr",
+      mode: "watch",
+      createdAt: createdAt,
+      protocolVersion: "tlr-protocol-v3-phase-c-lab",
+      watchPolicyVersion: "watch-policy-v3-phase-c-real-provider-lab-2026-06-10",
+      remModelVersion: classifierVersion,
+      planHash: WatchRuntimeStructuralHash.placeholderHex("phase-c-forced|\(sessionId)|\(createdAt)"),
+      selectedCueId: "harp-flourish",
+      cue: WatchRuntimeCueV3(
+        cueId: "harp-flourish",
+        assetId: "harp-flourish",
+        resourceName: "harp_flourish",
+        resourceExtension: "mp3",
+        durationSeconds: 2.48975,
+        sha256: cueHash
+      ),
+      cueOutput: WatchRuntimeCueOutputV3(
+        hapticEnabled: true,
+        audioEnabled: true,
+        audioRequiresPreflight: true,
+        preflightRequired: true,
+        defaultOutput: "haptic"
+      ),
+      training: WatchRuntimeTrainingV3(
+        enabled: false,
+        skipped: true,
+        audioResourceName: "",
+        audioResourceExtension: "mp3",
+        durationSeconds: 0,
+        cueSchedule: [],
+        sha256: ""
+      ),
+      tlrInterval: WatchRuntimeTlrIntervalV3(
+        enabled: true,
+        earliestCueAt: createdAt,
+        latestCueAt: latestCueAt,
+        derivedFrom: "watch_training_completed_at_plus_protocol_delay"
+      ),
+      epoching: WatchRuntimeEpochingV3(
+        epochSeconds: 30,
+        motionSampleHz: 1,
+        rawMotionPersistence: false
+      ),
+      remPolicy: WatchRuntimeRemPolicyV3(
+        classifierVersion: classifierVersion,
+        threshold: 0.7,
+        persistenceRule: "2_of_last_3",
+        minimumSleepProbability: 0.6,
+        sensorQualityRequired: "good"
+      ),
+      movement: WatchRuntimeMovementV3(
+        stableLowMovementRequiredSeconds: 60,
+        largeMovementThreshold: 0.75,
+        cueAssociatedMovementWindowSeconds: 45,
+        cueAssociatedMovementPauseSeconds: 180,
+        userInteractionSuppressionSeconds: 90
+      ),
+      budget: WatchRuntimeBudgetV3(
+        maxCuesTonight: 1,
+        minimumSecondsSinceLastCue: 180
+      ),
+      safety: WatchRuntimeSafetyV3(
+        requireWorkoutSession: true,
+        requireHealthKitAuthorization: true,
+        requireMotion: true,
+        requireLowPowerModeOff: true,
+        minimumStartBatteryLevel: 0.35,
+        lowBatteryWarningLevel: 0.25,
+        safeSealBatteryLevel: 0.18,
+        emergencyStopBatteryLevel: 0.1
+      ),
+      assets: [
+        WatchRuntimeAssetV3(
+          id: "harp-flourish",
+          kind: "cue",
+          fileName: "harp_flourish.mp3",
+          resourceName: "harp_flourish",
+          resourceExtension: "mp3",
+          sha256: cueHash,
+          byteLength: 20_588
+        ),
+      ],
+      model: WatchRuntimeModelV3(
+        modelId: "lucidtlr-watch-rem-informed-v0",
+        modelVersion: classifierVersion,
+        sha256: nil,
+        evaluatorType: "deterministic-swift"
+      ),
+      privacy: WatchRuntimePrivacyV3(
+        noGps: true,
+        noSensorKit: true,
+        noLiveAppleSleepStages: true,
+        noSpO2: true,
+        noRespiratoryRate: true,
+        noWristTemperature: true
+      )
+    )
+  }
+
   private func preflightPreviewPlan(
     prefix: String,
     scenario: SyntheticPreflightScenario
@@ -757,6 +1170,44 @@ final class WatchModeLabViewModel: ObservableObject {
     }
 
     return plan
+  }
+
+  private func latestCueStatusLabel() -> String {
+    if let cue = coordinator?.logStore?.cueRecords.last {
+      if cue.delivered {
+        return "fired \(cue.outputChannel)"
+      }
+
+      return "failed \(cue.failureReason ?? "unknown")"
+    }
+
+    let reason = coordinator?.latestCueDecisionReason ?? "not_started"
+    return reason == "not_started" ? "not scheduled" : "suppressed \(reason)"
+  }
+
+  private func heartRateFreshnessLabel(at date: Date) -> String {
+    guard let provider = realHeartRateProvider else {
+      return "n/a"
+    }
+
+    let bpm = provider.latestBeatsPerMinute.map { "\(Int($0.rounded())) bpm" } ?? "no bpm"
+    let freshness = provider.lastSampleFreshnessSeconds(at: date).map {
+      "\(Int($0.rounded()))s old"
+    } ?? "no samples"
+
+    return "\(bpm), \(freshness), workout \(provider.workoutState)"
+  }
+
+  private func motionActivityLabel(at date: Date) -> String {
+    guard let provider = realMotionProvider else {
+      return "n/a"
+    }
+
+    let freshness = provider.lastSampleFreshnessSeconds(at: date).map {
+      "\(Int($0.rounded()))s old"
+    } ?? "no samples"
+
+    return String(format: "%.3f, %@", provider.latestIntensity, freshness)
   }
 
   private func blockingReasonLabel(_ result: WatchRuntimePreflightResult) -> String {

@@ -4,10 +4,8 @@ export const WATCH_RUNTIME_PLAN_SCHEMA_VERSION = "watch-runtime-plan-v3";
 export const WATCH_POLICY_VERSION =
   "watch-policy-v3-workout-backed-2026-06-07";
 export const WATCH_REM_MODEL_ID = "lucidtlr-watch-rem-informed-v3";
-export const WATCH_REM_MODEL_VERSION =
-  "lucidtlr-watch-rem-informed-v3-contract-2026-06-07";
-export const WATCH_REM_CLASSIFIER_VERSION =
-  "lucidtlr-rem-probability-v3-contract";
+export const WATCH_REM_MODEL_VERSION = "lucidtlr-rem-v0-2026-06";
+export const WATCH_REM_CLASSIFIER_VERSION = "lucidtlr-rem-v0-2026-06";
 
 export type WatchRuntimePlanSchemaVersion =
   typeof WATCH_RUNTIME_PLAN_SCHEMA_VERSION;
