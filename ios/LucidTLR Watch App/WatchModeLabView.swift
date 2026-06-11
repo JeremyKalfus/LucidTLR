@@ -49,13 +49,21 @@ struct WatchModeLabView: View {
         Stepper(
           value: Binding(
             get: { viewModel.forcedCueAfterMinutes },
-            set: { viewModel.forcedCueAfterMinutes = $0 }
+            set: { viewModel.setForcedCueAfterMinutes($0) }
           ),
           in: 1...90,
           step: 1
         ) {
-          Text("forced cue +\(viewModel.forcedCueAfterMinutes) min")
+          Text("forced cue offset +\(viewModel.forcedCueAfterMinutes) min")
         }
+        .font(.caption2)
+        Toggle(
+          "apply forced cue (+\(viewModel.forcedCueAfterMinutes) min) to next real session",
+          isOn: Binding(
+            get: { viewModel.applyForcedCueToNextRealSession },
+            set: { viewModel.setApplyForcedCueToNextRealSession($0) }
+          )
+        )
         .font(.caption2)
         Button("Run real-provider session (forced cue)") {
           viewModel.runRealProviderForcedCueSession()

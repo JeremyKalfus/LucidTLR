@@ -8,7 +8,9 @@ struct ContentView: View {
     if showingSyntheticLab {
       WatchModeLabView()
     } else {
-      placeholder
+      WatchModeProductView {
+        showingSyntheticLab = true
+      }
     }
     #else
     placeholder

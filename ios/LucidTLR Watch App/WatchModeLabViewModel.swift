@@ -26,6 +26,7 @@ final class WatchModeLabViewModel: ObservableObject {
   ]
   @Published private(set) var selectedPreflightScenario: SyntheticPreflightScenario = .allPass
   @Published var forcedCueAfterMinutes = 10
+  @Published var applyForcedCueToNextRealSession = false
   @Published var sleepShieldViewModel: SleepShieldViewModel?
 
   private var coordinator: WatchSessionCoordinator?
@@ -35,16 +36,11 @@ final class WatchModeLabViewModel: ObservableObject {
   private var activeManifest: WatchPackageManifestV3?
   private var activePreflightResult: WatchRuntimePreflightResult?
   private var activeProviderSet = "synthetic"
-  private var realHeartRateProvider: HealthKitHeartRateProvider?
-  private var realMotionProvider: CoreMotionProvider?
-  private var realBatteryProvider: RealBatteryProvider?
-  private var realPowerModeProvider: RealPowerModeProvider?
-  private var realCueOutputProvider: RealCueOutputProvider?
-  private var realEpochTimer: Timer?
-  private var realStatusTimer: Timer?
   private let transportCoordinator = WatchTransportCoordinator.shared
   private let baselineRunner: WatchBaselineLoopRunner
   private let autoBaselineController: WatchAutoBaselineController
+  private let forcedCueSettings = WatchNightSessionForcedCueSettings.shared
+  private let nightSessionController = WatchNightSessionController.shared
   private var cancellables = Set<AnyCancellable>()
 
   init() {
@@ -52,6 +48,8 @@ final class WatchModeLabViewModel: ObservableObject {
     self.baselineRunner = WatchBaselineLoopRunner()
     self.autoBaselineController = autoBaselineController
     self.autoBaselineEnabled = autoBaselineController.isAutoBaselineEnabled
+    self.applyForcedCueToNextRealSession = forcedCueSettings.applyToNextRealSession
+    self.forcedCueAfterMinutes = forcedCueSettings.minutes
 
     autoBaselineController.$isAutoBaselineEnabled
       .receive(on: DispatchQueue.main)
@@ -64,6 +62,45 @@ final class WatchModeLabViewModel: ObservableObject {
     autoBaselineController.$lastRunSummary
       .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in
+        self?.refreshRows()
+      }
+      .store(in: &cancellables)
+
+    forcedCueSettings.$applyToNextRealSession
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] isEnabled in
+        self?.applyForcedCueToNextRealSession = isEnabled
+        self?.refreshRows()
+      }
+      .store(in: &cancellables)
+
+    forcedCueSettings.$minutes
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] minutes in
+        self?.forcedCueAfterMinutes = minutes
+        self?.refreshRows()
+      }
+      .store(in: &cancellables)
+
+    nightSessionController.$sleepShieldViewModel
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] viewModel in
+        guard self?.activeProviderSet == "real" else {
+          return
+        }
+
+        self?.sleepShieldViewModel = viewModel
+      }
+      .store(in: &cancellables)
+
+    nightSessionController.$statusMessage
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] message in
+        guard self?.activeProviderSet == "real" else {
+          return
+        }
+
+        self?.statusMessage = message
         self?.refreshRows()
       }
       .store(in: &cancellables)
@@ -155,45 +192,28 @@ final class WatchModeLabViewModel: ObservableObject {
     runSyntheticForcedCueFallbackSession()
     #else
     Task { @MainActor in
-      await startDeviceRealProviderForcedCueSession()
+      activeProviderSet = "real"
+      await nightSessionController.startLabForcedCueSession(
+        forcedCueAfterMinutes: forcedCueAfterMinutes
+      )
+      sleepShieldViewModel = nightSessionController.sleepShieldViewModel
+      statusMessage = nightSessionController.statusMessage
+      refreshRows()
     }
     #endif
   }
 
   func endRealProviderSessionAndTransfer() {
-    do {
-      guard activeProviderSet == "real",
-        let coordinator,
-        let activePlan,
-        let sessionStore else {
-        statusMessage = "No active real-provider session is running."
-        refreshRows()
-        return
-      }
-
-      invalidateRealProviderTimers()
-      activeManifest = try coordinator.stopAndSeal(reason: .userWake)
-      stopRealProviders()
-
-      if let activeManifest {
-        try currentSessionIndex?.recordSealedPackage(
-          manifest: activeManifest,
-          runtimeState: coordinator.state,
-          updatedAt: Date()
-        )
-        try transferSealedPackage(
-          manifest: activeManifest,
-          sessionStore: sessionStore,
-          runtimeState: coordinator.state,
-          updatedAt: Date()
-        )
-      }
-
-      statusMessage = "Ended real-provider session \(activePlan.sessionId), sealed package, and queued transfer through the frozen transport path."
+    guard activeProviderSet == "real" else {
+      statusMessage = "No active real-provider session is running."
       refreshRows()
-    } catch {
-      handle(error: error)
+      return
     }
+
+    nightSessionController.endActiveSessionAndTransfer()
+    sleepShieldViewModel = nightSessionController.sleepShieldViewModel
+    statusMessage = nightSessionController.statusMessage
+    refreshRows()
   }
 
   func showPreflight(_ scenario: SyntheticPreflightScenario) {
@@ -488,6 +508,14 @@ final class WatchModeLabViewModel: ObservableObject {
     autoBaselineController.setAutoBaselineEnabled(isEnabled)
   }
 
+  func setApplyForcedCueToNextRealSession(_ isEnabled: Bool) {
+    forcedCueSettings.setApplyToNextRealSession(isEnabled)
+  }
+
+  func setForcedCueAfterMinutes(_ minutes: Int) {
+    forcedCueSettings.setMinutes(minutes)
+  }
+
   func runWatchBaselineTransportLoop() {
     do {
       let result = try baselineRunner.run()
@@ -724,125 +752,6 @@ final class WatchModeLabViewModel: ObservableObject {
     }
   }
 
-  #if !targetEnvironment(simulator)
-  private func startDeviceRealProviderForcedCueSession() async {
-    do {
-      invalidateRealProviderTimers()
-      stopRealProviders()
-
-      let startDate = Date()
-      let plan = phaseCForcedCuePlan(
-        sessionId: uniqueSessionId(prefix: "watch-lab-real-forced-cue"),
-        startedAt: startDate
-      )
-      let prepared = try makeRealCoordinator(
-        plan: plan,
-        forcedCueAfterSeconds: TimeInterval(forcedCueAfterMinutes * 60)
-      )
-
-      let authorization = try await prepared.heartRateProvider.requestAuthorization()
-      activeProviderSet = "real"
-      activePlan = plan
-      activeManifest = nil
-      activePreflightResult = nil
-      realHeartRateProvider = prepared.heartRateProvider
-      realMotionProvider = prepared.motionProvider
-      realBatteryProvider = prepared.batteryProvider
-      realPowerModeProvider = prepared.powerModeProvider
-      realCueOutputProvider = prepared.cueOutputProvider
-      coordinator = prepared.coordinator
-      sessionStore = prepared.sessionStore
-      currentSessionIndex = prepared.index
-
-      try prepared.heartRateProvider.startWorkoutRuntime(at: startDate)
-      try prepared.motionProvider.start(sampleHz: plan.epoching.motionSampleHz)
-      try prepared.coordinator.commit(plan: plan)
-      try prepared.index.recordCommit(
-        plan: plan,
-        runtimeState: .planCommitted,
-        updatedAt: startDate
-      )
-      try prepared.coordinator.startCommittedPlan()
-      activePreflightResult = prepared.coordinator.lastPreflightResult
-      try prepared.index.recordRuntimeState(
-        sessionId: plan.sessionId,
-        runtimeState: prepared.coordinator.state,
-        updatedAt: Date()
-      )
-
-      startRealProviderTimers(plan: plan)
-      statusMessage = "Started real-provider forced-cue session. HealthKit authorization: \(authorization.rawValue). Forced cue scheduled at +\(forcedCueAfterMinutes) min."
-      refreshRows()
-    } catch {
-      stopRealProviders()
-      handle(error: error)
-    }
-  }
-  #endif
-
-  private func startRealProviderTimers(plan: WatchRuntimePlanV3) {
-    invalidateRealProviderTimers()
-
-    realEpochTimer = Timer.scheduledTimer(
-      withTimeInterval: TimeInterval(plan.epoching.epochSeconds),
-      repeats: true
-    ) { [weak self] _ in
-      Task { @MainActor in
-        self?.stepRealProviderEpoch()
-      }
-    }
-
-    realStatusTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-      Task { @MainActor in
-        self?.refreshRows()
-      }
-    }
-  }
-
-  private func stepRealProviderEpoch() {
-    guard activeProviderSet == "real", let coordinator, let activePlan else {
-      return
-    }
-
-    do {
-      _ = try coordinator.stepEpoch()
-      try currentSessionIndex?.recordRuntimeState(
-        sessionId: activePlan.sessionId,
-        runtimeState: coordinator.state,
-        updatedAt: Date()
-      )
-
-      if let sealedManifest = coordinator.sealedManifest, let sessionStore {
-        activeManifest = sealedManifest
-        invalidateRealProviderTimers()
-        stopRealProviders()
-        try transferSealedPackage(
-          manifest: sealedManifest,
-          sessionStore: sessionStore,
-          runtimeState: coordinator.state,
-          updatedAt: Date()
-        )
-        statusMessage = "Real-provider session safe-sealed and queued transfer through the frozen transport path."
-      }
-
-      refreshRows()
-    } catch {
-      handle(error: error)
-    }
-  }
-
-  private func invalidateRealProviderTimers() {
-    realEpochTimer?.invalidate()
-    realEpochTimer = nil
-    realStatusTimer?.invalidate()
-    realStatusTimer = nil
-  }
-
-  private func stopRealProviders() {
-    realHeartRateProvider?.stopWorkoutRuntime(at: Date())
-    realMotionProvider?.stop()
-  }
-
   private func makeCoordinator(
     plan: WatchRuntimePlanV3,
     preflightScenario: SyntheticPreflightScenario,
@@ -880,68 +789,6 @@ final class WatchModeLabViewModel: ObservableObject {
       forcedCueAfterSeconds: forcedCueAfterSeconds
     )
   }
-
-  #if !targetEnvironment(simulator)
-  private func makeRealCoordinator(
-    plan: WatchRuntimePlanV3,
-    forcedCueAfterSeconds: TimeInterval
-  ) throws -> (
-    coordinator: WatchSessionCoordinator,
-    sessionStore: WatchSessionDirectoryStore,
-    index: WatchCurrentSessionIndex,
-    heartRateProvider: HealthKitHeartRateProvider,
-    motionProvider: CoreMotionProvider,
-    batteryProvider: RealBatteryProvider,
-    powerModeProvider: RealPowerModeProvider,
-    cueOutputProvider: RealCueOutputProvider
-  ) {
-    let rootDirectory = try labRootDirectory()
-    let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
-    try index.requireCanStartSession(sessionId: plan.sessionId)
-    let nextSessionStore = try WatchSessionDirectoryStore(
-      rootDirectory: rootDirectory,
-      sessionId: plan.sessionId
-    )
-    let packageStore = WatchPackageStore(sessionStore: nextSessionStore)
-    let heartRateProvider = HealthKitHeartRateProvider()
-    let motionProvider = CoreMotionProvider()
-    let batteryProvider = RealBatteryProvider()
-    let powerModeProvider = RealPowerModeProvider()
-    let cueOutputProvider = RealCueOutputProvider()
-    let coordinator = WatchSessionCoordinator(
-      clock: RealtimeWatchClock(),
-      heartRateProvider: heartRateProvider,
-      motionProvider: motionProvider,
-      batteryProvider: batteryProvider,
-      powerModeProvider: powerModeProvider,
-      cueOutputProvider: cueOutputProvider,
-      packageSealer: packageStore,
-      logStoreFactory: { _ in try WatchFileBackedLogStore(sessionStore: nextSessionStore) },
-      preflightProvider: RealWatchRuntimePreflightProvider(
-        batteryProvider: batteryProvider,
-        powerModeProvider: powerModeProvider,
-        heartRateProvider: heartRateProvider,
-        motionProvider: motionProvider,
-        cueOutputProvider: cueOutputProvider,
-        planCommitted: true,
-        storageAvailable: true
-      ),
-      requiresStartPreflight: true,
-      forcedCueAfterSeconds: forcedCueAfterSeconds
-    )
-
-    return (
-      coordinator,
-      nextSessionStore,
-      index,
-      heartRateProvider,
-      motionProvider,
-      batteryProvider,
-      powerModeProvider,
-      cueOutputProvider
-    )
-  }
-  #endif
 
   private func labRootDirectory() throws -> URL {
     let root = try WatchStoragePaths.defaultRootDirectory()
@@ -985,19 +832,19 @@ final class WatchModeLabViewModel: ObservableObject {
       endRealProviderSessionAndTransfer()
     } else {
       forceSealPackage()
+      sleepShieldViewModel = nil
+      showMenu()
     }
-
-    sleepShieldViewModel = nil
-    showMenu()
   }
 
   private func refreshRows() {
-    let now = Date()
     let state = coordinator?.state.rawValue ?? "idle"
     let epochCount = coordinator?.epochCount ?? 0
     let manifest = activeManifest ?? coordinator?.sealedManifest
     let ackState = ackRetentionState(for: manifest)
-    let preflightResult = activePreflightResult ?? coordinator?.lastPreflightResult
+    let preflightResult: WatchRuntimePreflightResult? = activeProviderSet == "real"
+      ? nil
+      : activePreflightResult ?? coordinator?.lastPreflightResult
     transportCoordinator.refreshStatus()
     let transportStatus = transportCoordinator.status
     let currentIndexEntry: WatchCurrentSessionIndexEntry?
@@ -1018,10 +865,8 @@ final class WatchModeLabViewModel: ObservableObject {
       WatchModeLabStatusRow(id: "state", label: "runtime state", value: state),
       WatchModeLabStatusRow(id: "epochs", label: "epoch count", value: "\(epochCount)"),
       WatchModeLabStatusRow(id: "forcedCue", label: "forced cue", value: "+\(forcedCueAfterMinutes) min"),
+      WatchModeLabStatusRow(id: "forcedCueNextReal", label: "forced cue next real", value: applyForcedCueToNextRealSession ? "on" : "off"),
       WatchModeLabStatusRow(id: "cueStatus", label: "cue fired/suppressed", value: latestCueStatusLabel()),
-      WatchModeLabStatusRow(id: "hrFreshness", label: "HR freshness", value: heartRateFreshnessLabel(at: now)),
-      WatchModeLabStatusRow(id: "motionActivity", label: "motion activity", value: motionActivityLabel(at: now)),
-      WatchModeLabStatusRow(id: "realProviderError", label: "real provider error", value: realHeartRateProvider?.lastError ?? "none"),
       WatchModeLabStatusRow(id: "packageId", label: "packageId", value: manifest?.packageId ?? "not sealed"),
       WatchModeLabStatusRow(id: "packageHash", label: "packageHash", value: manifest.map { String($0.packageHash.prefix(24)) } ?? "not sealed"),
       WatchModeLabStatusRow(id: "events", label: "event count", value: manifest.map { "\($0.eventCount)" } ?? "0"),
@@ -1047,6 +892,16 @@ final class WatchModeLabViewModel: ObservableObject {
       WatchModeLabStatusRow(id: "transportDuplicateIgnoredCount", label: "dupes ignored", value: "\(transportStatus.duplicateIgnoredCount)"),
       WatchModeLabStatusRow(id: "public", label: "public Watch Mode", value: "disabled"),
     ]
+
+    if activeProviderSet == "real" {
+      rows.append(contentsOf: nightSessionController.statusRows.map { row in
+        WatchModeLabStatusRow(
+          id: "night-\(row.id)",
+          label: row.label,
+          value: row.value
+        )
+      })
+    }
 
     if let preflightResult {
       rows.append(contentsOf: preflightRows(from: preflightResult))
@@ -1205,6 +1060,12 @@ final class WatchModeLabViewModel: ObservableObject {
   }
 
   private func latestCueStatusLabel() -> String {
+    if activeProviderSet == "real" {
+      return nightSessionController.statusRows
+        .first { $0.id == "cueStatus" }?
+        .value ?? "not scheduled"
+    }
+
     if let cue = coordinator?.logStore?.cueRecords.last {
       if cue.delivered {
         return "fired \(cue.outputChannel)"
@@ -1215,31 +1076,6 @@ final class WatchModeLabViewModel: ObservableObject {
 
     let reason = coordinator?.latestCueDecisionReason ?? "not_started"
     return reason == "not_started" ? "not scheduled" : "suppressed \(reason)"
-  }
-
-  private func heartRateFreshnessLabel(at date: Date) -> String {
-    guard let provider = realHeartRateProvider else {
-      return "n/a"
-    }
-
-    let bpm = provider.latestBeatsPerMinute.map { "\(Int($0.rounded())) bpm" } ?? "no bpm"
-    let freshness = provider.lastSampleFreshnessSeconds(at: date).map {
-      "\(Int($0.rounded()))s old"
-    } ?? "no samples"
-
-    return "\(bpm), \(freshness), workout \(provider.workoutState)"
-  }
-
-  private func motionActivityLabel(at date: Date) -> String {
-    guard let provider = realMotionProvider else {
-      return "n/a"
-    }
-
-    let freshness = provider.lastSampleFreshnessSeconds(at: date).map {
-      "\(Int($0.rounded()))s old"
-    } ?? "no samples"
-
-    return String(format: "%.3f, %@", provider.latestIntensity, freshness)
   }
 
   private func blockingReasonLabel(_ result: WatchRuntimePreflightResult) -> String {

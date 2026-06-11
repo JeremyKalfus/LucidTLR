@@ -53,6 +53,12 @@ final class WatchAutoBaselineController: ObservableObject {
   }
 
   private func runForNewStagedPlan(_ stagedPlan: WatchTransportStagedPlan) {
+    guard WatchNightSessionController.isSyntheticLabPlan(stagedPlan.plan) else {
+      WatchNightSessionController.shared.startProductSession(stagedPlan)
+      lastRunSummary = "\(stagedPlan.sessionId): routed real product plan"
+      return
+    }
+
     guard isAutoBaselineEnabled else {
       lastRunSummary = "\(stagedPlan.sessionId): disabled"
       return

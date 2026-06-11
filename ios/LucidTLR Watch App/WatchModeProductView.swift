@@ -1,0 +1,94 @@
+#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB
+import SwiftUI
+
+struct WatchModeProductView: View {
+  @ObservedObject private var controller = WatchNightSessionController.shared
+  let onShowLab: () -> Void
+
+  var body: some View {
+    switch controller.surface {
+    case .waitingForPlan:
+      waitingForPlan
+    case .blocked:
+      statusSurface(title: "Start blocked")
+    case .sleepShield:
+      if let sleepShieldViewModel = controller.sleepShieldViewModel {
+        SleepShieldView(viewModel: sleepShieldViewModel)
+      } else {
+        statusSurface(title: "Watch Mode running")
+      }
+    case .syncPending:
+      statusSurface(title: "Sync pending")
+    }
+  }
+
+  private var waitingForPlan: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Waiting for plan from phone")
+          .font(.caption)
+          .fontWeight(.semibold)
+          .accessibilityAddTraits(.isHeader)
+
+        WatchModeBedtimeInstructionsView()
+
+        Button("Internal Lab") {
+          onShowLab()
+        }
+        .font(.caption2)
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+    }
+    .background(Color.black.ignoresSafeArea())
+    .onAppear {
+      controller.refreshProductSurface()
+    }
+  }
+
+  private func statusSurface(title: String) -> some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 7) {
+        Text(title)
+          .font(.caption)
+          .fontWeight(.semibold)
+          .accessibilityAddTraits(.isHeader)
+
+        Text(controller.statusMessage)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+
+        ForEach(controller.statusRows) { row in
+          VStack(alignment: .leading, spacing: 1) {
+            Text(row.label)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+            Text(row.value)
+              .font(.caption2)
+              .lineLimit(2)
+              .minimumScaleFactor(0.7)
+          }
+        }
+
+        Button("Internal Lab") {
+          onShowLab()
+        }
+        .font(.caption2)
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+    }
+    .background(Color.black.ignoresSafeArea())
+    .onAppear {
+      controller.refreshProductSurface()
+    }
+  }
+}
+
+struct WatchModeProductView_Previews: PreviewProvider {
+  static var previews: some View {
+    WatchModeProductView(onShowLab: {})
+  }
+}
+#endif
