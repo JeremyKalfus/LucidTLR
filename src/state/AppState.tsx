@@ -127,6 +127,7 @@ interface AppStateValue {
   completeOnboarding: () => Promise<void>;
   resetAppData: () => Promise<void>;
   startSession: (sessionType: SessionType) => NightSession;
+  selectSessionForMorningReview: (sessionId: string) => Promise<NightSession | null>;
   deleteSession: (sessionId: string) => Promise<void>;
   sendSessionEvent: (
     event: SessionEvent,
@@ -975,6 +976,36 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [participantId, selectedMode, tlrOptions.selectedCueId],
   );
 
+  const selectSessionForMorningReview = React.useCallback(
+    async (sessionId: string) => {
+      const db = await getLocalDb();
+      const sessions = await loadLocalSessions({
+        db,
+        participantId,
+      });
+      const session = sessions.find((candidate) => candidate.id === sessionId) ?? null;
+
+      if (!session) {
+        return null;
+      }
+
+      setActiveSession(session);
+      setSessionHistory((current) => {
+        const next = [
+          session,
+          ...current.filter((candidate) => candidate.id !== session.id),
+        ];
+
+        return next.sort(
+          (a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt),
+        );
+      });
+
+      return session;
+    },
+    [participantId],
+  );
+
   const deleteSession = React.useCallback(
     async (sessionId: string) => {
       const db = await getLocalDb();
@@ -1213,6 +1244,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       completeOnboarding,
       resetAppData,
       startSession,
+      selectSessionForMorningReview,
       deleteSession,
       sendSessionEvent,
       addJournalEntry,
@@ -1240,6 +1272,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       reloadLocalData,
       resetAppData,
       selectedMode,
+      selectSessionForMorningReview,
       sendSessionEvent,
       setOnboardingAnswer,
       setSleepHistoryEnabled,

@@ -90,6 +90,9 @@ describe("Watch Mode v3 sleep shield architecture", () => {
     const labViewModel = readSource(
       "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
     );
+    const nightSessionController = readSource(
+      "ios/LucidTLR Watch App/WatchNightSessionController.swift",
+    );
 
     // The coordinator-only convenience initializer's default wake action
     // sealed without ending providers, recording/transferring the package, or
@@ -100,8 +103,8 @@ describe("Watch Mode v3 sleep shield architecture", () => {
       "wakeAction: { _ = try? coordinator.stopAndSeal",
     );
 
-    // Every lab shield assignment goes through the factory, never the
-    // designated initializer directly.
+    // Every lab-created synthetic shield assignment goes through the factory,
+    // and real-session shields come only from the shared controller.
     const assignments = labViewModel
       .split("\n")
       .filter((line) => line.includes("sleepShieldViewModel ="));
@@ -109,6 +112,51 @@ describe("Watch Mode v3 sleep shield architecture", () => {
     for (const line of assignments) {
       const trimmed = line.trim();
       if (trimmed === "sleepShieldViewModel = nil") {
+        continue;
+      }
+      expect(
+        trimmed.includes(
+          "sleepShieldViewModel = makeSleepShieldViewModel(coordinator:",
+        ) ||
+          trimmed.includes(
+            "sleepShieldViewModel = nightSessionController.sleepShieldViewModel",
+          ) ||
+          trimmed.includes("self?.sleepShieldViewModel = viewModel"),
+      ).toBe(true);
+    }
+
+    expect(nightSessionController).toContain(
+      "sleepShieldViewModel = makeSleepShieldViewModel(coordinator:",
+    );
+    const controllerFactory = nightSessionController.slice(
+      nightSessionController.indexOf(
+        "private func makeSleepShieldViewModel(coordinator:",
+      ),
+      nightSessionController.indexOf("private func refreshRows()"),
+    );
+    expect(controllerFactory).toContain("endActiveSessionAndTransfer()");
+    const controllerEndPath = nightSessionController.slice(
+      nightSessionController.indexOf("func endActiveSessionAndTransfer()"),
+      nightSessionController.indexOf("#if !targetEnvironment(simulator)"),
+    );
+    expect(controllerEndPath).toContain("coordinator.stopAndSeal(reason: .userWake)");
+    expect(controllerEndPath).toContain("stopRealProviders()");
+    expect(controllerEndPath).toContain("recordSealedPackage");
+    expect(controllerEndPath).toContain("transferSealedPackage");
+    expect(controllerEndPath).toContain("sleepShieldViewModel = nil");
+
+    const directControllerAssignments = nightSessionController
+      .split("\n")
+      .filter((line) => line.includes("sleepShieldViewModel ="));
+    for (const line of directControllerAssignments) {
+      const trimmed = line.trim();
+      if (
+        trimmed === "sleepShieldViewModel = nil" ||
+        trimmed.includes(
+          "sleepShieldViewModel = makeSleepShieldViewModel(coordinator:",
+        ) ||
+        trimmed.includes("sleepShieldViewModel = SleepShieldViewModel(")
+      ) {
         continue;
       }
       expect(trimmed).toContain(

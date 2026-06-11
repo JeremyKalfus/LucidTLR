@@ -588,8 +588,13 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     );
     expect(controller).toContain("isAutoBaselineEnabled = true");
     expect(controller).toContain("coordinator.onNewStagedPlan");
+    expect(controller).toContain("WatchNightSessionController.isSyntheticLabPlan");
+    expect(controller).toContain("WatchNightSessionController.shared.startProductSession");
     expect(controller).toContain("isRunning");
     expect(controller).toContain("runner.run()");
+    expect(controller.indexOf("WatchNightSessionController.isSyntheticLabPlan")).toBeLessThan(
+      controller.indexOf("runner.run()"),
+    );
     expect(app).toContain("WatchAutoBaselineController.shared.start()");
     expect(runner).toContain("WatchBaselineLoopRunner");
     expect(runner).toContain("retransferredExistingPackage");
@@ -877,8 +882,11 @@ describe("Watch Mode v3 synthetic WatchConnectivity transport lab", () => {
     expect(contentView).toContain(
       "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
     );
+    expect(home).toContain("isWatchModeProductFlowAvailable()");
+    expect(home).toContain('startWatchModeProductFlow("tlr")');
+    expect(home).toContain('startWatchModeProductFlow("sleep_log")');
     expect(publicScreens).not.toContain("@/src/native/watchTransport");
     expect(publicScreens).not.toContain("WatchTransportCoordinator");
-    expect(publicScreens).not.toContain("startWatch");
+    expect(publicScreens).not.toContain("watchTransport.");
   });
 });

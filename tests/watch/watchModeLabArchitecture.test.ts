@@ -17,6 +17,8 @@ function fileExists(relativePath: string): boolean {
 const watchLabSwiftFiles = [
   "ios/LucidTLR Watch App/WatchModeLabView.swift",
   "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
+  "ios/LucidTLR Watch App/WatchModeProductView.swift",
+  "ios/LucidTLR Watch App/WatchNightSessionController.swift",
 ];
 
 const realProviderSwiftFiles = [
@@ -97,6 +99,7 @@ describe("Watch Mode v3 hidden lab architecture", () => {
     expect(combined).toContain("SyntheticBatteryProvider");
     expect(combined).toContain("SyntheticCueOutputProvider");
     expect(combined).toContain("Run real-provider session (forced cue)");
+    expect(combined).toContain("apply forced cue");
     expect(combined).toContain("HealthKitHeartRateProvider");
     expect(combined).toContain("CoreMotionProvider");
     expect(combined).toContain("RealCueOutputProvider");
@@ -155,7 +158,7 @@ describe("Watch Mode v3 hidden lab architecture", () => {
     ];
     const allowedCombined = [
       ...realProviderSwiftFiles,
-      "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
+      "ios/LucidTLR Watch App/WatchNightSessionController.swift",
     ].map(readSource).join("\n");
     const forbiddenCombined = [
       "src/screens/HomeScreen.tsx",
@@ -170,6 +173,8 @@ describe("Watch Mode v3 hidden lab architecture", () => {
       "ios/LucidTLR/LucidTLRWatchTransport.swift",
       "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
       "ios/LucidTLR Watch App/ContentView.swift",
+      "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
+      "ios/LucidTLR Watch App/WatchModeProductView.swift",
     ].map(readSource).join("\n");
 
     for (const token of providerTokens) {
@@ -178,7 +183,7 @@ describe("Watch Mode v3 hidden lab architecture", () => {
     }
   });
 
-  it("gates the Watch lab behind debug while keeping the placeholder default", () => {
+  it("gates the Watch product and lab surfaces behind debug while keeping the public placeholder", () => {
     const contentView = readSource("ios/LucidTLR Watch App/ContentView.swift");
 
     expect(contentView).toContain("Watch Mode is being rebuilt.");
@@ -186,13 +191,15 @@ describe("Watch Mode v3 hidden lab architecture", () => {
     expect(contentView).toContain(
       "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
     );
+    expect(contentView).toContain("WatchModeProductView");
     expect(contentView).toContain("WatchModeLabView()");
-    expect(contentView).toContain("Internal Lab");
+    expect(contentView).toContain("#else");
+    expect(contentView).toContain("placeholder");
     expect(
       contentView.indexOf(
         "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
       ),
-    ).toBeLessThan(contentView.indexOf("WatchModeLabView()"));
+    ).toBeLessThan(contentView.indexOf("WatchModeProductView"));
   });
 
   it("documents the hidden lab as public-disabled with Phase C real providers gated", () => {
@@ -220,11 +227,18 @@ describe("Watch Mode v3 hidden lab architecture", () => {
 
     expect(availability).toContain("WATCH_MODE_ENABLED = false");
     expect(home).toContain("WATCH_MODE_DISABLED_MESSAGE");
+    const productFlow = readSource("src/features/watchMode/watchModeProductFlow.ts");
+
     expect(appState).toContain("throw new Error(WATCH_MODE_DISABLED_MESSAGE)");
+    expect(productFlow).toContain("isWatchModeLabAvailable()");
+    expect(productFlow).toContain("WATCH_MODE_PRODUCT_SOURCE = \"phone_watch_mode_v3\"");
+    expect(home).toContain("isWatchModeProductFlowAvailable()");
+    expect(home).toContain('startWatchModeProductFlow("tlr")');
+    expect(home).toContain('startWatchModeProductFlow("sleep_log")');
     expect(publicScreens).not.toContain("@/src/native/watchRuntime");
     expect(publicScreens).not.toContain("@/src/features/watchModeLab/watchModeLab");
     expect(publicScreens).not.toContain("WatchSessionCoordinator");
-    expect(publicScreens).not.toContain("startWatch");
+    expect(publicScreens).not.toContain("watchTransport.");
   });
 
   it("does not introduce WatchConnectivity or native bridge files", () => {

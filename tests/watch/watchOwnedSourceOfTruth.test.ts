@@ -27,12 +27,15 @@ describe("Watch Mode disabled placeholder source of truth", () => {
     expect(source).toContain("planned option");
   });
 
-  it("keeps Watch Mode visible on Home but blocks session creation", () => {
+  it("keeps Watch Mode visible on Home while public builds still block session creation", () => {
     const home = readSource("src/screens/HomeScreen.tsx");
 
     expect(home).toContain('selectedMode === "watch"');
     expect(home).toContain("WATCH_MODE_DISABLED_MESSAGE");
     expect(home).toContain("showWatchDisabledMessage()");
+    expect(home).toContain("isWatchModeProductFlowAvailable()");
+    expect(home).toContain('startWatchModeProductFlow("tlr")');
+    expect(home).toContain('startWatchModeProductFlow("sleep_log")');
     expect(home).not.toContain('selectedMode === "watch") {\n      startSession("tlr")');
     expect(home).not.toContain('selectedMode === "watch") {\n      startSession("sleep_log")');
   });
@@ -78,7 +81,7 @@ describe("Watch Mode disabled placeholder source of truth", () => {
     expect(fileExists(legacyName("ios/LucidTLR/LucidTLR", "WatchRuntimeBridge.m"))).toBe(false);
   });
 
-  it("keeps the Watch app as a placeholder target", () => {
+  it("keeps the public Watch app as a placeholder target", () => {
     const watchFiles = readdirSync(path.join(repoRoot, "ios/LucidTLR Watch App"));
     const contentView = readSource("ios/LucidTLR Watch App/ContentView.swift");
     const watchApp = readSource("ios/LucidTLR Watch App/LucidTLRWatchApp.swift");
@@ -86,6 +89,8 @@ describe("Watch Mode disabled placeholder source of truth", () => {
     expect(watchFiles).not.toContain(legacyName("WatchSession", "Manager.swift"));
     expect(contentView).toContain("LucidTLR Watch");
     expect(contentView).toContain("Watch Mode is being rebuilt");
+    expect(contentView).toContain("#else");
+    expect(contentView).toContain("placeholder");
     expect(watchApp).toContain("LucidTLRWatchApp");
     expect(contentView).not.toContain("WatchConnectivity");
     expect(contentView).not.toContain("HealthKit");

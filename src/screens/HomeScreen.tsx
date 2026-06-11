@@ -26,11 +26,16 @@ import {
   WATCH_MODE_DISABLED_TITLE,
 } from "@/src/features/watchMode/watchModeAvailability";
 import {
+  isWatchModeProductFlowAvailable,
+  startWatchModeProductSession,
+} from "@/src/features/watchMode/watchModeProductFlow";
+import {
   phoneRuntime,
   type NativePhoneRuntimeEvent,
 } from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
 import { colors, spacing, typography } from "@/src/theme/tokens";
+import type { SessionType } from "@/src/domain/types";
 
 const labelToCardGap = 6;
 const actionRowGap = 10;
@@ -125,8 +130,11 @@ export function HomeScreen() {
     cueId: string;
     requestedAt: number;
   } | null>(null);
+  const [isStartingWatchMode, setIsStartingWatchMode] = React.useState(false);
   const {
     engineSettings,
+    participantId,
+    reloadLocalData,
     selectedMode,
     sessionHistory,
     setSelectedMode,
@@ -156,27 +164,81 @@ export function HomeScreen() {
 
     Alert.alert(WATCH_MODE_DISABLED_TITLE, WATCH_MODE_DISABLED_MESSAGE);
   }, []);
+  const startWatchModeProductFlow = React.useCallback(
+    async (sessionType: SessionType) => {
+      setIsStartingWatchMode(true);
+
+      try {
+        const db = await getLocalDb();
+
+        await startWatchModeProductSession({
+          db,
+          participantId,
+          sessionType,
+          selectedCueId: tlrOptions.selectedCueId,
+          tlrOptions,
+          engineSettings,
+        });
+        await reloadLocalData();
+        router.replace("/watch-mode-running");
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Watch Mode could not start.";
+
+        if (process.env.EXPO_OS === "web") {
+          console.info(`Watch Mode start failed: ${message}`);
+        } else {
+          Alert.alert("Watch Mode start failed", message);
+        }
+      } finally {
+        setIsStartingWatchMode(false);
+      }
+    },
+    [engineSettings, participantId, reloadLocalData, tlrOptions],
+  );
   const [lastSleepLogs, setLastSleepLogs] = React.useState<
     NativePhoneRuntimeEvent[]
   >([]);
   const handleBeginTlr = React.useCallback(() => {
     if (selectedMode === "watch") {
-      showWatchDisabledMessage();
+      if (!isWatchModeProductFlowAvailable()) {
+        showWatchDisabledMessage();
+        return;
+      }
+
+      void startWatchModeProductFlow("tlr");
       return;
     }
 
     startSession("tlr");
     router.push("/presleep-training");
-  }, [selectedMode, showWatchDisabledMessage, startSession]);
+  }, [
+    selectedMode,
+    showWatchDisabledMessage,
+    startSession,
+    startWatchModeProductFlow,
+  ]);
   const handleNoTlr = React.useCallback(() => {
     if (selectedMode === "watch") {
-      showWatchDisabledMessage();
+      if (!isWatchModeProductFlowAvailable()) {
+        showWatchDisabledMessage();
+        return;
+      }
+
+      void startWatchModeProductFlow("sleep_log");
       return;
     }
 
     startSession("sleep_log");
     router.push("/active-night-session");
-  }, [selectedMode, showWatchDisabledMessage, startSession]);
+  }, [
+    selectedMode,
+    showWatchDisabledMessage,
+    startSession,
+    startWatchModeProductFlow,
+  ]);
   const handleTlrOptionsChange = React.useCallback(
     (patch: TlrOptionsPatch) => {
       void updateTlrOptions(patch);
@@ -341,7 +403,9 @@ export function HomeScreen() {
                   lineHeight: typography.label.lineHeight,
                 }}
               >
-                {WATCH_MODE_DISABLED_MESSAGE}
+                {isWatchModeProductFlowAvailable()
+                  ? "Internal lab build: Watch Mode starts the gated validation flow. Public builds remain disabled."
+                  : WATCH_MODE_DISABLED_MESSAGE}
               </Text>
             </View>
           ) : null}
@@ -352,6 +416,7 @@ export function HomeScreen() {
         <PrimaryPillButton
           icon={Sparkles}
           label="Begin TLR"
+          disabled={isStartingWatchMode}
           onPress={() => {
             handleBeginTlr();
           }}
@@ -367,6 +432,7 @@ export function HomeScreen() {
             flex={1}
             icon={Moon}
             label="No TLR"
+            disabled={isStartingWatchMode}
             onPress={() => {
               handleNoTlr();
             }}

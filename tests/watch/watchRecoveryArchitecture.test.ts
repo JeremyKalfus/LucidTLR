@@ -155,9 +155,12 @@ describe("Watch Mode v3 recovery and internal lab architecture", () => {
     expect(availability).toContain("WATCH_MODE_ENABLED = false");
     expect(home).toContain("WATCH_MODE_DISABLED_MESSAGE");
     expect(appState).toContain("throw new Error(WATCH_MODE_DISABLED_MESSAGE)");
+    expect(home).toContain("isWatchModeProductFlowAvailable()");
+    expect(home).toContain('startWatchModeProductFlow("tlr")');
+    expect(home).toContain('startWatchModeProductFlow("sleep_log")');
     expect(publicScreens).not.toContain("@/src/features/watchModeLab/watchModeLab");
     expect(publicScreens).not.toContain("@/src/native/watchRuntime");
-    expect(publicScreens).not.toContain("startWatch");
+    expect(publicScreens).not.toContain("watchTransport.");
   });
 
   it("does not add Watch transport, real Watch sensors, native bridge, or upload behavior", () => {

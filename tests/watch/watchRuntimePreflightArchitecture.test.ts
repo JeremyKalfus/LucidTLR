@@ -180,10 +180,13 @@ describe("Watch Mode v3 preflight architecture", () => {
     expect(availability).toContain("WATCH_MODE_ENABLED = false");
     expect(home).toContain("WATCH_MODE_DISABLED_MESSAGE");
     expect(appState).toContain("throw new Error(WATCH_MODE_DISABLED_MESSAGE)");
+    expect(home).toContain("isWatchModeProductFlowAvailable()");
+    expect(home).toContain('startWatchModeProductFlow("tlr")');
+    expect(home).toContain('startWatchModeProductFlow("sleep_log")');
     expect(publicScreens).not.toContain("@/src/native/watchRuntime");
     expect(publicScreens).not.toContain("WatchRuntimeStartGate");
     expect(publicScreens).not.toContain("WatchRuntimePreflight");
-    expect(publicScreens).not.toContain("startWatch");
+    expect(publicScreens).not.toContain("watchTransport.");
   });
 
   it("does not introduce transport or a phone-side native Watch bridge", () => {

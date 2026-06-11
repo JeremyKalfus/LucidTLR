@@ -52,11 +52,16 @@ const watchCoordinator = read("ios/LucidTLR Watch App/Connectivity/WatchTranspor
 const watchMessages = read("ios/LucidTLR Watch App/Connectivity/WatchTransportMessages.swift");
 const watchBaselineRunner = read("ios/LucidTLR Watch App/WatchBaselineLoopRunner.swift");
 const watchAutoBaselineController = read("ios/LucidTLR Watch App/WatchAutoBaselineController.swift");
+const watchNightSessionController = read("ios/LucidTLR Watch App/WatchNightSessionController.swift");
+const watchModeProductView = read("ios/LucidTLR Watch App/WatchModeProductView.swift");
 const project = read("ios/LucidTLR.xcodeproj/project.pbxproj");
 const home = read("src/screens/HomeScreen.tsx");
 const appState = read("src/state/AppState.tsx");
 const importer = read("src/features/watchHistory/importWatchPackage.ts");
 const transportLab = read("src/features/watchModeLab/watchModeTransportLab.ts");
+const productFlow = read("src/features/watchMode/watchModeProductFlow.ts");
+const runningScreen = read("src/screens/WatchModeRunningScreen.tsx");
+const mainLayout = read("app/(main)/_layout.tsx");
 const nativeWatchTransportTypes = read("src/native/watchTransport/NativeWatchTransportTypes.ts");
 const phoneBridge = read("ios/LucidTLR/LucidTLRWatchTransport.swift");
 const packageJson = readJson("package.json");
@@ -128,13 +133,17 @@ check(
     watchLabScreen.includes("Public Watch Mode remains disabled"),
 );
 check(
-  "Watch ContentView gates lab behind DEBUG or internal TestFlight flag",
+  "Watch ContentView gates product/lab behind DEBUG or internal TestFlight flag and keeps public placeholder",
   contentView.includes(
     "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
-  ) && contentView.includes("#else") && contentView.includes("placeholder"),
+  ) &&
+    contentView.includes("WatchModeProductView") &&
+    contentView.includes("WatchModeLabView()") &&
+    contentView.includes("#else") &&
+    contentView.includes("placeholder"),
 );
 check(
-  "Watch auto-baseline controller is lab gated and started by the Watch app",
+  "Watch auto-baseline controller is lab gated, ignores real plans, and is started by the Watch app",
   watchAutoBaselineController.includes(
     "#if DEBUG || EXPO_CONFIGURATION_DEBUG || LUCIDTLR_INTERNAL_TESTFLIGHT_LAB",
   ) &&
@@ -142,6 +151,8 @@ check(
       "lucidtlr.watchLab.autoBaselineEnabled.v1",
     ) &&
     watchAutoBaselineController.includes("coordinator.onNewStagedPlan") &&
+    watchAutoBaselineController.includes("WatchNightSessionController.isSyntheticLabPlan") &&
+    watchAutoBaselineController.includes("WatchNightSessionController.shared.startProductSession") &&
     watchAutoBaselineController.includes("isRunning") &&
     watchApp.includes("WatchAutoBaselineController.shared.start()"),
 );
@@ -186,7 +197,9 @@ check(
 check(
   "Watch auto-baseline sources are in the Watch target",
   project.includes("WatchBaselineLoopRunner.swift in Sources") &&
-    project.includes("WatchAutoBaselineController.swift in Sources"),
+    project.includes("WatchAutoBaselineController.swift in Sources") &&
+    project.includes("WatchNightSessionController.swift in Sources") &&
+    project.includes("WatchModeProductView.swift in Sources"),
 );
 check(
   "Phase C real provider sources are in the Watch target",
@@ -206,16 +219,18 @@ check(
   ].every((entry) => project.includes(entry)),
 );
 check(
-  "Home blocks public Watch TLR start",
-  /if \(selectedMode === "watch"\) \{\s*showWatchDisabledMessage\(\);\s*return;\s*\}\s*startSession\("tlr"\);/s.test(
-    home,
-  ),
+  "Home blocks public Watch TLR start while allowing internal product staging",
+  home.includes("isWatchModeProductFlowAvailable()") &&
+    home.includes("showWatchDisabledMessage();") &&
+    home.includes('startWatchModeProductFlow("tlr")') &&
+    productFlow.includes("WATCH_MODE_PRODUCT_SOURCE = \"phone_watch_mode_v3\"") &&
+    productFlow.includes("isWatchModeLabAvailable()"),
 );
 check(
-  "Home blocks public Watch sleep-log start",
-  /if \(selectedMode === "watch"\) \{\s*showWatchDisabledMessage\(\);\s*return;\s*\}\s*startSession\("sleep_log"\);/s.test(
-    home,
-  ),
+  "Home blocks public Watch sleep-log start while allowing internal product staging",
+  home.includes("isWatchModeProductFlowAvailable()") &&
+    home.includes("showWatchDisabledMessage();") &&
+    home.includes('startWatchModeProductFlow("sleep_log")'),
 );
 check(
   "AppState blocks public Watch session creation",
@@ -272,7 +287,7 @@ const realProviderReferenceTokens = [
 ];
 const realProviderReferenceAllowedFiles = [
   ...realProviderFiles,
-  "ios/LucidTLR Watch App/WatchModeLabViewModel.swift",
+  "ios/LucidTLR Watch App/WatchNightSessionController.swift",
 ];
 const realProviderReferenceHits = [
   ...listFiles("ios/LucidTLR Watch App", (file) => file.endsWith(".swift")),
@@ -290,6 +305,60 @@ check(
     realProviderReferenceAllowedFiles.includes(file),
   ),
   realProviderReferenceHits.join(", "),
+);
+
+check(
+  "real-provider session runtime is shared by product and lab skins",
+  watchNightSessionController.includes("final class WatchNightSessionController") &&
+    watchNightSessionController.includes("HealthKitHeartRateProvider") &&
+    watchNightSessionController.includes("CoreMotionProvider") &&
+    watchNightSessionController.includes("sendCommitReceipt") &&
+    watchNightSessionController.includes("sendStatusSnapshot") &&
+    watchNightSessionController.includes("endActiveSessionAndTransfer") &&
+    watchModeProductView.includes("WatchNightSessionController.shared") &&
+    read("ios/LucidTLR Watch App/WatchModeLabViewModel.swift").includes(
+      "nightSessionController.startLabForcedCueSession",
+    ),
+);
+
+check(
+  "product running lock is derived from ledger/index without a persisted running flag",
+  productFlow.includes("loadUnresolvedWatchSessionSyncStates") &&
+    productFlow.includes("computeWatchStartupRecoveryState") &&
+    mainLayout.includes("loadWatchModeProductLockState") &&
+    watchNightSessionController.includes("WatchCurrentSessionIndex") &&
+    ![
+      productFlow,
+      runningScreen,
+      mainLayout,
+      appState,
+      watchNightSessionController,
+      watchModeProductView,
+    ].join("\n").includes("watchModeRunning") &&
+    ![
+      productFlow,
+      runningScreen,
+      mainLayout,
+      appState,
+      watchNightSessionController,
+      watchModeProductView,
+    ].join("\n").includes("watch_mode_running"),
+);
+
+check(
+  "locked phone running screen only exposes the explicit destructive local escape hatch",
+  runningScreen.includes("Watch Mode running - started") &&
+    runningScreen.includes("Night ended on watch - syncing...") &&
+    runningScreen.includes("Alert.alert") &&
+    runningScreen.includes("End Watch session?") &&
+    runningScreen.includes("Ending here may lose the night's data from the Watch.") &&
+    runningScreen.includes('style: "destructive"') &&
+    runningScreen.includes("End session on this phone") &&
+    productFlow.includes("applyUserAbandonLocalOnly") &&
+    productFlow.includes("phone_local_end_active_watch_session") &&
+    !runningScreen.includes("startSession(") &&
+    !runningScreen.includes("sendSessionEvent(") &&
+    !runningScreen.includes("deleteSession("),
 );
 
 const labScopedFiles = [
