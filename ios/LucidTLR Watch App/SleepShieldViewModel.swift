@@ -69,22 +69,11 @@ final class SleepShieldViewModel: ObservableObject {
     self.wakeAction = wakeAction
   }
 
-  convenience init(coordinator: WatchSessionCoordinator, autoHideSeconds: TimeInterval = 10) {
-    self.init(
-      snapshot: SleepShieldRuntimeSnapshot.from(coordinator: coordinator),
-      autoHideSeconds: autoHideSeconds,
-      interactionLogger: { coordinator.recordUserInteraction(kind: $0) },
-      pushBackAction: { try? coordinator.deferTlrInterval(by: 30 * 60) },
-      pauseResumeAction: {
-        if coordinator.isTlrPaused {
-          try? coordinator.resumeTlr()
-        } else {
-          try? coordinator.pauseTlr()
-        }
-      },
-      wakeAction: { _ = try? coordinator.stopAndSeal(reason: .userWake) }
-    )
-  }
+  // No coordinator-only convenience initializer: a default wake action that
+  // merely seals (without ending providers, recording the sealed package,
+  // transferring, and exiting the shield) trapped a real overnight session on
+  // the shield. Every creation site must supply an explicit wakeAction that
+  // runs the full session end path.
 
   deinit {
     autoHideWorkItem?.cancel()
