@@ -64,6 +64,9 @@
 	<!-- DRAFT - Jeremy approval required -->
 	<key>NSHealthShareUsageDescription</key>
 	<string>LucidTLR uses your heart rate during sleep sessions to estimate sleep stages for cue timing. Your data stays on your devices unless you explicitly choose to share it for research.</string>
+	<!-- DRAFT - Jeremy approval required -->
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>LucidTLR does not write data to Apple Health. HealthKit access is read-only for heart rate during sleep sessions to support cue timing.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

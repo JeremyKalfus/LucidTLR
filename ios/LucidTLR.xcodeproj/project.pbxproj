@@ -874,6 +874,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "LucidTLR Watch";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "LucidTLR uses your heart rate during sleep sessions to estimate sleep stages for cue timing. Your data stays on your devices unless you explicitly choose to share it for research.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "LucidTLR does not write data to Apple Health. HealthKit access is read-only for heart rate during sleep sessions to support cue timing.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jeremykalfus.lucidtlr;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -907,6 +908,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "LucidTLR Watch";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "LucidTLR uses your heart rate during sleep sessions to estimate sleep stages for cue timing. Your data stays on your devices unless you explicitly choose to share it for research.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "LucidTLR does not write data to Apple Health. HealthKit access is read-only for heart rate during sleep sessions to support cue timing.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jeremykalfus.lucidtlr;
 				LD_RUNPATH_SEARCH_PATHS = (
