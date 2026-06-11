@@ -67,6 +67,8 @@ final class WatchModeLabViewModel: ObservableObject {
         self?.refreshRows()
       }
       .store(in: &cancellables)
+
+    recoverLatestSealedPackageForTransferIfAvailable()
   }
 
   func showInstructions() {
@@ -231,7 +233,7 @@ final class WatchModeLabViewModel: ObservableObject {
         throw WatchSessionCoordinatorError.noCommittedPlan
       }
 
-      sleepShieldViewModel = SleepShieldViewModel(coordinator: coordinator)
+      sleepShieldViewModel = makeSleepShieldViewModel(coordinator: coordinator)
       statusMessage = "Entered black sleep shield. Tap logs watch_user_interaction into the synthetic coordinator."
       refreshRows()
       displayMode = .sleepShield
@@ -667,7 +669,7 @@ final class WatchModeLabViewModel: ObservableObject {
     coordinator = nextCoordinator
     activePlan = plan
     activePreflightResult = nextCoordinator.lastPreflightResult
-    sleepShieldViewModel = SleepShieldViewModel(coordinator: nextCoordinator)
+    sleepShieldViewModel = makeSleepShieldViewModel(coordinator: nextCoordinator)
     refreshRows()
   }
 
@@ -715,7 +717,7 @@ final class WatchModeLabViewModel: ObservableObject {
       coordinator = nextCoordinator
       activePlan = plan
       activePreflightResult = nextCoordinator.lastPreflightResult
-      sleepShieldViewModel = SleepShieldViewModel(coordinator: nextCoordinator)
+      sleepShieldViewModel = makeSleepShieldViewModel(coordinator: nextCoordinator)
       statusMessage = "Simulator fallback ran a synthetic forced-cue session. Real providers are device-only."
       refreshRows()
     } catch {
@@ -957,6 +959,92 @@ final class WatchModeLabViewModel: ObservableObject {
     let index = WatchCurrentSessionIndex(rootDirectory: try labRootDirectory())
     currentSessionIndex = index
     return index
+  }
+
+  private func makeSleepShieldViewModel(coordinator: WatchSessionCoordinator) -> SleepShieldViewModel {
+    SleepShieldViewModel(
+      snapshot: SleepShieldRuntimeSnapshot.from(coordinator: coordinator),
+      interactionLogger: { coordinator.recordUserInteraction(kind: $0) },
+      pushBackAction: { try? coordinator.deferTlrInterval(by: 30 * 60) },
+      pauseResumeAction: {
+        if coordinator.isTlrPaused {
+          try? coordinator.resumeTlr()
+        } else {
+          try? coordinator.pauseTlr()
+        }
+      },
+      wakeAction: { [weak self] in
+        Task { @MainActor in
+          self?.endActiveSessionFromSleepShield()
+        }
+      }
+    )
+  }
+
+  private func endActiveSessionFromSleepShield() {
+    if activeProviderSet == "real" {
+      endRealProviderSessionAndTransfer()
+    } else {
+      forceSealPackage()
+    }
+
+    sleepShieldViewModel = nil
+    showMenu()
+  }
+
+  private func recoverLatestSealedPackageForTransferIfAvailable() {
+    do {
+      let rootDirectory = try labRootDirectory()
+      let sealedPackages = try WatchSessionDirectoryStore.sealedButUnackedPackages(
+        rootDirectory: rootDirectory
+      )
+
+      guard let latest = latestStoredSession(from: sealedPackages) else {
+        return
+      }
+
+      let nextSessionStore = try WatchSessionDirectoryStore(
+        rootDirectory: rootDirectory,
+        sessionId: latest.sessionId
+      )
+      guard let manifest = try WatchPackageStore(sessionStore: nextSessionStore).readManifest() else {
+        return
+      }
+
+      let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
+      let plan = try nextSessionStore.readJSON(
+        WatchRuntimePlanV3.self,
+        fileName: WatchStoragePaths.planFileName
+      )
+
+      sessionStore = nextSessionStore
+      currentSessionIndex = index
+      activeManifest = manifest
+      activePlan = plan
+      activeProviderSet = "recovered sealed"
+      statusMessage = "Recovered sealed package \(manifest.packageId). Tap Retry package transfer to queue it through the frozen transport path."
+      refreshRows()
+    } catch {
+      statusMessage = "Lab recovery scan failed: \(String(describing: error))"
+      refreshRows()
+    }
+  }
+
+  private func latestStoredSession(
+    from summaries: [WatchStoredSessionSummary]
+  ) -> WatchStoredSessionSummary? {
+    summaries.max { lhs, rhs in
+      sessionModificationDate(lhs) < sessionModificationDate(rhs)
+    }
+  }
+
+  private func sessionModificationDate(_ summary: WatchStoredSessionSummary) -> Date {
+    let manifestURL = summary.sessionDirectory.appendingPathComponent(
+      WatchStoragePaths.manifestFileName,
+      isDirectory: false
+    )
+    let attributes = try? FileManager.default.attributesOfItem(atPath: manifestURL.path)
+    return attributes?[.modificationDate] as? Date ?? .distantPast
   }
 
   private func refreshRows() {
