@@ -290,15 +290,14 @@ final class WatchSessionCoordinator {
 
     if decision.shouldAttemptCue {
       try attemptCue(plan: plan, decision: decision)
+      if forcedCueDue {
+        forcedCueResolved = true
+      }
     } else {
       appendEvent(
         .cueSuppressed,
         payload: ["reason": .stringValue(decision.reason.rawValue)]
       )
-    }
-
-    if forcedCueDue {
-      forcedCueResolved = true
     }
 
     let epochEvent = appendEvent(
