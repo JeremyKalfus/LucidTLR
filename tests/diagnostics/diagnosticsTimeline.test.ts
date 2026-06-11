@@ -42,6 +42,10 @@ class FakeDiagnosticsDb implements LocalDb {
       return (this.tables.movement_events ?? []) as T[];
     }
 
+    if (sql.includes("from watch_session_sync_states")) {
+      return (this.tables.watch_session_sync_states ?? []) as T[];
+    }
+
     return [];
   }
 
@@ -187,6 +191,76 @@ describe("diagnostics timeline", () => {
       "native_watch_import",
     );
     expect(payload.liveStatus.watchModeStatus).toBe("planned_rebuild");
+    expect(payload.liveStatus.watchModeSyncState).toBeNull();
     expect(payload.counts.watch_epoch).toBe(1);
+  });
+
+  it("reports internal Watch product ledger status in live diagnostics", async () => {
+    const db = new FakeDiagnosticsDb({
+      sessions: [],
+      watch_runtime_events: [],
+      watch_epochs: [],
+      cue_events: [],
+      movement_events: [],
+      watch_session_sync_states: [
+        {
+          session_id: "watch-product-1",
+          participant_id: "participant-1",
+          plan_id: "watch-mode-product-plan-v3",
+          plan_hash: "c".repeat(64),
+          package_id: null,
+          package_hash: null,
+          status: "watch_committed",
+          last_known_watch_state: "planCommitted",
+          last_status_at: "2026-06-03T14:45:00.000Z",
+          started_at: null,
+          committed_at: "2026-06-03T14:45:00.000Z",
+          sealed_at: null,
+          imported_at: null,
+          ack_eligible_at: null,
+          ack_sent_at: null,
+          unresolved_reason: null,
+          metadata_json: JSON.stringify({ source: "phone_watch_mode_v3" }),
+          updated_at: "2026-06-03T14:45:00.000Z",
+        },
+      ],
+    });
+
+    const payload = await buildDiagnosticsTimeline({
+      db,
+      participantId: "participant-1",
+      selectedMode: "watch",
+      activeSession: session({ status: "setup" }),
+      sessionHistory: [session({ status: "setup" })],
+      latestEngineSnapshot: {
+        sessionStatus: "setup",
+        currentValues: {
+          latestDecisionReason: "session_not_active",
+        },
+      } as unknown as EngineSnapshot,
+      phoneRuntimeStatus: null,
+      pendingNativeWatchImport: null,
+      nativePhoneRuntimeLogs: {},
+      watchModeLabAvailable: true,
+      now: "2026-06-03T15:00:00.000Z",
+    });
+
+    expect(payload.liveStatus.watchModeStatus).toBe("watch_committed");
+    expect(payload.liveStatus.watchModeSyncState?.sessionId).toBe(
+      "watch-product-1",
+    );
+    expect(
+      payload.timeline.find((event) => event.kind === "watch_mode_status"),
+    ).toMatchObject({
+      sessionId: "watch-product-1",
+      label: "Watch Mode watch_committed",
+      payload: {
+        status: "watch_committed",
+        ledgerStatus: "watch_committed",
+        lastKnownWatchState: "planCommitted",
+        internalLabAvailable: true,
+        nativeRuntimeQueried: false,
+      },
+    });
   });
 });

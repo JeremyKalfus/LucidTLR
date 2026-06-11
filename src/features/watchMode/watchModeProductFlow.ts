@@ -2,7 +2,7 @@ import type { LocalDb } from "@/src/data/local/localDb";
 import { upsertLocalSession } from "@/src/data/local/repositories";
 import type { NightSession, SessionType, TlrOptions } from "@/src/domain/types";
 import type { CueDecisionSettings } from "@/src/engine";
-import { createNightSession, applySessionEvent } from "@/src/features/sessions/sessionActions";
+import { createNightSession } from "@/src/features/sessions/sessionActions";
 import { isWatchModeLabAvailable } from "@/src/features/internalBuild/internalBuildFlags";
 import {
   applyWatchTransportReceiptSnapshots,
@@ -170,7 +170,9 @@ export async function startWatchModeProductSession(input: {
     startedAt: createdAt,
     selectedCueId: input.selectedCueId,
   });
-  const session = applySessionEvent(baseSession, "start_watch_night", createdAt);
+  // The Watch sync ledger owns the running/syncing state for Watch nights.
+  // Keeping the phone session row in setup prevents the phone cue engine from arming.
+  const session = baseSession;
   const plan = buildWatchRuntimePlanFromSession({
     session,
     tlrOptions: input.tlrOptions,

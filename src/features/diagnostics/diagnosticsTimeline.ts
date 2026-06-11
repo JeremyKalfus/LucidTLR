@@ -1,6 +1,10 @@
 import type { LocalDb } from "@/src/data/local/localDb";
 import type { NightSession } from "@/src/domain/types";
 import type { EngineSnapshot } from "@/src/engine";
+import {
+  loadRecentWatchSessionSyncStates,
+  type WatchSessionSyncState,
+} from "@/src/features/watchSync/watchSessionSyncState";
 import type {
   NativePhoneRuntimeEvent,
   PhoneRuntimeStatus,
@@ -11,6 +15,7 @@ import { loadDiagnosticsRouteEvents } from "./diagnosticsRouteStore";
 export const DIAGNOSTICS_TIMELINE_SCHEMA =
   "lucidtlr-diagnostics-timeline-v1";
 export const DEFAULT_DIAGNOSTICS_LOOKBACK_MINUTES = 60;
+const WATCH_MODE_PRODUCT_SOURCE = "phone_watch_mode_v3";
 
 type RecentSessionRow = {
   id: string;
@@ -112,7 +117,8 @@ export type DiagnosticsTimelineExport = {
   };
   liveStatus: {
     phoneRuntimeStatus: PhoneRuntimeStatus | null;
-    watchModeStatus: "planned_rebuild";
+    watchModeStatus: string;
+    watchModeSyncState: WatchSessionSyncState | null;
     pendingNativeWatchImport: PendingNativeWatchImportSnapshot | null;
   };
   counts: Record<string, number>;
@@ -208,6 +214,14 @@ function countBySource(events: DiagnosticsTimelineEvent[]): Record<string, numbe
   return counts;
 }
 
+function defaultWatchModeLabAvailable(): boolean {
+  return (
+    (typeof __DEV__ !== "undefined" && __DEV__) ||
+    process.env.EXPO_PUBLIC_WATCH_MODE_LAB_ENABLED === "true" ||
+    process.env.EXPO_PUBLIC_WATCH_MODE_LAB_ENABLED === "1"
+  );
+}
+
 export async function buildDiagnosticsTimeline(input: {
   db: LocalDb;
   participantId: string;
@@ -218,6 +232,7 @@ export async function buildDiagnosticsTimeline(input: {
   phoneRuntimeStatus: PhoneRuntimeStatus | null;
   pendingNativeWatchImport: PendingNativeWatchImportSnapshot | null;
   nativePhoneRuntimeLogs: Record<string, NativePhoneRuntimeEvent[]>;
+  watchModeLabAvailable?: boolean;
   now?: string;
   lookbackMinutes?: number;
 }): Promise<DiagnosticsTimelineExport> {
@@ -234,6 +249,7 @@ export async function buildDiagnosticsTimeline(input: {
     watchEpochs,
     cueEvents,
     movementEvents,
+    recentWatchSyncStates,
   ] = await Promise.all([
     loadDiagnosticsRouteEvents(input.db),
     input.db.query<RecentSessionRow>(
@@ -322,7 +338,22 @@ where timestamp >= ?
 order by timestamp asc`,
       [startsAt, startsAt, startsAt],
     ),
+    loadRecentWatchSessionSyncStates({
+      db: input.db,
+      participantId: input.participantId,
+      limit: 10,
+    }),
   ]);
+  const watchModeLabAvailable =
+    input.watchModeLabAvailable ?? defaultWatchModeLabAvailable();
+  const watchModeSyncState = watchModeLabAvailable
+    ? recentWatchSyncStates.find(
+        (state) => state.metadata.source === WATCH_MODE_PRODUCT_SOURCE,
+      ) ?? null
+    : null;
+  const watchModeStatus = watchModeLabAvailable
+    ? watchModeSyncState?.status ?? "no_product_session"
+    : "planned_rebuild";
 
   for (const routeEvent of routeEvents) {
     if (Date.parse(routeEvent.timestamp) >= windowStartMs) {
@@ -459,9 +490,18 @@ order by timestamp asc`,
     timestamp: exportedAt,
     source: "live_status",
     kind: "watch_mode_status",
-    label: "Watch Mode planned rebuild",
+    sessionId: watchModeSyncState?.sessionId,
+    label: watchModeLabAvailable
+      ? `Watch Mode ${watchModeStatus}`
+      : "Watch Mode planned rebuild",
     payload: {
-      status: "planned_rebuild",
+      status: watchModeStatus,
+      ledgerStatus: watchModeSyncState?.status,
+      lastKnownWatchState: watchModeSyncState?.lastKnownWatchState,
+      packageId: watchModeSyncState?.packageId,
+      packageHash: watchModeSyncState?.packageHash,
+      updatedAt: watchModeSyncState?.updatedAt,
+      internalLabAvailable: watchModeLabAvailable,
       nativeRuntimeQueried: false,
     },
   });
@@ -502,7 +542,8 @@ order by timestamp asc`,
     },
     liveStatus: {
       phoneRuntimeStatus: input.phoneRuntimeStatus,
-      watchModeStatus: "planned_rebuild",
+      watchModeStatus,
+      watchModeSyncState,
       pendingNativeWatchImport: input.pendingNativeWatchImport,
     },
     counts: countBySource(sortedEvents),
