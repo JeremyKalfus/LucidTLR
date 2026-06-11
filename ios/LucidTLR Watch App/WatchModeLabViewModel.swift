@@ -68,7 +68,6 @@ final class WatchModeLabViewModel: ObservableObject {
       }
       .store(in: &cancellables)
 
-    recoverLatestSealedPackageForTransferIfAvailable()
   }
 
   func showInstructions() {
@@ -990,61 +989,6 @@ final class WatchModeLabViewModel: ObservableObject {
 
     sleepShieldViewModel = nil
     showMenu()
-  }
-
-  private func recoverLatestSealedPackageForTransferIfAvailable() {
-    do {
-      let rootDirectory = try labRootDirectory()
-      let sealedPackages = try WatchSessionDirectoryStore.sealedButUnackedPackages(
-        rootDirectory: rootDirectory
-      )
-
-      guard let latest = latestStoredSession(from: sealedPackages) else {
-        return
-      }
-
-      let nextSessionStore = try WatchSessionDirectoryStore(
-        rootDirectory: rootDirectory,
-        sessionId: latest.sessionId
-      )
-      guard let manifest = try WatchPackageStore(sessionStore: nextSessionStore).readManifest() else {
-        return
-      }
-
-      let index = WatchCurrentSessionIndex(rootDirectory: rootDirectory)
-      let plan = try nextSessionStore.readJSON(
-        WatchRuntimePlanV3.self,
-        fileName: WatchStoragePaths.planFileName
-      )
-
-      sessionStore = nextSessionStore
-      currentSessionIndex = index
-      activeManifest = manifest
-      activePlan = plan
-      activeProviderSet = "recovered sealed"
-      statusMessage = "Recovered sealed package \(manifest.packageId). Tap Retry package transfer to queue it through the frozen transport path."
-      refreshRows()
-    } catch {
-      statusMessage = "Lab recovery scan failed: \(String(describing: error))"
-      refreshRows()
-    }
-  }
-
-  private func latestStoredSession(
-    from summaries: [WatchStoredSessionSummary]
-  ) -> WatchStoredSessionSummary? {
-    summaries.max { lhs, rhs in
-      sessionModificationDate(lhs) < sessionModificationDate(rhs)
-    }
-  }
-
-  private func sessionModificationDate(_ summary: WatchStoredSessionSummary) -> Date {
-    let manifestURL = summary.sessionDirectory.appendingPathComponent(
-      WatchStoragePaths.manifestFileName,
-      isDirectory: false
-    )
-    let attributes = try? FileManager.default.attributesOfItem(atPath: manifestURL.path)
-    return attributes?[.modificationDate] as? Date ?? .distantPast
   }
 
   private func refreshRows() {
