@@ -233,6 +233,12 @@ remains an explicit Jeremy decision.
 
 ## Discipline Rules
 
+0. Validation must exercise the exact UI path the real flow uses. The
+   Overnight 1 wake-path failure happened because the couch test ended the
+   session via a lab button while the overnight ended it via the sleep
+   shield's Confirm Wake - two different code paths, only one tested. Any
+   checklist step names the specific button/flow, and it must be the one the
+   real scenario uses.
 1. No TestFlight build for anything reproducible in the simulator rig.
 2. No new diagnostics work; failures must be prevented (automation), not
    better described.
