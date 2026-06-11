@@ -102,6 +102,12 @@ describe("Watch Mode v3 sleep shield architecture", () => {
     expect(shieldViewModel).not.toContain(
       "wakeAction: { _ = try? coordinator.stopAndSeal",
     );
+    // A silently-empty default wake action re-trapped build 21 via the
+    // relaunch path. The initializer must not default wakeAction, so omitting
+    // it is a compile error at every present and future creation site.
+    expect(shieldViewModel).not.toMatch(
+      /wakeAction: @escaping \(\) -> Void = \{\}/,
+    );
 
     // Every lab-created synthetic shield assignment goes through the factory,
     // and real-session shields come only from the shared controller.
@@ -145,24 +151,41 @@ describe("Watch Mode v3 sleep shield architecture", () => {
     expect(controllerEndPath).toContain("transferSealedPackage");
     expect(controllerEndPath).toContain("sleepShieldViewModel = nil");
 
+    // No direct SleepShieldViewModel construction in the controller: the
+    // build-21 relaunch trap was a direct construction with no wake action
+    // (and the prior test version explicitly exempted that pattern). Every
+    // controller shield must come from the factory.
     const directControllerAssignments = nightSessionController
       .split("\n")
       .filter((line) => line.includes("sleepShieldViewModel ="));
     for (const line of directControllerAssignments) {
       const trimmed = line.trim();
-      if (
-        trimmed === "sleepShieldViewModel = nil" ||
-        trimmed.includes(
-          "sleepShieldViewModel = makeSleepShieldViewModel(coordinator:",
-        ) ||
-        trimmed.includes("sleepShieldViewModel = SleepShieldViewModel(")
-      ) {
+      if (trimmed === "sleepShieldViewModel = nil") {
         continue;
       }
       expect(trimmed).toContain(
         "sleepShieldViewModel = makeSleepShieldViewModel(coordinator:",
       );
     }
+
+    // App relaunch with an active unacked, unsealed session must land on the
+    // explicit interrupted surface (confirmed local discard), never a
+    // placeholder shield over a dead runtime.
+    const productView = readSource(
+      "ios/LucidTLR Watch App/WatchModeProductView.swift",
+    );
+    expect(nightSessionController).not.toContain("snapshot: .placeholder");
+    expect(nightSessionController).toContain("case interrupted");
+    expect(nightSessionController).toContain("surface = .interrupted");
+    expect(nightSessionController).toContain(
+      "func discardInterruptedSessionWithExplicitConfirmation()",
+    );
+    expect(nightSessionController).toContain("explicitConfirmation: true");
+    expect(productView).toContain("case .interrupted:");
+    expect(productView).toContain("confirmationDialog");
+    expect(productView).toContain(
+      "controller.discardInterruptedSessionWithExplicitConfirmation()",
+    );
 
     // The factory wake action runs the full end path: real sessions end and
     // transfer, synthetic sessions force-seal, then the shield is dismissed.

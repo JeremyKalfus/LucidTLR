@@ -125,7 +125,8 @@ struct DimRuntimeControlsView_Previews: PreviewProvider {
           isPaused: false,
           allowsTlrControls: true
         ),
-        interactionLogger: { _ in }
+        interactionLogger: { _ in },
+        wakeAction: {}
       )
     )
   }

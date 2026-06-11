@@ -59,7 +59,10 @@ final class SleepShieldViewModel: ObservableObject {
     interactionLogger: @escaping (String) -> Void,
     pushBackAction: @escaping () -> Void = {},
     pauseResumeAction: @escaping () -> Void = {},
-    wakeAction: @escaping () -> Void = {}
+    // No default: a silently-empty wake action trapped a real overnight
+    // session on the shield twice. Every caller must decide what Confirm
+    // Wake does.
+    wakeAction: @escaping () -> Void
   ) {
     self.snapshot = snapshot
     self.autoHideSeconds = autoHideSeconds

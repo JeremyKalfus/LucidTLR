@@ -7,6 +7,7 @@ enum WatchNightSessionSurface {
   case blocked
   case sleepShield
   case syncPending
+  case interrupted
 }
 
 struct WatchNightSessionStatusRow: Identifiable, Equatable {
@@ -71,12 +72,13 @@ final class WatchNightSessionController: ObservableObject {
           surface = .sleepShield
           statusMessage = "Watch Mode is running."
         } else {
-          surface = .sleepShield
-          statusMessage = "Watch Mode is recorded as running. Keep using the Watch shield for this session."
-          sleepShieldViewModel = SleepShieldViewModel(
-            snapshot: .placeholder,
-            interactionLogger: { _ in }
-          )
+          // The index says a session is active but this process has no live
+          // runtime (the app was relaunched mid-session and there is no
+          // sealed package yet). Never show a shield over a dead runtime -
+          // its wake action cannot end anything. Show the honest interrupted
+          // surface with an explicit local discard instead.
+          surface = .interrupted
+          statusMessage = "Session \(entry.activeSessionId) was interrupted on the Watch and cannot be resumed. Discard it here to start a new night, or end it from the phone."
         }
 
         refreshRows()
@@ -167,6 +169,26 @@ final class WatchNightSessionController: ObservableObject {
       sleepShieldViewModel = nil
       surface = .syncPending
       statusMessage = "Ended real-provider session \(activePlan.sessionId), sealed package, and queued transfer through the frozen transport path."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  /// Explicit local exit for an interrupted session (app relaunched
+  /// mid-night with no live runtime and no sealed package). Marks the index
+  /// entry discarded; no package or log files are deleted.
+  func discardInterruptedSessionWithExplicitConfirmation() {
+    do {
+      let index = WatchCurrentSessionIndex(rootDirectory: try rootDirectory(for: .product))
+      try index.discardSyntheticLabSession(
+        explicitConfirmation: true,
+        discardedAt: Date()
+      )
+      currentSessionIndex = index
+      sleepShieldViewModel = nil
+      surface = .waitingForPlan
+      statusMessage = "Discarded the interrupted Watch session locally. No data files were deleted. Waiting for plan from phone."
       refreshRows()
     } catch {
       handle(error: error)

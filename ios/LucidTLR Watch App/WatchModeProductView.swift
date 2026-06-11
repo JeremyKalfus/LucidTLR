@@ -3,6 +3,7 @@ import SwiftUI
 
 struct WatchModeProductView: View {
   @ObservedObject private var controller = WatchNightSessionController.shared
+  @State private var discardConfirmationVisible = false
   let onShowLab: () -> Void
 
   var body: some View {
@@ -19,7 +20,50 @@ struct WatchModeProductView: View {
       }
     case .syncPending:
       statusSurface(title: "Sync pending")
+    case .interrupted:
+      interruptedSurface
     }
+  }
+
+  private var interruptedSurface: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Session interrupted")
+          .font(.caption)
+          .fontWeight(.semibold)
+          .accessibilityAddTraits(.isHeader)
+
+        Text(controller.statusMessage)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+
+        Button("Discard Session on Watch", role: .destructive) {
+          discardConfirmationVisible = true
+        }
+        .font(.caption2)
+        .confirmationDialog(
+          "Discard this session?",
+          isPresented: $discardConfirmationVisible,
+          titleVisibility: .visible
+        ) {
+          Button("Discard Session", role: .destructive) {
+            controller.discardInterruptedSessionWithExplicitConfirmation()
+          }
+          Button("Cancel", role: .cancel) {}
+        } message: {
+          Text("The interrupted night cannot be resumed. Discarding marks it ended on this Watch; no data files are deleted.")
+        }
+
+        Button("Internal Lab") {
+          onShowLab()
+        }
+        .font(.caption2)
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+    }
+    .background(Color.black.ignoresSafeArea())
   }
 
   private var waitingForPlan: some View {

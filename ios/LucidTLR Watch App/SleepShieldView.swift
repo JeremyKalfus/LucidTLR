@@ -26,7 +26,8 @@ struct SleepShieldView_Previews: PreviewProvider {
     SleepShieldView(
       viewModel: SleepShieldViewModel(
         snapshot: .placeholder,
-        interactionLogger: { _ in }
+        interactionLogger: { _ in },
+        wakeAction: {}
       )
     )
   }
