@@ -418,7 +418,8 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
 
   private func handleIncomingAck(_ ack: WatchTransportReceivedAck, receivedAt: Date) {
     let state = readState()
-    let indexSessionId = (try? currentLabIndexEntry())?.activeSessionId
+    let indexSessionId = (try? currentProductIndexEntry())?.activeSessionId ??
+      (try? currentLabIndexEntry())?.activeSessionId
 
     // Session-epoch guard: an ack that matches neither the currently staged
     // plan nor the current Watch session index is stale old-session evidence.
@@ -446,7 +447,23 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     }
 
     do {
-      try recordLatestAckIfMatches(rootDirectory: labRootDirectory())
+      let ackRecordingRootDirectories = [
+        try productRootDirectory(),
+        try labRootDirectory(),
+      ]
+      var latestError: Error?
+
+      for rootDirectory in ackRecordingRootDirectories {
+        do {
+          if try recordLatestAckIfMatches(rootDirectory: rootDirectory) {
+            return
+          }
+        } catch {
+          latestError = error
+        }
+      }
+
+      recordError("Received package ack but did not record it: \(latestError ?? WatchTransportError.ackForUnknownPackage)")
     } catch {
       recordError("Received package ack but did not record it: \(error)")
     }
@@ -1012,6 +1029,21 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
 
   private func currentLabIndexEntry() throws -> WatchCurrentSessionIndexEntry? {
     try WatchCurrentSessionIndex(rootDirectory: labRootDirectory()).load()
+  }
+
+  private func currentProductIndexEntry() throws -> WatchCurrentSessionIndexEntry? {
+    try WatchCurrentSessionIndex(rootDirectory: productRootDirectory()).load()
+  }
+
+  private func productRootDirectory() throws -> URL {
+    let root = try WatchStoragePaths.defaultRootDirectory()
+      .appendingPathComponent("WatchModeNightSessions", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: true,
+      attributes: nil
+    )
+    return root
   }
 
   private func labRootDirectory() throws -> URL {
