@@ -1012,7 +1012,7 @@ final class WatchModeLabViewModel: ObservableObject {
         requireMotion: true,
         requireLowPowerModeOff: true,
         minimumStartBatteryLevel: 0.35,
-        lowBatteryWarningLevel: 0.25,
+        lowBatteryWarningLevel: 0.5,
         safeSealBatteryLevel: 0.18,
         emergencyStopBatteryLevel: 0.1
       ),
@@ -1020,6 +1020,7 @@ final class WatchModeLabViewModel: ObservableObject {
         WatchRuntimeAssetV3(
           id: "harp-flourish",
           kind: "cue",
+          owner: "watch",
           fileName: "harp_flourish.mp3",
           resourceName: "harp_flourish",
           resourceExtension: "mp3",

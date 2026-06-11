@@ -76,6 +76,15 @@ struct WatchModeProductView: View {
 
         WatchModeBedtimeInstructionsView()
 
+        if let lastStartFailure = controller.lastStartFailure {
+          startFailureText(lastStartFailure)
+        } else {
+          Text(controller.statusMessage)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+
         Button("Internal Lab") {
           onShowLab()
         }
@@ -103,6 +112,10 @@ struct WatchModeProductView: View {
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
 
+        if let lastStartFailure = controller.lastStartFailure {
+          startFailureText(lastStartFailure)
+        }
+
         ForEach(controller.statusRows) { row in
           VStack(alignment: .leading, spacing: 1) {
             Text(row.label)
@@ -126,6 +139,17 @@ struct WatchModeProductView: View {
     .background(Color.black.ignoresSafeArea())
     .onAppear {
       controller.refreshProductSurface()
+    }
+  }
+
+  private func startFailureText(_ failure: WatchNightSessionStartFailure) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text("Last start failure")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+      Text("\(failure.occurredAt): \(failure.reason)")
+        .font(.caption2)
+        .fixedSize(horizontal: false, vertical: true)
     }
   }
 }

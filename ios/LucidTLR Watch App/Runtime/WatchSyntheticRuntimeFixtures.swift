@@ -191,7 +191,7 @@ enum WatchSyntheticRuntimeFixtures {
         requireMotion: true,
         requireLowPowerModeOff: true,
         minimumStartBatteryLevel: 0.35,
-        lowBatteryWarningLevel: 0.25,
+        lowBatteryWarningLevel: 0.5,
         safeSealBatteryLevel: 0.18,
         emergencyStopBatteryLevel: 0.1
       ),
@@ -199,6 +199,7 @@ enum WatchSyntheticRuntimeFixtures {
         WatchRuntimeAssetV3(
           id: "harp-flourish",
           kind: "cue",
+          owner: "watch",
           fileName: "harp-flourish.mp3",
           resourceName: "harp_flourish",
           resourceExtension: "mp3",
@@ -208,6 +209,7 @@ enum WatchSyntheticRuntimeFixtures {
         WatchRuntimeAssetV3(
           id: "final-lucid-training",
           kind: "training",
+          owner: "phone",
           fileName: "final-lucid-training.mp3",
           resourceName: "final_lucid_training",
           resourceExtension: "mp3",

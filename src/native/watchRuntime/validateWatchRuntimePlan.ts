@@ -71,16 +71,34 @@ export function validateWatchRuntimePlan(plan: WatchRuntimePlanV3): string[] {
     errors.push("Watch plans must include the cue asset sha256.");
   }
 
-  if (!plan.assets.some((asset) => asset.id === plan.cue.assetId && asset.sha256 === plan.cue.sha256)) {
+  if (
+    !plan.assets.some(
+      (asset) =>
+        asset.id === plan.cue.assetId &&
+        asset.sha256 === plan.cue.sha256 &&
+        asset.owner === "watch",
+    )
+  ) {
     errors.push("Watch plan cue asset must be present in the required asset list.");
   }
 
   if (
     plan.training.enabled &&
     (!SHA256_PATTERN.test(plan.training.sha256) ||
-      !plan.assets.some((asset) => asset.kind === "training" && asset.sha256 === plan.training.sha256))
+      !plan.assets.some(
+        (asset) =>
+          asset.kind === "training" &&
+          asset.owner === "phone" &&
+          asset.sha256 === plan.training.sha256,
+      ))
   ) {
-    errors.push("Enabled Watch training requires a bundled training asset sha256.");
+    errors.push("Enabled Watch training requires phone-owned training asset metadata.");
+  }
+
+  if (
+    plan.safety.lowBatteryWarningLevel <= plan.safety.minimumStartBatteryLevel
+  ) {
+    errors.push("Watch low battery warning level must be above the start minimum.");
   }
 
   if (!plan.model.modelVersion || !plan.remModelVersion) {
@@ -117,11 +135,12 @@ export function validateWatchRuntimePlan(plan: WatchRuntimePlanV3): string[] {
       (asset) =>
         !asset.id ||
         !asset.fileName ||
+        (asset.owner !== "watch" && asset.owner !== "phone") ||
         asset.byteLength <= 0 ||
         !SHA256_PATTERN.test(asset.sha256),
     )
   ) {
-    errors.push("Watch plan required assets must include id, filename, byteLength, and sha256.");
+    errors.push("Watch plan required assets must include id, owner, filename, byteLength, and sha256.");
   }
 
   return errors;

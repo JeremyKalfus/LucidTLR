@@ -16,6 +16,11 @@ struct WatchNightSessionStatusRow: Identifiable, Equatable {
   let value: String
 }
 
+struct WatchNightSessionStartFailure: Equatable {
+  let reason: String
+  let occurredAt: String
+}
+
 @MainActor
 final class WatchNightSessionController: ObservableObject {
   static let shared = WatchNightSessionController()
@@ -24,6 +29,8 @@ final class WatchNightSessionController: ObservableObject {
   @Published private(set) var statusMessage = "Waiting for plan from phone."
   @Published private(set) var statusRows: [WatchNightSessionStatusRow] = []
   @Published private(set) var sleepShieldViewModel: SleepShieldViewModel?
+  @Published private(set) var isStartingSession = false
+  @Published private(set) var lastStartFailure: WatchNightSessionStartFailure?
 
   private enum StorageScope {
     case product
@@ -58,6 +65,13 @@ final class WatchNightSessionController: ObservableObject {
     do {
       try transportCoordinator.activate()
       transportCoordinator.refreshStatus()
+
+      if isStartingSession {
+        statusMessage = "Starting Watch Mode on this Watch."
+        refreshRows()
+        return
+      }
+
       let index = WatchCurrentSessionIndex(rootDirectory: try rootDirectory(for: .product))
       currentSessionIndex = index
 
@@ -85,6 +99,14 @@ final class WatchNightSessionController: ObservableObject {
         return
       }
 
+      if let lastStartFailure {
+        surface = .blocked
+        sleepShieldViewModel = nil
+        statusMessage = startFailureMessage(lastStartFailure)
+        refreshRows()
+        return
+      }
+
       surface = .waitingForPlan
       sleepShieldViewModel = nil
       statusMessage = "Waiting for plan from phone."
@@ -101,6 +123,8 @@ final class WatchNightSessionController: ObservableObject {
 
     #if targetEnvironment(simulator)
     let message = "Real Watch Mode product sessions require device providers; simulator product start is blocked."
+    let occurredAt = WatchRuntimeDateFormat.string(from: Date())
+    lastStartFailure = WatchNightSessionStartFailure(reason: message, occurredAt: occurredAt)
     statusMessage = message
     surface = .blocked
     try? transportCoordinator.sendTransportError(
@@ -201,6 +225,16 @@ final class WatchNightSessionController: ObservableObject {
     scope: StorageScope,
     forcedCueAfterSeconds: TimeInterval?
   ) async {
+    isStartingSession = true
+    lastStartFailure = nil
+    activePreflightResult = nil
+    statusMessage = "Starting Watch Mode on this Watch."
+    refreshRows()
+
+    var didCommitIndexEntry = false
+    var runtimeStarted = false
+    var committedIndex: WatchCurrentSessionIndex?
+
     do {
       invalidateTimers()
       stopRealProviders()
@@ -232,6 +266,8 @@ final class WatchNightSessionController: ObservableObject {
         runtimeState: .planCommitted,
         updatedAt: startDate
       )
+      didCommitIndexEntry = true
+      committedIndex = prepared.index
       if let entry = try prepared.index.load() {
         try transportCoordinator.sendCommitReceipt(
           plan: plan,
@@ -244,6 +280,7 @@ final class WatchNightSessionController: ObservableObject {
       try prepared.heartRateProvider.startWorkoutRuntime(at: startDate)
       try prepared.motionProvider.start(sampleHz: plan.epoching.motionSampleHz)
       try prepared.coordinator.startCommittedPlan()
+      runtimeStarted = true
       activePreflightResult = prepared.coordinator.lastPreflightResult
       try prepared.index.recordRuntimeState(
         sessionId: plan.sessionId,
@@ -263,17 +300,35 @@ final class WatchNightSessionController: ObservableObject {
       surface = .sleepShield
       startTimers(plan: plan)
       statusMessage = "Started real-provider Watch session. HealthKit authorization: \(authorization.rawValue)."
+      isStartingSession = false
       refreshRows()
     } catch {
       stopRealProviders()
+      isStartingSession = false
       surface = .blocked
       activePreflightResult = coordinator?.lastPreflightResult ?? activePreflightResult
+      if didCommitIndexEntry && !runtimeStarted {
+        try? committedIndex?.discardUnstartedSession(
+          sessionId: plan.sessionId,
+          discardedAt: Date()
+        )
+        sleepShieldViewModel = nil
+        coordinator = nil
+        sessionStore = nil
+        activePlan = nil
+      }
+      let failure = WatchNightSessionStartFailure(
+        reason: startFailureReason(error),
+        occurredAt: WatchRuntimeDateFormat.string(from: Date())
+      )
+      lastStartFailure = failure
+      statusMessage = startFailureMessage(failure)
       try? transportCoordinator.sendTransportError(
         errorCode: "watch_product_real_session_start_failed",
-        errorMessage: String(describing: error),
+        errorMessage: failure.reason,
         createdAt: Date()
       )
-      handle(error: error)
+      refreshRows()
     }
   }
 
@@ -480,6 +535,16 @@ final class WatchNightSessionController: ObservableObject {
       WatchNightSessionStatusRow(id: "seal", label: "seal reason", value: manifest?.sealReason ?? "not sealed"),
     ]
 
+    if let lastStartFailure {
+      rows.append(
+        WatchNightSessionStatusRow(
+          id: "lastStartFailure",
+          label: "last start failure",
+          value: "\(lastStartFailure.occurredAt): \(lastStartFailure.reason)"
+        )
+      )
+    }
+
     if let preflightResult {
       rows.append(contentsOf: preflightRows(from: preflightResult))
     } else {
@@ -664,7 +729,7 @@ final class WatchNightSessionController: ObservableObject {
         requireMotion: true,
         requireLowPowerModeOff: true,
         minimumStartBatteryLevel: 0.35,
-        lowBatteryWarningLevel: 0.25,
+        lowBatteryWarningLevel: 0.5,
         safeSealBatteryLevel: 0.18,
         emergencyStopBatteryLevel: 0.1
       ),
@@ -672,6 +737,7 @@ final class WatchNightSessionController: ObservableObject {
         WatchRuntimeAssetV3(
           id: "harp-flourish",
           kind: "cue",
+          owner: "watch",
           fileName: "harp_flourish.mp3",
           resourceName: "harp_flourish",
           resourceExtension: "mp3",
@@ -698,6 +764,19 @@ final class WatchNightSessionController: ObservableObject {
 
   private func uniqueSessionId(prefix: String) -> String {
     "\(prefix)-\(Int(Date().timeIntervalSince1970))-\(Int.random(in: 1000...9999))"
+  }
+
+  private func startFailureReason(_ error: Error) -> String {
+    if let preflightResult = activePreflightResult ?? coordinator?.lastPreflightResult,
+      !preflightResult.blockingReasons.isEmpty {
+      return "Preflight blocked: \(blockingReasonLabel(preflightResult))"
+    }
+
+    return String(describing: error)
+  }
+
+  private func startFailureMessage(_ failure: WatchNightSessionStartFailure) -> String {
+    "Last Watch Mode start failed at \(failure.occurredAt): \(failure.reason)"
   }
 
   private func handle(error: Error) {

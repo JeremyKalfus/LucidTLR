@@ -12,11 +12,13 @@ export type WatchRuntimePlanSchemaVersion =
 export type WatchRuntimeMode = "watch";
 export type WatchRuntimeSessionType = Extract<SessionType, "tlr" | "sleep_log">;
 export type WatchRuntimeAssetKind = "cue" | "training" | "model";
+export type WatchRuntimeAssetOwner = "watch" | "phone";
 export type WatchRuntimeResourceExtension = "mp3" | "wav" | "json";
 
 export interface WatchRuntimeAssetV3 {
   id: string;
   kind: WatchRuntimeAssetKind;
+  owner: WatchRuntimeAssetOwner;
   fileName: string;
   resourceName: string;
   resourceExtension: WatchRuntimeResourceExtension;

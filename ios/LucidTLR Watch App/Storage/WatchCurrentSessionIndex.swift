@@ -202,6 +202,34 @@ final class WatchCurrentSessionIndex {
     )
   }
 
+  func discardUnstartedSession(
+    sessionId: String,
+    discardedAt: Date
+  ) throws {
+    guard let entry = try load(), entry.activeSessionId == sessionId else {
+      throw WatchCurrentSessionIndexError.missingCurrentSession
+    }
+
+    guard entry.sealedPackageId == nil else {
+      throw WatchCurrentSessionIndexError.explicitDiscardRequired
+    }
+
+    try write(
+      WatchCurrentSessionIndexEntry(
+        schemaVersion: entry.schemaVersion,
+        activeSessionId: entry.activeSessionId,
+        planHash: entry.planHash,
+        commitId: entry.commitId,
+        runtimeState: entry.runtimeState,
+        sealedPackageId: entry.sealedPackageId,
+        sealedPackageHash: entry.sealedPackageHash,
+        ackRecorded: entry.ackRecorded,
+        discardedAt: WatchRuntimeDateFormat.string(from: discardedAt),
+        updatedAt: WatchRuntimeDateFormat.string(from: discardedAt)
+      )
+    )
+  }
+
   private func write(_ entry: WatchCurrentSessionIndexEntry) throws {
     try fileManager.createDirectory(
       at: fileURL.deletingLastPathComponent(),

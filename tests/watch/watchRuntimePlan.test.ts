@@ -107,6 +107,21 @@ describe("WatchRuntimePlanV3", () => {
     );
   });
 
+  it("rejects unreachable low-battery warning thresholds", () => {
+    const plan = basePlan();
+    const invalid = rehash({
+      ...plan,
+      safety: {
+        ...plan.safety,
+        lowBatteryWarningLevel: plan.safety.minimumStartBatteryLevel,
+      },
+    });
+
+    expect(validateWatchRuntimePlan(invalid)).toContain(
+      "Watch low battery warning level must be above the start minimum.",
+    );
+  });
+
   it("rejects a missing cue asset hash", () => {
     const plan = basePlan();
     const invalid = rehash({
@@ -119,6 +134,31 @@ describe("WatchRuntimePlanV3", () => {
 
     expect(validateWatchRuntimePlan(invalid)).toContain(
       "Watch plans must include the cue asset sha256.",
+    );
+  });
+
+  it("requires the cue asset to be Watch-owned and training metadata to be phone-owned", () => {
+    const plan = basePlan();
+    const cuePhoneOwned = rehash({
+      ...plan,
+      assets: plan.assets.map((asset) =>
+        asset.kind === "cue" ? { ...asset, owner: "phone" as const } : asset,
+      ),
+    });
+    const trainingWatchOwned = rehash({
+      ...plan,
+      assets: plan.assets.map((asset) =>
+        asset.kind === "training"
+          ? { ...asset, owner: "watch" as const }
+          : asset,
+      ),
+    });
+
+    expect(validateWatchRuntimePlan(cuePhoneOwned)).toContain(
+      "Watch plan cue asset must be present in the required asset list.",
+    );
+    expect(validateWatchRuntimePlan(trainingWatchOwned)).toContain(
+      "Enabled Watch training requires phone-owned training asset metadata.",
     );
   });
 

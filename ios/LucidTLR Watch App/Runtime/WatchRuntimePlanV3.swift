@@ -76,12 +76,18 @@ struct WatchRuntimePlanV3: Codable, Equatable {
       errors.append("Watch plans must include the cue asset sha256.")
     }
 
-    if !assets.contains(where: { $0.id == cue.assetId && $0.sha256 == cue.sha256 }) {
+    if !assets.contains(where: { $0.id == cue.assetId && $0.sha256 == cue.sha256 && $0.owner == "watch" }) {
       errors.append("Watch plan cue asset must be present in the required asset list.")
     }
 
-    if training.enabled && training.sha256.isEmpty {
-      errors.append("Enabled Watch training requires a bundled training asset sha256.")
+    if training.enabled &&
+      (training.sha256.isEmpty ||
+        !assets.contains(where: { $0.kind == "training" && $0.owner == "phone" && $0.sha256 == training.sha256 })) {
+      errors.append("Enabled Watch training requires phone-owned training asset metadata.")
+    }
+
+    if safety.lowBatteryWarningLevel <= safety.minimumStartBatteryLevel {
+      errors.append("Watch low battery warning level must be above the start minimum.")
     }
 
     if model.modelVersion.isEmpty || remModelVersion.isEmpty {
@@ -98,8 +104,8 @@ struct WatchRuntimePlanV3: Codable, Equatable {
       errors.append("Watch plans must preserve the v3 privacy exclusions.")
     }
 
-    if assets.contains(where: { $0.id.isEmpty || $0.fileName.isEmpty || $0.sha256.isEmpty || $0.byteLength <= 0 }) {
-      errors.append("Watch plan required assets must include id, filename, byteLength, and sha256.")
+    if assets.contains(where: { $0.id.isEmpty || ($0.owner != "watch" && $0.owner != "phone") || $0.fileName.isEmpty || $0.sha256.isEmpty || $0.byteLength <= 0 }) {
+      errors.append("Watch plan required assets must include id, owner, filename, byteLength, and sha256.")
     }
 
     // TODO: Recompute planHash after choosing the native SHA-256 implementation
@@ -189,6 +195,7 @@ struct WatchRuntimeSafetyV3: Codable, Equatable {
 struct WatchRuntimeAssetV3: Codable, Equatable {
   let id: String
   let kind: String
+  let owner: String
   let fileName: String
   let resourceName: String
   let resourceExtension: String

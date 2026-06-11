@@ -57,7 +57,7 @@ struct RealWatchRuntimePreflightProvider: WatchRuntimePreflightProviding {
   }
 
   private func requiredAssetsPresent(for plan: WatchRuntimePlanV3) -> Bool {
-    plan.assets.allSatisfy { asset in
+    plan.assets.filter { $0.owner == "watch" }.allSatisfy { asset in
       switch asset.kind {
       case "cue":
         return bundle.url(
@@ -65,10 +65,6 @@ struct RealWatchRuntimePreflightProvider: WatchRuntimePreflightProviding {
           withExtension: asset.resourceExtension
         ) != nil
       case "training":
-        guard plan.training.enabled else {
-          return true
-        }
-
         return bundle.url(
           forResource: asset.resourceName,
           withExtension: asset.resourceExtension

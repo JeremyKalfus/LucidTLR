@@ -112,6 +112,7 @@ function cueAsset(cueId: string): WatchRuntimeAssetV3 {
   return {
     id: cue.id,
     kind: "cue",
+    owner: "watch",
     fileName: cue.sourceFileName,
     resourceName: cue.nativeResourceName,
     resourceExtension: cue.nativeResourceExtension,
@@ -124,6 +125,7 @@ function trainingAsset(): WatchRuntimeAssetV3 {
   return {
     id: FINAL_LUCID_TRAINING_ASSET_ID,
     kind: "training",
+    owner: "phone",
     fileName: "final-lucid-training.mp3",
     resourceName: FINAL_LUCID_TRAINING_NATIVE_RESOURCE_NAME,
     resourceExtension: FINAL_LUCID_TRAINING_NATIVE_RESOURCE_EXTENSION,
@@ -239,7 +241,7 @@ export function buildWatchRuntimePlan(
       requireMotion: true,
       requireLowPowerModeOff: true,
       minimumStartBatteryLevel: 0.35,
-      lowBatteryWarningLevel: 0.25,
+      lowBatteryWarningLevel: 0.5,
       safeSealBatteryLevel: 0.18,
       emergencyStopBatteryLevel: 0.1,
     },
