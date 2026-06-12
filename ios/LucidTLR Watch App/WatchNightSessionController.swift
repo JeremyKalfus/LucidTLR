@@ -53,6 +53,14 @@ final class WatchNightSessionController: ObservableObject {
   private var epochTimer: Timer?
   private var statusTimer: Timer?
 
+  private init() {
+    transportCoordinator.onAckRecorded = { [weak self] rootDirectory in
+      Task { @MainActor in
+        self?.handleAckRecorded(rootDirectory: rootDirectory)
+      }
+    }
+  }
+
   static func isSyntheticLabPlan(_ plan: WatchRuntimePlanV3) -> Bool {
     plan.sessionId.hasPrefix("watch-mode-lab-")
   }
@@ -72,14 +80,19 @@ final class WatchNightSessionController: ObservableObject {
         return
       }
 
-      let index = WatchCurrentSessionIndex(rootDirectory: try rootDirectory(for: .product))
+      let productRootDirectory = try rootDirectory(for: .product)
+      let index = WatchCurrentSessionIndex(rootDirectory: productRootDirectory)
       currentSessionIndex = index
 
       if let entry = try index.load(), entry.isActiveUnacked {
         if entry.sealedPackageId != nil {
-          _ = try? transportCoordinator.recordLatestAckIfMatches(
-            rootDirectory: try rootDirectory(for: .product)
-          )
+          let ackRecorded = (try? transportCoordinator.recordLatestAckIfMatches(
+            rootDirectory: productRootDirectory
+          )) ?? false
+          if ackRecorded || isCurrentIndexResolved(index) {
+            showReadyForNextPlanAfterPhoneAck(index: index)
+            return
+          }
           surface = .syncPending
           statusMessage = "Night ended on watch. Waiting for phone import and ack."
         } else if sleepShieldViewModel != nil {
@@ -114,6 +127,30 @@ final class WatchNightSessionController: ObservableObject {
     } catch {
       handle(error: error)
     }
+  }
+
+  private func handleAckRecorded(rootDirectory: URL) {
+    guard rootDirectory.lastPathComponent == "WatchModeNightSessions" else {
+      return
+    }
+
+    refreshProductSurface()
+  }
+
+  private func isCurrentIndexResolved(_ index: WatchCurrentSessionIndex) -> Bool {
+    guard let entry = try? index.load() else {
+      return false
+    }
+
+    return !entry.isActiveUnacked
+  }
+
+  private func showReadyForNextPlanAfterPhoneAck(index: WatchCurrentSessionIndex) {
+    currentSessionIndex = index
+    sleepShieldViewModel = nil
+    surface = .waitingForPlan
+    statusMessage = "Waiting for plan from phone."
+    refreshRows()
   }
 
   func startProductSession(_ stagedPlan: WatchTransportStagedPlan) {

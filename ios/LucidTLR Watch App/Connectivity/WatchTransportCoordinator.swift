@@ -5,6 +5,7 @@ import WatchConnectivity
 final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDelegate {
   static let shared = WatchTransportCoordinator()
   var onNewStagedPlan: ((WatchTransportStagedPlan) -> Void)?
+  var onAckRecorded: ((URL) -> Void)?
 
   @Published private(set) var status = WatchTransportStatusSnapshot(
     activationState: "notActivated",
@@ -256,6 +257,9 @@ final class WatchTransportCoordinator: NSObject, ObservableObject, WCSessionDele
     )
     mutateState { state in
       state.latestAckRecorded = true
+    }
+    DispatchQueue.main.async { [weak self] in
+      self?.onAckRecorded?(rootDirectory)
     }
     return true
   }

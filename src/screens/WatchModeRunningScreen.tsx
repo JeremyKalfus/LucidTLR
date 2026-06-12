@@ -10,7 +10,6 @@ import {
 } from "react-native";
 
 import {
-  Card,
   InfoRow,
   Screen,
   SectionTitle,
@@ -192,54 +191,52 @@ export function WatchModeRunningScreen() {
   }, [participantId, reloadLocalData]);
 
   return (
-    <Screen>
-      <View style={{ gap: 14 }}>
+    <Screen bottomNav={false} centered>
+      <View style={{ alignSelf: "center", gap: 14, width: "100%" }}>
         <SectionTitle>{titleForLock(lock)}</SectionTitle>
 
-        <Card>
-          <View style={{ gap: 12 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <Watch color={colors.textMuted} size={21} strokeWidth={1.8} />
-              <Text
-                selectable
-                style={{
-                  color: colors.textPrimary,
-                  flex: 1,
-                  fontSize: typography.body.fontSize,
-                  lineHeight: typography.body.lineHeight,
-                }}
-              >
-                The Watch owns this night. Keep the session controls on the Watch.
-              </Text>
-            </View>
-
-            <InfoRow label="session" value={lock?.state?.sessionId ?? "loading"} />
-            <InfoRow label="ledger" value={lock?.state?.status ?? "loading"} />
-            <InfoRow
-              label="watch state"
-              value={lock?.state?.lastKnownWatchState ?? "waiting"}
-            />
-            <InfoRow
-              label="package"
-              value={lock?.state?.packageId ?? "not sealed"}
-            />
-            <InfoRow
-              label="transport"
-              value={
-                lock?.status.lastMessageType
-                  ? `${lock.status.lastMessageType}`
-                  : "waiting"
-              }
-            />
-            <InfoRow
-              label="refresh"
-              value={isRefreshing ? "syncing" : "idle"}
-            />
+        <View style={{ gap: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Watch color={colors.textMuted} size={21} strokeWidth={1.8} />
+            <Text
+              selectable
+              style={{
+                color: colors.textPrimary,
+                flex: 1,
+                fontSize: typography.body.fontSize,
+                lineHeight: typography.body.lineHeight,
+              }}
+            >
+              The Watch owns this night. Keep the session controls on the Watch.
+            </Text>
           </View>
-        </Card>
+
+          <InfoRow label="session" value={lock?.state?.sessionId ?? "loading"} />
+          <InfoRow label="ledger" value={lock?.state?.status ?? "loading"} />
+          <InfoRow
+            label="watch state"
+            value={lock?.state?.lastKnownWatchState ?? "waiting"}
+          />
+          <InfoRow
+            label="package"
+            value={lock?.state?.packageId ?? "not sealed"}
+          />
+          <InfoRow
+            label="transport"
+            value={
+              lock?.status.lastMessageType
+                ? `${lock.status.lastMessageType}`
+                : "waiting"
+            }
+          />
+          <InfoRow
+            label="refresh"
+            value={isRefreshing ? "syncing" : "idle"}
+          />
+        </View>
 
         {errorMessage ? (
-          <Card compact>
+          <View style={{ paddingVertical: 2 }}>
             <Text
               selectable
               style={{
@@ -250,7 +247,7 @@ export function WatchModeRunningScreen() {
             >
               {errorMessage}
             </Text>
-          </Card>
+          </View>
         ) : null}
 
         <Pressable
