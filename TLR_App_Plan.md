@@ -20,14 +20,14 @@ These papers are included as full PDFs in the repo. You may also refer to Jeremy
 ### Watch Mode
 
 - iPhone + Apple Watch.
-- Current implementation status: visible planned placeholder, disabled in this
-  build.
-- Watch Mode buttons/options should remain visible where appropriate, but must
-  not start a Watch session or call old native Watch runtime/import code.
-- Historical local Watch rows remain readable for Data, diagnostics, and full
-  exports.
-- Future Watch Mode rebuilds should remain Watch-owned: the Apple Watch should
-  own overnight sensing, cue timing, cue delivery, controls, and logs.
+- Current implementation status: Watch Mode v3 is implemented and watch-owned.
+  The Apple Watch owns overnight sensing (HealthKit heart rate, CoreMotion),
+  cue timing, cue delivery, controls, and source-of-truth logs. The phone owns
+  start sync, presleep training playback, the locked running/sync UI, and
+  morning import.
+- Public availability remains gated (`WATCH_MODE_ENABLED` is false) until
+  overnight validation completes; internal builds run the full product flow.
+- Local Watch rows remain readable for Data, diagnostics, and full exports.
 - Android watch support is excluded for now.
 
 ## Supported Devices

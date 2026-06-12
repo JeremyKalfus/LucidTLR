@@ -1,14 +1,15 @@
 # Watch Mode v3 Implementation Plan
 
-This is the phased implementation reference for the Watch-owned rebuild. It
-supersedes the v2 reference for new work, while ADR 003 remains the current
-public app status until hardware validation passes.
+Status (2026-06-12): this rebuild is IMPLEMENTED. The document remains as the
+phased design reference; current status and the validation record live in
+`docs/testing/watch-mode-v3-completion-plan.md`.
 
 ## Current Public Status
 
-Watch Mode remains visible but disabled. `WATCH_MODE_ENABLED` stays false.
-Home must block `Begin TLR` and `No TLR` for Watch Mode, and stale active Watch
-sessions remain local placeholders only.
+Watch Mode v3 is implemented and runs in internal builds. Public availability
+remains gated: `WATCH_MODE_ENABLED` stays false and public Home blocks
+`Begin TLR` and `No TLR` for Watch Mode until overnight validation completes
+and Jeremy explicitly flips the gate.
 
 ## Ownership
 

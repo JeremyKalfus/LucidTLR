@@ -8,11 +8,15 @@ the current repo.
 
 - `TLR_App_Plan.md` is the product/science contract.
 - `docs/llm-orientation.md` is the current implementation briefing.
-- `docs/decisions/003-watch-mode-reset-placeholder.md` is the current Watch
-  Mode implementation status.
-- `docs/decisions/001-watch-mode-is-watch-owned.md` is future architecture
-  reference while Watch Mode is disabled.
+- `docs/testing/watch-mode-v3-completion-plan.md` is the Watch Mode v3
+  validation roadmap and current status.
+- `docs/decisions/001-watch-mode-is-watch-owned.md` locks Watch Mode
+  ownership (implemented).
 - `docs/decisions/002-phone-mode-is-phone-owned.md` locks Phone Mode ownership.
+- `docs/decisions/005-watch-night-presleep-training-is-phone-played.md` locks
+  training playback ownership.
+- `docs/decisions/003-watch-mode-reset-placeholder.md` is historical
+  (superseded by the v3 rebuild).
 
 For Watch Mode work, read the orientation and Watch ADR before coding. For Phone
 Mode work, read the orientation and Phone ADR before coding.
@@ -20,10 +24,15 @@ Mode work, read the orientation and Phone ADR before coding.
 ## Non-Negotiable Invariants
 
 - Phone Mode is phone-owned.
-- Watch Mode is currently a visible disabled/planned placeholder.
-- Future Watch Mode rebuilds must stay watch-owned.
-- No current Watch Mode UI may start a Watch session or call native Watch
-  runtime/import code.
+- Watch Mode is watch-owned and implemented: the Watch owns overnight sensing,
+  cue timing, cue delivery, controls, and source-of-truth logs. The phone owns
+  start sync, presleep training playback, sync/status UI, and morning import.
+- Public Watch Mode stays gated: `WATCH_MODE_ENABLED` remains false, and
+  public (non-internal) builds must not start Watch sessions. The internal
+  product flow (`startWatchModeProductSession`) is the only start path.
+- The WatchConnectivity transport layer is frozen: do not modify the
+  transport state machine, epoch reset, dedup rings, hash verification, or
+  message handling without explicit approval.
 - Do not implement live iPhone-driven Watch cue timing.
 - Do not add research-control, no-cue, untrained-cue, sham, or placebo nights.
 - Do not make therapeutic, diagnostic, medical-efficacy, or guaranteed-induction

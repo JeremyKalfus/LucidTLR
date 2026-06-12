@@ -4,7 +4,10 @@ Date: 2026-06-05
 
 ## Status
 
-Accepted.
+Superseded (2026-06-12). The watch-owned v3 rebuild described in ADR 001 is
+now implemented; public availability remains gated behind
+`WATCH_MODE_ENABLED`. See `docs/testing/watch-mode-v3-completion-plan.md` for
+the validation record. This ADR remains as history of the 2026-06-05 reset.
 
 ## Context
 

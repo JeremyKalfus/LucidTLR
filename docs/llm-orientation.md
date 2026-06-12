@@ -22,29 +22,37 @@ product/science contract.
 
 - Phone Mode is phone-owned. The iPhone owns presleep training, overnight audio,
   cue timing, movement pauses, cue playback, and native phone logs.
-- Watch Mode is currently disabled and planned for a clean rebuild.
-- Internal Watch TLR nights use phone-played presleep training after the Watch
-  plan is staged. This is a training-audio-only exception: the Watch remains
-  the overnight owner and no phone cue engine or live Watch transport completion
-  signal is used.
-- Watch Mode UI affordances remain visible, but no button should create a Watch
-  session, call native Watch runtime code, or import old native Watch-owned
-  packages.
-- Historical local Watch data remains readable from `watch_epochs` and
-  `watch_runtime_events`.
+- Watch Mode v3 is implemented and watch-owned. The Watch owns overnight
+  sensing (HealthKit heart rate, CoreMotion), preflight gates, cue timing and
+  delivery, the sleep shield controls, and source-of-truth logs
+  (`WatchNightSessionController` + `WatchSessionCoordinator` with real
+  providers).
+- Watch TLR nights use phone-played presleep training after the Watch plan is
+  staged. This is a training-audio-only exception (ADR 005): the Watch remains
+  the overnight owner, cue timing anchors to the planned training end, and no
+  phone cue engine or live transport completion signal is used.
+- The phone/Watch sync runs over a hardened, FROZEN WatchConnectivity
+  transport (applicationContext-staged plans, hash-verified packages,
+  transactional import, ack gating, idempotency rings). Do not modify it.
+- Public builds remain gated: `WATCH_MODE_ENABLED` is false and public
+  Home/AppState block Watch starts. The internal product flow
+  (`startWatchModeProductSession` -> locked running screen -> morning import)
+  is the only start path.
 - Android Phone Mode is later only. Do not implement Android work unless Jeremy
   explicitly asks. Do not add Android watch support.
 
 ## Current Watch Behavior
 
-- Home may show the Watch Mode selection and Watch cue placeholders.
-- Selecting Watch Mode must make `Begin TLR` and `No TLR` show the disabled
-  message instead of starting a session.
-- A stale active Watch session renders a local disabled placeholder and can be
-  ended locally.
-- Morning Review, Data, and diagnostics may read local historical Watch rows but
-  must not probe native Watch status or imports.
-- The Watch app target is a placeholder only.
+- Internal builds: Home `Begin TLR`/`No TLR` with Watch Mode selected stages a
+  real plan; the Watch auto-commits, runs preflight on real providers, and
+  enters the sleep shield. Confirm Wake seals, transfers, and the phone
+  imports + acks into Morning Review. The phone locked running screen is
+  derived from the sync ledger only.
+- Public builds: `Begin TLR` and `No TLR` show the disabled message instead of
+  starting a session.
+- Interrupted/sealed-unacked sessions have explicit confirmed discard exits on
+  the Watch; the phone has a confirmed local escape hatch.
+- The internal lab screens remain synthetic/QA surfaces, not the product flow.
 
 ## Vocabulary
 
@@ -53,17 +61,12 @@ product/science contract.
   the later TLR interval.
 - Runtime Owner: the device responsible for session truth: timing, cue
   decisions, controls, stop behavior, and source-of-truth logs.
-- Historical Watch Data: local rows that were already synced before Watch Mode
-  was disabled.
-- Watch Mode Placeholder: visible UI for the planned Watch product surface. It
-  is not an implemented runtime.
-- No TLR / Log Sleep Only: a sleep session with cueing disabled. It is not a
-  research control night.
+- No TLR / Log Sleep Only: a sleep session with cueing disabled but full sleep
+  logging (sensors run). It is not a research control night.
 
 Avoid saying:
 
-- Watch Mode is implemented.
-- The app can start Watch Mode tonight.
+- Watch Mode is publicly available (it is implemented but gated).
 - The phone sends cues to the Watch.
 - Watch connected means Watch running.
 - No TLR is a control night.
@@ -81,22 +84,29 @@ Avoid saying:
 ## Source-Of-Truth Map
 
 - Product/science: `TLR_App_Plan.md`
-- Current Watch status: `docs/decisions/003-watch-mode-reset-placeholder.md`
-- Future Watch architecture reference:
-  `docs/decisions/001-watch-mode-is-watch-owned.md`
-- Phone-played Watch presleep training exception:
+- Watch Mode v3 status + validation roadmap:
+  `docs/testing/watch-mode-v3-completion-plan.md`
+- Watch ownership: `docs/decisions/001-watch-mode-is-watch-owned.md`
+  (implemented); `docs/decisions/003-watch-mode-reset-placeholder.md` is
+  historical.
+- Phone-played Watch presleep training:
   `docs/decisions/005-watch-night-presleep-training-is-phone-played.md`
 - Phone ownership: `docs/decisions/002-phone-mode-is-phone-owned.md`
 - Session flow: `src/screens/HomeScreen.tsx`,
   `src/screens/ActiveNightSessionScreen.tsx`,
+  `src/screens/WatchModeRunningScreen.tsx`,
   `src/screens/MorningReviewScreen.tsx`
+- Watch product flow: `src/features/watchMode/watchModeProductFlow.ts`,
+  `ios/LucidTLR Watch App/WatchNightSessionController.swift`
 - Phone runtime: `src/native/phoneRuntime/`,
   `ios/LucidTLR/LucidTLRPhoneRuntime.swift`
-- Watch placeholder app: `ios/LucidTLR Watch App/`
+- Watch app: `ios/LucidTLR Watch App/`
+- Transport (frozen): `ios/LucidTLR Watch App/Connectivity/`,
+  `ios/LucidTLR/LucidTLRWatchTransport.swift`
 - Rename compatibility: `src/data/local/legacyLocalDataMigration.ts`,
   `ios/LucidTLR/LucidTLRLegacyMigration.swift`
 - Built-in cue metadata: `src/audio/cueCatalog.ts`
-- Watch placeholder tests: `tests/watch/watchOwnedSourceOfTruth.test.ts`
+- Watch guardrail tests: `tests/watch/`
 
 ## Worker Rules
 
