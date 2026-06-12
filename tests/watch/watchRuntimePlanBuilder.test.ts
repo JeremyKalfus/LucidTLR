@@ -63,6 +63,28 @@ describe("buildWatchRuntimePlan", () => {
       audioRequiresPreflight: true,
       defaultOutput: "haptic",
     });
+  });
+
+  it("marks audio as the primary output channel when the audio cue is enabled", () => {
+    const plan = buildWatchRuntimePlan({
+      sessionId: "session-audio-1",
+      participantId: "participant-1",
+      sessionType: "tlr",
+      createdAt: "2026-06-07T04:00:00.000Z",
+      selectedCueId: "dx-harp-c5",
+      tlrOptions: {
+        ...createDefaultTlrOptions(),
+        watchAudioCueEnabled: true,
+      },
+      engineSettings: createDefaultEngineSettings("standard"),
+      allowExperimentalAudio: true,
+    });
+
+    expect(plan.cueOutput).toMatchObject({
+      hapticEnabled: true,
+      audioEnabled: true,
+      defaultOutput: "audio",
+    });
     expect(plan.epoching).toMatchObject({
       epochSeconds: 30,
       rawMotionPersistence: false,

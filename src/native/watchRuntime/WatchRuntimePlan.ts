@@ -40,7 +40,7 @@ export interface WatchRuntimeCueOutputV3 {
   audioEnabled: boolean;
   audioRequiresPreflight: boolean;
   preflightRequired: boolean;
-  defaultOutput: "haptic";
+  defaultOutput: "haptic" | "audio";
 }
 
 export interface WatchRuntimeTrainingCueScheduleEntryV3 {

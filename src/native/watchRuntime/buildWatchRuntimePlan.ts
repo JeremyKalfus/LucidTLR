@@ -185,7 +185,9 @@ export function buildWatchRuntimePlan(
       audioEnabled,
       audioRequiresPreflight: true,
       preflightRequired: isTlr,
-      defaultOutput: "haptic",
+      // The Konkoly protocol cue is audio-first; haptic is the fallback when
+      // the user has not enabled the audio cue.
+      defaultOutput: audioEnabled ? "audio" : "haptic",
     },
     training: {
       enabled: trainingEnabled,
