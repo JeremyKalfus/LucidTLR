@@ -121,6 +121,11 @@ final class WatchNightSessionController: ObservableObject {
       return
     }
 
+    // A previous night that is sealed and already acked by the phone - but
+    // whose ack the Watch has not yet recorded - must not block the new
+    // night. Consume any matching pending ack before the start gate runs.
+    consumePendingAckBeforeStartIfPossible(newSessionId: stagedPlan.sessionId)
+
     #if targetEnvironment(simulator)
     let message = "Real Watch Mode product sessions require device providers; simulator product start is blocked."
     let occurredAt = WatchRuntimeDateFormat.string(from: Date())
@@ -193,6 +198,55 @@ final class WatchNightSessionController: ObservableObject {
       sleepShieldViewModel = nil
       surface = .syncPending
       statusMessage = "Ended real-provider session \(activePlan.sessionId), sealed package, and queued transfer through the frozen transport path."
+      refreshRows()
+    } catch {
+      handle(error: error)
+    }
+  }
+
+  private func consumePendingAckBeforeStartIfPossible(newSessionId: String) {
+    do {
+      let index = WatchCurrentSessionIndex(rootDirectory: try rootDirectory(for: .product))
+
+      guard let entry = try index.load(),
+        entry.isActiveUnacked,
+        entry.activeSessionId != newSessionId,
+        entry.sealedPackageId != nil else {
+        return
+      }
+
+      _ = try? transportCoordinator.recordLatestAckIfMatches(
+        rootDirectory: rootDirectory(for: .product)
+      )
+    } catch {
+      // Best-effort only; the start gate reports the real blocker if any.
+    }
+  }
+
+  /// Explicit local exit for a sealed previous night the phone can no longer
+  /// acknowledge (for example after the phone app was deleted and
+  /// reinstalled, wiping its ledger). Marks the index entry discarded so a
+  /// new night can start; the sealed package and log files are NOT deleted
+  /// and remain on the Watch.
+  func discardSyncPendingSessionWithExplicitConfirmation() {
+    do {
+      let index = WatchCurrentSessionIndex(rootDirectory: try rootDirectory(for: .product))
+
+      guard let entry = try index.load(), entry.isActiveUnacked else {
+        surface = .waitingForPlan
+        statusMessage = "Waiting for plan from phone."
+        refreshRows()
+        return
+      }
+
+      try index.discardSyntheticLabSession(
+        explicitConfirmation: true,
+        discardedAt: Date()
+      )
+      currentSessionIndex = index
+      sleepShieldViewModel = nil
+      surface = .waitingForPlan
+      statusMessage = "Discarded sealed night \(entry.activeSessionId) locally. Its data files remain on the Watch but will not sync. Waiting for plan from phone."
       refreshRows()
     } catch {
       handle(error: error)

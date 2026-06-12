@@ -145,6 +145,35 @@ describe("Build 23 product Watch Mode fix batch guardrails", () => {
     expect(mainLayout).toContain('pathname !== "/watch-mode-running"');
   });
 
+  it("consumes a pending ack before the start gate and gives sync-pending an explicit exit", () => {
+    const controller = readSource(
+      "ios/LucidTLR Watch App/WatchNightSessionController.swift",
+    );
+    const productView = readSource(
+      "ios/LucidTLR Watch App/WatchModeProductView.swift",
+    );
+
+    // A sealed-but-unacked previous night must never silently block a new
+    // night: a matching pending ack is consumed automatically before the
+    // start gate runs.
+    expect(controller).toContain("consumePendingAckBeforeStartIfPossible");
+    expect(
+      controller.indexOf("consumePendingAckBeforeStartIfPossible(newSessionId:"),
+    ).toBeGreaterThan(-1);
+
+    // After a phone-app reinstall the phone can never ack the old night; the
+    // Watch sync-pending surface needs an explicit, confirmed local discard
+    // (files retained) so the Watch cannot be permanently wedged.
+    expect(controller).toContain(
+      "func discardSyncPendingSessionWithExplicitConfirmation()",
+    );
+    expect(productView).toContain("Discard Night on Watch");
+    expect(productView).toContain(
+      "controller.discardSyncPendingSessionWithExplicitConfirmation()",
+    );
+    expect(productView).toContain("discardSyncPendingConfirmationVisible");
+  });
+
   it("keeps the low-battery warning branch reachable above the hard start minimum", () => {
     const planBuilder = readSource("src/native/watchRuntime/buildWatchRuntimePlan.ts");
     const swiftPlanFixtures = [
