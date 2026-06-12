@@ -111,6 +111,31 @@ describe("Build 23 product Watch Mode fix batch guardrails", () => {
     expect(coordinator).toContain("WatchModeLabSynthetic");
   });
 
+  it("refreshes the product Watch surface after the phone ack resolves sync-pending", () => {
+    const controller = readSource(
+      "ios/LucidTLR Watch App/WatchNightSessionController.swift",
+    );
+    const coordinator = readSource(
+      "ios/LucidTLR Watch App/Connectivity/WatchTransportCoordinator.swift",
+    );
+    const refreshPath = sliceBetween(
+      controller,
+      "func refreshProductSurface()",
+      "func startProductSession",
+    );
+
+    expect(coordinator).toContain("var onAckRecorded: ((URL) -> Void)?");
+    expect(coordinator).toContain("onAckRecorded?(rootDirectory)");
+    expect(controller).toContain("transportCoordinator.onAckRecorded");
+    expect(controller).toContain("handleAckRecorded(rootDirectory:");
+    expect(controller).toContain("WatchModeNightSessions");
+    expect(refreshPath).toContain("ackRecorded || isCurrentIndexResolved(index)");
+    expect(refreshPath.indexOf("showReadyForNextPlanAfterPhoneAck")).toBeLessThan(
+      refreshPath.indexOf("surface = .syncPending"),
+    );
+    expect(controller).toContain('statusMessage = "Waiting for plan from phone."');
+  });
+
   it("keeps watch product starts out of the phone cue engine state", () => {
     const productFlow = readSource("src/features/watchMode/watchModeProductFlow.ts");
 
@@ -172,6 +197,24 @@ describe("Build 23 product Watch Mode fix batch guardrails", () => {
       "controller.discardSyncPendingSessionWithExplicitConfirmation()",
     );
     expect(productView).toContain("discardSyncPendingConfirmationVisible");
+  });
+
+  it("aggregates each epoch over the elapsed window, never a future window", () => {
+    const coordinator = readSource(
+      "ios/LucidTLR Watch App/Runtime/WatchSessionCoordinator.swift",
+    );
+
+    // Real providers buffer past-timestamped samples; a forward-looking
+    // [now, now+epoch) window reads zero HR and zero motion samples by
+    // construction (build 25 overnight: 927 epochs, all empty). The epoch
+    // window must end at the current clock and look backward.
+    expect(coordinator).toContain("let epochEnd = clock.now");
+    expect(coordinator).toContain(
+      "let epochStart = epochEnd.addingTimeInterval(-TimeInterval(plan.epoching.epochSeconds))",
+    );
+    expect(coordinator).not.toContain(
+      "let epochEnd = epochStart.addingTimeInterval(TimeInterval(plan.epoching.epochSeconds))",
+    );
   });
 
   it("keeps the low-battery warning branch reachable above the hard start minimum", () => {

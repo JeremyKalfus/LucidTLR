@@ -228,13 +228,22 @@ final class WatchSessionCoordinator {
       throw WatchSessionCoordinatorError.runtimeNotActive
     }
 
+    // Advance first, then aggregate the epoch that just ELAPSED. The window
+    // must look backward from now: real providers buffer samples with past
+    // timestamps, so a forward-looking [now, now+epoch) window is empty by
+    // construction (synthetic providers fabricate samples for any requested
+    // window, which hid this for every synthetic run). With the deterministic
+    // clock, advance-then-window-backward yields exactly the same windows as
+    // the previous window-forward-then-advance, so synthetic behavior is
+    // unchanged.
+    clock.advance(by: TimeInterval(plan.epoching.epochSeconds))
+
     if state == .paused {
-      clock.advance(by: TimeInterval(plan.epoching.epochSeconds))
       throw WatchSessionCoordinatorError.runtimeNotActive
     }
 
-    let epochStart = clock.now
-    let epochEnd = epochStart.addingTimeInterval(TimeInterval(plan.epoching.epochSeconds))
+    let epochEnd = clock.now
+    let epochStart = epochEnd.addingTimeInterval(-TimeInterval(plan.epoching.epochSeconds))
     let elapsedAtStart = Int(epochStart.timeIntervalSince(startedAt))
     let elapsedAtEnd = Int(epochEnd.timeIntervalSince(startedAt))
 
@@ -318,8 +327,6 @@ final class WatchSessionCoordinator {
       cueDecisionReason: decision.reason,
       batteryLevel: battery.level
     )
-
-    clock.advance(by: TimeInterval(plan.epoching.epochSeconds))
 
     if battery.level <= plan.safety.safeSealBatteryLevel && sealedManifest == nil {
       appendEvent(
