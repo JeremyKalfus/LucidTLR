@@ -219,15 +219,25 @@ export async function loadWatchModeProductLockState(input: {
   participantId: string;
   refreshTransport?: boolean;
 }): Promise<WatchModeProductLockState> {
-  const summary =
-    input.refreshTransport === false
-      ? {
-          status: await watchTransport.getTransportStatus(),
-        }
-      : await applyWatchTransportReceiptSnapshots({
-          db: input.db,
-          participantId: input.participantId,
-        });
+  let summary: { status: NativeWatchTransportStatus };
+
+  if (input.refreshTransport === false) {
+    summary = {
+      status: await watchTransport.getTransportStatus(),
+    };
+  } else {
+    // Activate (not just read) the WCSession on every refresh. Activation is
+    // idempotent, and without it a relaunched phone app never sets the
+    // WCSession delegate, so queued watch deliveries (seal snapshot, package
+    // manifest, package file) sit undelivered in the session inbox forever
+    // while this screen polls a status that can never change. The lab screen
+    // always activated, which masked this for every lab-touched session.
+    await watchTransport.activateTransport();
+    summary = await applyWatchTransportReceiptSnapshots({
+      db: input.db,
+      participantId: input.participantId,
+    });
+  }
   const state = await loadProductRecoveryState(input);
   const phase = phaseForState(state);
 

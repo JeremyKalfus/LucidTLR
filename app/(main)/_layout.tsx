@@ -51,7 +51,14 @@ function WatchModeProductLockGate() {
       participantId,
     });
 
-    if (lock.state && pathname !== "/watch-mode-running") {
+    // The lock guards session-mutating surfaces, not the whole app. Debug
+    // routes stay reachable so diagnostics and the lab are never locked out
+    // while a session is running (the lab is also the recovery surface).
+    if (
+      lock.state &&
+      pathname !== "/watch-mode-running" &&
+      !pathname.startsWith("/debug")
+    ) {
       router.replace("/watch-mode-running");
     }
   }, [participantId, pathname]);

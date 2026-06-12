@@ -119,6 +119,32 @@ describe("Build 23 product Watch Mode fix batch guardrails", () => {
     expect(productFlow).not.toContain("\"start_watch_night\"");
   });
 
+  it("activates the WCSession on every product lock refresh, not just reads it", () => {
+    const productFlow = readSource("src/features/watchMode/watchModeProductFlow.ts");
+
+    // A relaunched phone app that only ever calls getTransportStatus never
+    // sets the WCSession delegate, so queued watch deliveries sit undelivered
+    // forever while the locked screen polls a status that cannot change. The
+    // lab screen always activated, which masked this for lab-touched runs.
+    const refreshBranch = productFlow.slice(
+      productFlow.indexOf("export async function loadWatchModeProductLockState"),
+      productFlow.indexOf("export async function resolveWatchModeProductSync"),
+    );
+    expect(refreshBranch).toContain("watchTransport.activateTransport()");
+    expect(refreshBranch.indexOf("watchTransport.activateTransport()")).toBeLessThan(
+      refreshBranch.indexOf("applyWatchTransportReceiptSnapshots"),
+    );
+  });
+
+  it("scopes the running lock to mutating surfaces and keeps debug routes reachable", () => {
+    const mainLayout = readSource("app/(main)/_layout.tsx");
+
+    // The lock redirect trapped users out of diagnostics entirely (deep links
+    // included) while a session was running. Debug routes must stay reachable.
+    expect(mainLayout).toContain('!pathname.startsWith("/debug")');
+    expect(mainLayout).toContain('pathname !== "/watch-mode-running"');
+  });
+
   it("keeps the low-battery warning branch reachable above the hard start minimum", () => {
     const planBuilder = readSource("src/native/watchRuntime/buildWatchRuntimePlan.ts");
     const swiftPlanFixtures = [
