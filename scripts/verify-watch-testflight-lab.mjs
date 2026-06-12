@@ -61,9 +61,12 @@ const importer = read("src/features/watchHistory/importWatchPackage.ts");
 const transportLab = read("src/features/watchModeLab/watchModeTransportLab.ts");
 const productFlow = read("src/features/watchMode/watchModeProductFlow.ts");
 const runningScreen = read("src/screens/WatchModeRunningScreen.tsx");
+const watchTrainingPlayback = read("src/features/watchMode/watchModeTrainingPlayback.ts");
 const mainLayout = read("app/(main)/_layout.tsx");
 const nativeWatchTransportTypes = read("src/native/watchTransport/NativeWatchTransportTypes.ts");
 const phoneBridge = read("ios/LucidTLR/LucidTLRWatchTransport.swift");
+const phoneRuntimeClient = read("src/native/phoneRuntime/phoneRuntimeClient.ts");
+const phoneRuntimeSwift = read("ios/LucidTLR/LucidTLRPhoneRuntime.swift");
 const packageJson = readJson("package.json");
 const realProviderFiles = [
   "ios/LucidTLR Watch App/Runtime/RealBatteryProvider.swift",
@@ -346,9 +349,16 @@ check(
 );
 
 check(
-  "locked phone running screen only exposes the explicit destructive local escape hatch",
+  "locked phone running screen exposes training-only controls and the explicit destructive local escape hatch",
   runningScreen.includes("Watch Mode running - started") &&
     runningScreen.includes("Night ended on watch - syncing...") &&
+    runningScreen.includes("Presleep training playing") &&
+    runningScreen.includes("startPhonePresleepTrainingOnly") &&
+    runningScreen.includes("stopPhonePresleepTrainingOnly") &&
+    !runningScreen.includes("startPhoneTlrSession(") &&
+    !runningScreen.includes("skipPhonePresleepTrainingAndStartRuntime") &&
+    watchTrainingPlayback.includes("Skip training?") &&
+    watchTrainingPlayback.includes("Tonight's cue timing stays the same.") &&
     runningScreen.includes("Alert.alert") &&
     runningScreen.includes("End Watch session?") &&
     runningScreen.includes("Ending here may lose the night's data from the Watch.") &&
@@ -359,6 +369,15 @@ check(
     !runningScreen.includes("startSession(") &&
     !runningScreen.includes("sendSessionEvent(") &&
     !runningScreen.includes("deleteSession("),
+);
+
+check(
+  "Watch-night phone training uses training-only native phone runtime methods",
+  phoneRuntimeClient.includes("startPhonePresleepTrainingOnly") &&
+    phoneRuntimeClient.includes("stopPhonePresleepTrainingOnly") &&
+    phoneRuntimeSwift.includes('trainingCompletionAction: "stop_training_only"') &&
+    phoneRuntimeSwift.includes("private func completePresleepTrainingOnly") &&
+    phoneRuntimeSwift.includes("stopRuntime(reason: completionReason, errorMessage: nil, logEvent: false)"),
 );
 
 const labScopedFiles = [

@@ -1,5 +1,8 @@
 import type { LocalDb } from "@/src/data/local/localDb";
-import { upsertLocalSession } from "@/src/data/local/repositories";
+import {
+  loadLocalSessions,
+  upsertLocalSession,
+} from "@/src/data/local/repositories";
 import type { NightSession, SessionType, TlrOptions } from "@/src/domain/types";
 import type { CueDecisionSettings } from "@/src/engine";
 import { createNightSession } from "@/src/features/sessions/sessionActions";
@@ -41,6 +44,7 @@ export type WatchModeProductLockPhase =
 export interface WatchModeProductLockState {
   phase: WatchModeProductLockPhase;
   state: WatchSessionSyncState | null;
+  session: NightSession | null;
   status: NativeWatchTransportStatus;
   message: string;
   resolvedSessionId?: string;
@@ -123,6 +127,19 @@ async function loadProductRecoveryState(input: {
   return recovery.state;
 }
 
+async function loadProductSession(input: {
+  db: LocalDb;
+  participantId: string;
+  sessionId: string;
+}): Promise<NightSession | null> {
+  const sessions = await loadLocalSessions({
+    db: input.db,
+    participantId: input.participantId,
+  });
+
+  return sessions.find((session) => session.id === input.sessionId) ?? null;
+}
+
 export function isWatchModeProductFlowAvailable(): boolean {
   return isWatchModeLabAvailable();
 }
@@ -172,7 +189,13 @@ export async function startWatchModeProductSession(input: {
   });
   // The Watch sync ledger owns the running/syncing state for Watch nights.
   // Keeping the phone session row in setup prevents the phone cue engine from arming.
-  const session = baseSession;
+  const session: NightSession = {
+    ...baseSession,
+    guidedTrainingSkipped:
+      input.sessionType === "tlr"
+        ? input.tlrOptions.skipGuidedTraining
+        : true,
+  };
   const plan = buildWatchRuntimePlanFromSession({
     session,
     tlrOptions: input.tlrOptions,
@@ -240,10 +263,18 @@ export async function loadWatchModeProductLockState(input: {
   }
   const state = await loadProductRecoveryState(input);
   const phase = phaseForState(state);
+  const session = state
+    ? await loadProductSession({
+        db: input.db,
+        participantId: input.participantId,
+        sessionId: state.sessionId,
+      })
+    : null;
 
   return {
     phase,
     state,
+    session,
     status: summary.status,
     message: state
       ? `Watch session ${state.sessionId} is ${state.status}.`
@@ -302,6 +333,7 @@ export async function resolveWatchModeProductSync(input: {
       ...afterAck,
       phase: "resolved",
       resolvedSessionId: ackState.sessionId,
+      session: afterAck.session,
       message: `Watch session ${ackState.sessionId} imported and acked.`,
     };
   }
@@ -328,4 +360,73 @@ export async function abandonWatchModeProductSessionLocalOnly(input: {
       explicit: true,
     }),
   });
+}
+
+export async function markWatchModeProductTrainingStarted(input: {
+  db: LocalDb;
+  participantId: string;
+  sessionId: string;
+  startedAt: string;
+}): Promise<NightSession> {
+  const session = await loadProductSession({
+    db: input.db,
+    participantId: input.participantId,
+    sessionId: input.sessionId,
+  });
+
+  if (!session) {
+    throw new Error(`Watch session ${input.sessionId} was not found.`);
+  }
+
+  if (session.trainingStartedAt) {
+    return session;
+  }
+
+  const nextSession: NightSession = {
+    ...session,
+    trainingStartedAt: input.startedAt,
+    guidedTrainingSkipped: false,
+  };
+
+  await upsertLocalSession({
+    db: input.db,
+    session: nextSession,
+  });
+
+  return nextSession;
+}
+
+export async function markWatchModeProductTrainingEnded(input: {
+  db: LocalDb;
+  participantId: string;
+  sessionId: string;
+  endedAt: string;
+  skipped?: boolean;
+}): Promise<NightSession> {
+  const session = await loadProductSession({
+    db: input.db,
+    participantId: input.participantId,
+    sessionId: input.sessionId,
+  });
+
+  if (!session) {
+    throw new Error(`Watch session ${input.sessionId} was not found.`);
+  }
+
+  if (session.trainingEndedAt) {
+    return session;
+  }
+
+  const nextSession: NightSession = {
+    ...session,
+    trainingEndedAt: input.endedAt,
+    guidedTrainingSkipped: input.skipped ? true : session.guidedTrainingSkipped,
+  };
+
+  await upsertLocalSession({
+    db: input.db,
+    session: nextSession,
+  });
+
+  return nextSession;
 }

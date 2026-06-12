@@ -15,6 +15,7 @@ import {
   buildNativePhoneSessionPlan,
   buildNativePhoneSessionPlanFromCompletedSession,
   buildNativePhoneSessionPlanForLockedTraining,
+  buildNativePhoneSessionPlanForWatchLockedTraining,
 } from "@/src/native/phoneRuntime/buildNativePhoneSessionPlan";
 import {
   nativePhoneSessionUsesPredictedRemWindows,
@@ -301,6 +302,29 @@ describe("buildNativePhoneSessionPlan", () => {
     expect(plan.training.lockedPlayback.cueSchedule[0]).toMatchObject({
       markerIndex: 0,
     });
+  });
+
+  it("builds phone-played locked training for a Watch night without changing the session row mode", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const trainingStartedAt = "2026-01-20T03:50:05.000Z";
+    const watchSession: NightSession = {
+      ...session(),
+      mode: "watch",
+      status: "setup",
+      trainingStartedAt: undefined,
+      trainingEndedAt: undefined,
+    };
+    const plan = buildNativePhoneSessionPlanForWatchLockedTraining({
+      session: watchSession,
+      trainingStartedAt,
+      settings,
+    });
+
+    expect(watchSession.mode).toBe("watch");
+    expect(plan.mode).toBe("phone");
+    expect(plan.sessionId).toBe(watchSession.id);
+    expect(plan.trainingStartedAt).toBe(trainingStartedAt);
+    expect(plan.training.lockedPlayback.enabled).toBe(true);
   });
 
   it("rejects plans without a required audible audio bed", () => {

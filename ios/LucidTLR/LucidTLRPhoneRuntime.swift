@@ -137,6 +137,7 @@ private struct PhoneRuntimeState: Codable {
   var alarmRinging: Bool
   var alarmFireAt: String?
   var alarmFiredAt: String?
+  var trainingCompletionAction: String?
 }
 
 private struct RuntimeSnapshot: Codable {
@@ -243,7 +244,8 @@ class LucidTLRPhoneRuntime: NSObject {
         userDeferredUntil: nil,
         alarmRinging: false,
         alarmFireAt: plan.alarm.fireAt,
-        alarmFiredAt: nil
+        alarmFiredAt: nil,
+        trainingCompletionAction: nil
       )
       self.activeLogs = self.loadLogs(sessionId: plan.sessionId)
 
@@ -302,7 +304,8 @@ class LucidTLRPhoneRuntime: NSObject {
         userDeferredUntil: nil,
         alarmRinging: false,
         alarmFireAt: plan.alarm.fireAt,
-        alarmFiredAt: nil
+        alarmFiredAt: nil,
+        trainingCompletionAction: "start_runtime"
       )
       self.activeLogs = self.loadLogs(sessionId: plan.sessionId)
 
@@ -319,6 +322,92 @@ class LucidTLRPhoneRuntime: NSObject {
         self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
         reject("phone_training_start_failed", error.localizedDescription, error)
       }
+    }
+  }
+
+  @objc(startPhonePresleepTrainingOnly:resolver:rejecter:)
+  func startPhonePresleepTrainingOnly(
+    _ planDictionary: NSDictionary,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let plan: PhoneRuntimePlan
+
+    do {
+      plan = try decodePlan(planDictionary)
+      try validatePlan(plan)
+
+      guard plan.training.lockedPlayback.enabled else {
+        throw runtimeError("Locked presleep training requires native training playback.")
+      }
+    } catch {
+      reject("invalid_phone_training_playback_plan", error.localizedDescription, error)
+      return
+    }
+
+    queue.async {
+      self.stopRuntime(reason: "replaced_by_new_session", errorMessage: nil, logEvent: true)
+      self.activePlan = plan
+      self.audioInterruptionActive = false
+      self.audioRecoveryGraceUntil = nil
+      self.nextAudioRecoveryAttemptAt = nil
+      self.state = PhoneRuntimeState(
+        sessionId: plan.sessionId,
+        runtimeStartedAt: self.formatDate(Date()),
+        phase: "training",
+        cueCount: 0,
+        cuesInBlock: 0,
+        stableLowMovementSeconds: 0,
+        latestDecisionReason: "training_started",
+        userPaused: false,
+        userDeferredUntil: nil,
+        alarmRinging: false,
+        alarmFireAt: plan.alarm.fireAt,
+        alarmFiredAt: nil,
+        trainingCompletionAction: "stop_training_only"
+      )
+      self.activeLogs = self.loadLogs(sessionId: plan.sessionId)
+
+      do {
+        try self.configureAudioSession()
+        try self.startPresleepTrainingPlayback(plan: plan)
+        self.persistRuntimeSnapshot()
+        resolve(nil)
+      } catch {
+        self.appendEvent("training_failed", payload: [
+          "operation": "start_presleep_training_only",
+          "error": error.localizedDescription
+        ])
+        self.stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
+        reject("phone_training_start_failed", error.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc(stopPhonePresleepTrainingOnly:resolver:rejecter:)
+  func stopPhonePresleepTrainingOnly(
+    _ options: NSDictionary?,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    let reason = options?["reason"] as? String ?? "user_stopped"
+
+    queue.async {
+      guard let plan = self.activePlan, self.state?.phase == "training" else {
+        reject(
+          "phone_training_stop_failed",
+          "No active presleep training audio to stop.",
+          self.runtimeError("No active presleep training audio to stop.")
+        )
+        return
+      }
+
+      self.completePresleepTrainingOnly(
+        plan: plan,
+        completionReason: reason,
+        latestDecisionReason: "training_stopped"
+      )
+      resolve(nil)
     }
   }
 
@@ -870,6 +959,17 @@ class LucidTLRPhoneRuntime: NSObject {
     player.numberOfLoops = 0
     player.volume = 1
     player.prepareToPlay()
+    if let plannedTrainingStart = parseDate(plan.trainingStartedAt) {
+      let elapsedSeconds = max(0, Date().timeIntervalSince(plannedTrainingStart))
+      let playbackDuration = min(
+        player.duration,
+        plan.training.lockedPlayback.durationSeconds
+      )
+
+      if elapsedSeconds > 0 {
+        player.currentTime = min(elapsedSeconds, playbackDuration)
+      }
+    }
     trainingAudioPlayer = player
 
     guard player.play() else {
@@ -909,7 +1009,7 @@ class LucidTLRPhoneRuntime: NSObject {
 
     let remainingSeconds = max(0, plan.training.lockedPlayback.durationSeconds - elapsedSeconds)
     trainingCompletionTimer = makeTimer(after: remainingSeconds) { [weak self] in
-      self?.completePresleepTrainingAndStartRuntime(plan: plan)
+      self?.completePresleepTraining(plan: plan)
     }
   }
 
@@ -995,6 +1095,19 @@ class LucidTLRPhoneRuntime: NSObject {
     }
   }
 
+  private func completePresleepTraining(plan: PhoneRuntimePlan) {
+    if state?.trainingCompletionAction == "stop_training_only" {
+      completePresleepTrainingOnly(
+        plan: plan,
+        completionReason: "training_audio_finished",
+        latestDecisionReason: "training_completed"
+      )
+      return
+    }
+
+    completePresleepTrainingAndStartRuntime(plan: plan)
+  }
+
   private func completePresleepTrainingAndStartRuntime(plan: PhoneRuntimePlan) {
     do {
       _ = try handOffPresleepTrainingToRuntime(
@@ -1009,6 +1122,37 @@ class LucidTLRPhoneRuntime: NSObject {
       ])
       stopRuntime(reason: "error", errorMessage: error.localizedDescription, logEvent: true)
     }
+  }
+
+  private func completePresleepTrainingOnly(
+    plan: PhoneRuntimePlan,
+    completionReason: String,
+    latestDecisionReason: String
+  ) {
+    guard state?.phase == "training" else {
+      return
+    }
+
+    cancelPresleepTrainingTimers()
+    trainingAudioPlayer?.stop()
+    trainingAudioPlayer = nil
+    trainingCueAudioPlayer?.stop()
+    trainingCueAudioPlayer = nil
+
+    let now = Date()
+    let expectedTrainingEndedAt = parseDate(plan.trainingEndedAt)
+    let driftMs = expectedTrainingEndedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? 0
+
+    state?.latestDecisionReason = latestDecisionReason
+    appendEvent("training_completed", payload: [
+      "reason": completionReason,
+      "expectedTrainingEndedAt": plan.trainingEndedAt,
+      "actualTrainingEndedAt": formatDate(now),
+      "driftMs": driftMs,
+      "appState": currentAppState()
+    ])
+    persistLogs(sessionId: plan.sessionId)
+    stopRuntime(reason: completionReason, errorMessage: nil, logEvent: false)
   }
 
   @discardableResult
@@ -1033,6 +1177,7 @@ class LucidTLRPhoneRuntime: NSObject {
 
     state?.phase = "runtime"
     state?.latestDecisionReason = latestDecisionReason
+    state?.trainingCompletionAction = nil
 
     appendEvent("training_completed", payload: [
       "reason": completionReason,
@@ -2491,6 +2636,8 @@ class LucidTLRPhoneRuntime: NSObject {
       "running": true,
       "phase": state.phase ?? (state.alarmRinging ? "alarm" : "runtime"),
       "sessionId": plan.sessionId,
+      "trainingAudioRunning": trainingAudioPlayer?.isPlaying == true,
+      "trainingCurrentTime": trainingAudioPlayer?.currentTime ?? 0,
       "audioBedRunning": isAudioBedRunning(),
       "backgroundAudioRunning": isBackgroundAudioRunning(),
       "alarmRinging": state.alarmRinging,

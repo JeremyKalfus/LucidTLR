@@ -5,9 +5,19 @@ import type {
 } from "./NativePhoneSessionPlan";
 
 type RuntimeStopReason = "user_stopped" | "completed" | "error";
+type TrainingOnlyStopReason =
+  | "user_skipped"
+  | "window_expired"
+  | "user_stopped"
+  | "completed"
+  | "error";
 
 export type RuntimeStopOptions = {
   reason?: RuntimeStopReason;
+};
+
+export type TrainingOnlyStopOptions = {
+  reason?: TrainingOnlyStopReason;
 };
 
 export type RuntimeDeferOptions = {
@@ -18,6 +28,12 @@ export interface NativePhoneRuntimeModule {
   startPhoneTlrSession: (plan: NativePhoneSessionPlan) => Promise<void>;
   startPhoneTlrSessionAfterPresleepTraining: (
     plan: NativePhoneSessionPlan,
+  ) => Promise<void>;
+  startPhonePresleepTrainingOnly: (
+    plan: NativePhoneSessionPlan,
+  ) => Promise<void>;
+  stopPhonePresleepTrainingOnly: (
+    options?: TrainingOnlyStopOptions,
   ) => Promise<void>;
   skipPhonePresleepTrainingAndStartRuntime: () => Promise<void>;
   pausePhonePresleepTraining: () => Promise<void>;
@@ -44,6 +60,8 @@ type NativePhoneRuntimeMethodName = keyof NativePhoneRuntimeModule;
 const requiredNativeMethods: NativePhoneRuntimeMethodName[] = [
   "startPhoneTlrSession",
   "startPhoneTlrSessionAfterPresleepTraining",
+  "startPhonePresleepTrainingOnly",
+  "stopPhonePresleepTrainingOnly",
   "skipPhonePresleepTrainingAndStartRuntime",
   "pausePhonePresleepTraining",
   "resumePhonePresleepTraining",
@@ -61,6 +79,8 @@ function unavailableStatus(reason: string): PhoneRuntimeStatus {
     available: false,
     unavailableReason: reason,
     running: false,
+    trainingAudioRunning: false,
+    trainingCurrentTime: 0,
     audioBedRunning: false,
     backgroundAudioRunning: false,
     alarmRinging: false,
@@ -137,6 +157,14 @@ export function createPhoneRuntimeClient(options: PhoneRuntimeClientOptions) {
       return requireNativeMethod("startPhoneTlrSessionAfterPresleepTraining")(
         plan,
       );
+    },
+
+    startPhonePresleepTrainingOnly(plan: NativePhoneSessionPlan) {
+      return requireNativeMethod("startPhonePresleepTrainingOnly")(plan);
+    },
+
+    stopPhonePresleepTrainingOnly(stopOptions?: TrainingOnlyStopOptions) {
+      return requireNativeMethod("stopPhonePresleepTrainingOnly")(stopOptions);
     },
 
     skipPhonePresleepTrainingAndStartRuntime() {

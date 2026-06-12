@@ -144,15 +144,18 @@ export function buildWatchRuntimePlan(
   const assets = trainingEnabled
     ? [cueAssetEntry, trainingAsset()]
     : [cueAssetEntry];
+  const plannedTrainingEndAt = trainingEnabled
+    ? addSeconds(input.createdAt, FINAL_LUCID_TRAINING_DURATION_SECONDS)
+    : input.createdAt;
   const earliestCueAt = isTlr
     ? addSeconds(
-        input.createdAt,
+        plannedTrainingEndAt,
         Math.round(input.engineSettings.cueStartDelayHoursAfterTraining * 3600),
       )
     : input.createdAt;
   const latestCueAt = isTlr
     ? addSeconds(
-        input.createdAt,
+        plannedTrainingEndAt,
         Math.round(input.engineSettings.typicalSleepDurationHours * 3600),
       )
     : input.createdAt;

@@ -137,7 +137,19 @@ describe("Watch Mode v3 architecture guardrails", () => {
   it("keeps the locked phone running screen view-only except the explicit local escape hatch", () => {
     const runningScreen = readSource("src/screens/WatchModeRunningScreen.tsx");
     const productFlow = readSource("src/features/watchMode/watchModeProductFlow.ts");
+    const trainingPlayback = readSource(
+      "src/features/watchMode/watchModeTrainingPlayback.ts",
+    );
+    const combinedRunningScreen = `${runningScreen}\n${trainingPlayback}`;
 
+    expect(combinedRunningScreen).toContain("Presleep training playing");
+    expect(combinedRunningScreen).toContain("Skip Training");
+    expect(combinedRunningScreen).toContain("Skip training?");
+    expect(combinedRunningScreen).toContain("Tonight's cue timing stays the same.");
+    expect(runningScreen).toContain("startPhonePresleepTrainingOnly");
+    expect(runningScreen).toContain("stopPhonePresleepTrainingOnly");
+    expect(runningScreen).not.toContain("startPhoneTlrSession(");
+    expect(runningScreen).not.toContain("skipPhonePresleepTrainingAndStartRuntime");
     expect(runningScreen).toContain("Watch Mode running - started");
     expect(runningScreen).toContain("Night ended on watch - syncing...");
     expect(runningScreen).toContain("Alert.alert");
@@ -150,6 +162,49 @@ describe("Watch Mode v3 architecture guardrails", () => {
     expect(runningScreen).not.toContain("startSession(");
     expect(runningScreen).not.toContain("sendSessionEvent(");
     expect(runningScreen).not.toContain("deleteSession(");
+  });
+
+  it("records Watch training timestamps without restaging the transport plan", () => {
+    const productFlow = readSource("src/features/watchMode/watchModeProductFlow.ts");
+    const trainingStarted = productFlow.slice(
+      productFlow.indexOf("export async function markWatchModeProductTrainingStarted"),
+      productFlow.indexOf("export async function markWatchModeProductTrainingEnded"),
+    );
+    const trainingEnded = productFlow.slice(
+      productFlow.indexOf("export async function markWatchModeProductTrainingEnded"),
+    );
+
+    expect(trainingStarted).toContain("trainingStartedAt: input.startedAt");
+    expect(trainingEnded).toContain("trainingEndedAt: input.endedAt");
+    expect(trainingEnded).toContain("guidedTrainingSkipped: input.skipped ? true");
+    expect(`${trainingStarted}\n${trainingEnded}`).toContain("upsertLocalSession");
+    expect(`${trainingStarted}\n${trainingEnded}`).not.toContain(
+      "markWatchSessionPlanStaged",
+    );
+    expect(`${trainingStarted}\n${trainingEnded}`).not.toContain(
+      "watchTransport.stageSyntheticPlan",
+    );
+  });
+
+  it("keeps phone-played Watch training out of the phone cue engine", () => {
+    const phoneRuntimeSwift = readSource("ios/LucidTLR/LucidTLRPhoneRuntime.swift");
+    const trainingOnlyStart = phoneRuntimeSwift.slice(
+      phoneRuntimeSwift.indexOf("func startPhonePresleepTrainingOnly"),
+      phoneRuntimeSwift.indexOf("func stopPhonePresleepTrainingOnly"),
+    );
+    const trainingOnlyCompletion = phoneRuntimeSwift.slice(
+      phoneRuntimeSwift.indexOf("private func completePresleepTrainingOnly"),
+      phoneRuntimeSwift.indexOf("@discardableResult"),
+    );
+
+    expect(trainingOnlyStart).toContain('trainingCompletionAction: "stop_training_only"');
+    expect(trainingOnlyStart).toContain("startPresleepTrainingPlayback");
+    expect(trainingOnlyStart).not.toContain("startRuntimeSubsystems");
+    expect(trainingOnlyStart).not.toContain("appendRuntimeStartedEvent");
+    expect(trainingOnlyCompletion).toContain('appendEvent("training_completed"');
+    expect(trainingOnlyCompletion).toContain("logEvent: false");
+    expect(trainingOnlyCompletion).not.toContain("startRuntimeSubsystems");
+    expect(trainingOnlyCompletion).not.toContain("appendRuntimeStartedEvent");
   });
 
   it("shares the real Watch night session controller between product and lab skins", () => {

@@ -23,6 +23,10 @@ product/science contract.
 - Phone Mode is phone-owned. The iPhone owns presleep training, overnight audio,
   cue timing, movement pauses, cue playback, and native phone logs.
 - Watch Mode is currently disabled and planned for a clean rebuild.
+- Internal Watch TLR nights use phone-played presleep training after the Watch
+  plan is staged. This is a training-audio-only exception: the Watch remains
+  the overnight owner and no phone cue engine or live Watch transport completion
+  signal is used.
 - Watch Mode UI affordances remain visible, but no button should create a Watch
   session, call native Watch runtime code, or import old native Watch-owned
   packages.
@@ -80,6 +84,8 @@ Avoid saying:
 - Current Watch status: `docs/decisions/003-watch-mode-reset-placeholder.md`
 - Future Watch architecture reference:
   `docs/decisions/001-watch-mode-is-watch-owned.md`
+- Phone-played Watch presleep training exception:
+  `docs/decisions/005-watch-night-presleep-training-is-phone-played.md`
 - Phone ownership: `docs/decisions/002-phone-mode-is-phone-owned.md`
 - Session flow: `src/screens/HomeScreen.tsx`,
   `src/screens/ActiveNightSessionScreen.tsx`,

@@ -11,6 +11,8 @@ function nativeRuntimeModule(
   return {
     startPhoneTlrSession: vi.fn(() => Promise.resolve()),
     startPhoneTlrSessionAfterPresleepTraining: vi.fn(() => Promise.resolve()),
+    startPhonePresleepTrainingOnly: vi.fn(() => Promise.resolve()),
+    stopPhonePresleepTrainingOnly: vi.fn(() => Promise.resolve()),
     skipPhonePresleepTrainingAndStartRuntime: vi.fn(() => Promise.resolve()),
     pausePhonePresleepTraining: vi.fn(() => Promise.resolve()),
     resumePhonePresleepTraining: vi.fn(() => Promise.resolve()),
@@ -54,6 +56,12 @@ describe("phone runtime client", () => {
     expect(() =>
       client.startPhoneTlrSessionAfterPresleepTraining({} as never),
     ).toThrow("iPhone Phone Mode native runtime is unavailable");
+    expect(() =>
+      client.startPhonePresleepTrainingOnly({} as never),
+    ).toThrow("iPhone Phone Mode native runtime is unavailable");
+    expect(() => client.stopPhonePresleepTrainingOnly()).toThrow(
+      "iPhone Phone Mode native runtime is unavailable",
+    );
     expect(() => client.skipPhonePresleepTrainingAndStartRuntime()).toThrow(
       "iPhone Phone Mode native runtime is unavailable",
     );
@@ -96,6 +104,47 @@ describe("phone runtime client", () => {
     expect(
       nativeModule.skipPhonePresleepTrainingAndStartRuntime,
     ).toHaveBeenCalledOnce();
+  });
+
+  it("calls exported native training-only playback controls", async () => {
+    const nativeModule = nativeRuntimeModule();
+    const client = createPhoneRuntimeClient({
+      platform: "ios",
+      nativeModule,
+    });
+
+    await client.startPhonePresleepTrainingOnly({} as never);
+    await client.stopPhonePresleepTrainingOnly({ reason: "user_skipped" });
+
+    expect(nativeModule.startPhonePresleepTrainingOnly).toHaveBeenCalledOnce();
+    expect(nativeModule.stopPhonePresleepTrainingOnly).toHaveBeenCalledWith({
+      reason: "user_skipped",
+    });
+  });
+
+  it("requires the native training-only playback controls in iOS builds", async () => {
+    const nativeModule = nativeRuntimeModule();
+
+    delete (nativeModule as Partial<NativePhoneRuntimeModule>)
+      .startPhonePresleepTrainingOnly;
+
+    const client = createPhoneRuntimeClient({
+      platform: "ios",
+      nativeModule,
+    });
+    const status = await client.getPhoneRuntimeStatus();
+
+    expect(client.isAvailable()).toBe(false);
+    expect(status).toMatchObject({
+      available: false,
+      running: false,
+      unavailableReason: expect.stringContaining(
+        "startPhonePresleepTrainingOnly",
+      ),
+    });
+    expect(() => client.startPhonePresleepTrainingOnly({} as never)).toThrow(
+      "does not export startPhonePresleepTrainingOnly",
+    );
   });
 
   it("requires the native presleep skip handoff in iOS builds", async () => {

@@ -53,6 +53,9 @@ export type BuildNativePhoneSessionPlanForLockedTrainingInput = Omit<
   trainingStartedAt: string;
 };
 
+export type BuildNativePhoneSessionPlanForWatchLockedTrainingInput =
+  BuildNativePhoneSessionPlanForLockedTrainingInput;
+
 function toMutableInterval(
   value: readonly [number, number],
 ): [number, number] {
@@ -245,4 +248,20 @@ export function buildNativePhoneSessionPlanForLockedTraining(
       },
     },
   };
+}
+
+export function buildNativePhoneSessionPlanForWatchLockedTraining(
+  input: BuildNativePhoneSessionPlanForWatchLockedTrainingInput,
+): NativePhoneSessionPlan {
+  if (input.session.mode !== "watch") {
+    throw new Error("Watch locked training requires a Watch session.");
+  }
+
+  return buildNativePhoneSessionPlanForLockedTraining({
+    ...input,
+    session: {
+      ...input.session,
+      mode: "phone",
+    },
+  });
 }

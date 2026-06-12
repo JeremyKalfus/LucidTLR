@@ -22,6 +22,11 @@ The iPhone owns plan creation, explicit start-sync UI, last-known status/review
 UI, explicit morning import, local database import, review, data, and export.
 The phone is never in the live cue timing path.
 
+ADR 005 narrows presleep training for Watch TLR nights: the iPhone may play the
+guided training audio after plan staging, using only the locked training-audio
+path. The Watch plan remains the timing source, and the phone does not send a
+training-completion transport signal or run the Phone Mode overnight cue engine.
+
 ## WatchConnectivity Boundary
 
 WatchConnectivity is a non-live sync fabric:

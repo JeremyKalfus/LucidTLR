@@ -173,6 +173,8 @@ export type PhoneRuntimeStatus = {
   running: boolean;
   phase?: "training" | "runtime" | "alarm";
   sessionId?: string;
+  trainingAudioRunning?: boolean;
+  trainingCurrentTime?: number;
   audioBedRunning: boolean;
   backgroundAudioRunning: boolean;
   alarmRinging: boolean;

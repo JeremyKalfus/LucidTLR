@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { builtInCues } from "@/src/audio/cueCatalog";
+import { FINAL_LUCID_TRAINING_DURATION_SECONDS } from "@/src/audio/trainingAudio";
 import { createDefaultEngineSettings } from "@/src/engine";
 import { createDefaultTlrOptions } from "@/src/features/tlrOptions/tlrOptions";
 import {
@@ -102,6 +103,32 @@ describe("buildWatchRuntimePlan", () => {
     );
     expect(plan.privacy.noGps).toBe(true);
     expect(plan.privacy.noLiveAppleSleepStages).toBe(true);
+  });
+
+  it("anchors the Watch cue interval to planned training end plus protocol delay", () => {
+    const settings = createDefaultEngineSettings("standard");
+    const createdAt = "2026-06-07T04:00:00.000Z";
+    const plan = buildWatchRuntimePlan({
+      sessionId: "session-training-anchor",
+      participantId: "participant-1",
+      sessionType: "tlr",
+      createdAt,
+      selectedCueId: "dx-harp-c5",
+      tlrOptions: createDefaultTlrOptions(),
+      engineSettings: settings,
+    });
+    const plannedTrainingEndMs =
+      Date.parse(createdAt) + FINAL_LUCID_TRAINING_DURATION_SECONDS * 1000;
+
+    expect(plan.training.durationSeconds).toBe(
+      FINAL_LUCID_TRAINING_DURATION_SECONDS,
+    );
+    expect(plan.tlrInterval.earliestCueAt).toBe(
+      new Date(
+        plannedTrainingEndMs +
+          settings.cueStartDelayHoursAfterTraining * 3600 * 1000,
+      ).toISOString(),
+    );
   });
 
   it("keeps product-required Watch-owned cue assets complete in the Watch target", () => {
