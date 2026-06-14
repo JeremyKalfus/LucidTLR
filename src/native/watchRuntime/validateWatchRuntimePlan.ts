@@ -47,6 +47,21 @@ export function validateWatchRuntimePlan(plan: WatchRuntimePlanV3): string[] {
     errors.push("TLR Watch plans require haptic or audio cue output.");
   }
 
+  if (plan.sessionType === "tlr" && plan.tlrInterval.enabled) {
+    const earliestMs = Date.parse(plan.tlrInterval.earliestCueAt);
+    const latestMs = Date.parse(plan.tlrInterval.latestCueAt);
+
+    if (
+      !Number.isFinite(earliestMs) ||
+      !Number.isFinite(latestMs) ||
+      earliestMs >= latestMs
+    ) {
+      errors.push(
+        "TLR Watch plans require a non-empty cue window (earliestCueAt must be before latestCueAt).",
+      );
+    }
+  }
+
   if (plan.cueOutput.audioEnabled && !plan.cueOutput.audioRequiresPreflight) {
     errors.push("Audio-enabled Watch plans require same-night audio preflight.");
   }
