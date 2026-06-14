@@ -89,7 +89,6 @@ export function WatchModeRunningScreen() {
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [trainingErrorMessage, setTrainingErrorMessage] =
     React.useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [isTrainingPaused, setIsTrainingPaused] = React.useState(false);
   const [trainingNowMs, setTrainingNowMs] = React.useState(() => Date.now());
   const trainingStartAttemptRef = React.useRef<string | null>(null);
@@ -136,8 +135,6 @@ export function WatchModeRunningScreen() {
       return;
     }
 
-    setIsRefreshing(true);
-
     try {
       const db = await getLocalDb();
       const next = await resolveWatchModeProductSync({
@@ -161,8 +158,6 @@ export function WatchModeRunningScreen() {
           ? error.message
           : "Watch Mode sync could not refresh.",
       );
-    } finally {
-      setIsRefreshing(false);
     }
   }, [participantId, reloadLocalData, selectSessionForMorningReview]);
 
@@ -556,44 +551,19 @@ export function WatchModeRunningScreen() {
 
         <SectionTitle>{titleForLock(lock)}</SectionTitle>
 
-        <View style={{ gap: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Watch color={colors.textMuted} size={21} strokeWidth={1.8} />
-            <Text
-              selectable
-              style={{
-                color: colors.textPrimary,
-                flex: 1,
-                fontSize: typography.body.fontSize,
-                lineHeight: typography.body.lineHeight,
-              }}
-            >
-              The Watch owns this night. Keep the session controls on the Watch.
-            </Text>
-          </View>
-
-          <InfoRow label="session" value={lock?.state?.sessionId ?? "loading"} />
-          <InfoRow label="ledger" value={lock?.state?.status ?? "loading"} />
-          <InfoRow
-            label="watch state"
-            value={lock?.state?.lastKnownWatchState ?? "waiting"}
-          />
-          <InfoRow
-            label="package"
-            value={lock?.state?.packageId ?? "not sealed"}
-          />
-          <InfoRow
-            label="transport"
-            value={
-              lock?.status.lastMessageType
-                ? `${lock.status.lastMessageType}`
-                : "waiting"
-            }
-          />
-          <InfoRow
-            label="refresh"
-            value={isRefreshing ? "syncing" : "idle"}
-          />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Watch color={colors.textMuted} size={21} strokeWidth={1.8} />
+          <Text
+            selectable
+            style={{
+              color: colors.textPrimary,
+              flex: 1,
+              fontSize: typography.body.fontSize,
+              lineHeight: typography.body.lineHeight,
+            }}
+          >
+            The Watch owns this night. Keep the session controls on the Watch.
+          </Text>
         </View>
 
         {trainingErrorMessage ? (

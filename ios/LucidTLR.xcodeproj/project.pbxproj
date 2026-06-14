@@ -16,8 +16,6 @@
 		4AFEA0078B754B4A9CF00001 /* lucidtlr_feasibility_high.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEA00A8B754B4A9CF00001 /* lucidtlr_feasibility_high.wav */; };
 		4AFEB0038B754B4A9CF00001 /* LucidTLRPhoneRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEB0018B754B4A9CF00001 /* LucidTLRPhoneRuntime.swift */; };
 		4AFEB0048B754B4A9CF00001 /* LucidTLRPhoneRuntimeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 4AFEB0028B754B4A9CF00001 /* LucidTLRPhoneRuntimeBridge.m */; };
-		B71000000000000000000001 /* LucidTLRWatchTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000011 /* LucidTLRWatchTransport.swift */; };
-		B71000000000000000000002 /* LucidTLRWatchTransportBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000012 /* LucidTLRWatchTransportBridge.m */; };
 		4AFEC0068B754B4A9CF00001 /* clear_bell_chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0018B754B4A9CF00001 /* clear_bell_chime.mp3 */; };
 		4AFEC0078B754B4A9CF00001 /* ui_success_chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0028B754B4A9CF00001 /* ui_success_chime.mp3 */; };
 		4AFEC0088B754B4A9CF00001 /* sci_fi_confirmation.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */; };
@@ -53,11 +51,35 @@
 		A4000000000000000000000C /* WatchRuntimeLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4000000000000000000001C /* WatchRuntimeLogStore.swift */; };
 		A4000000000000000000000D /* WatchPackageSealer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4000000000000000000001D /* WatchPackageSealer.swift */; };
 		A4000000000000000000000E /* WatchSyntheticRuntimeFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4000000000000000000001E /* WatchSyntheticRuntimeFixtures.swift */; };
+		A50000000000000000000001 /* SleepShieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* SleepShieldView.swift */; };
+		A50000000000000000000002 /* SleepShieldViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* SleepShieldViewModel.swift */; };
+		A50000000000000000000003 /* DimRuntimeControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000013 /* DimRuntimeControlsView.swift */; };
+		A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */; };
+		A60000000000000000000001 /* WatchStorageErrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* WatchStorageErrors.swift */; };
+		A60000000000000000000002 /* WatchStoragePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* WatchStoragePaths.swift */; };
+		A60000000000000000000003 /* WatchSessionDirectoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000013 /* WatchSessionDirectoryStore.swift */; };
+		A60000000000000000000004 /* WatchFileBackedLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000014 /* WatchFileBackedLogStore.swift */; };
+		A60000000000000000000005 /* WatchPackageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000015 /* WatchPackageStore.swift */; };
+		A60000000000000000000006 /* WatchPackageAckStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000016 /* WatchPackageAckStore.swift */; };
+		A60000000000000000000007 /* WatchSyntheticStorageFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */; };
+		A70000000000000000000001 /* WatchModeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000011 /* WatchModeLabView.swift */; };
+		A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000012 /* WatchModeLabViewModel.swift */; };
+		A71000000000000000000001 /* WatchBaselineLoopRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000011 /* WatchBaselineLoopRunner.swift */; };
+		A71000000000000000000002 /* WatchAutoBaselineController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000012 /* WatchAutoBaselineController.swift */; };
+		A72000000000000000000001 /* WatchNightSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72000000000000000000011 /* WatchNightSessionController.swift */; };
+		A72000000000000000000002 /* WatchModeProductView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72000000000000000000012 /* WatchModeProductView.swift */; };
 		A80000000000000000000001 /* WatchRuntimeCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000011 /* WatchRuntimeCapabilities.swift */; };
 		A80000000000000000000002 /* WatchRuntimePreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000012 /* WatchRuntimePreflight.swift */; };
 		A80000000000000000000003 /* WatchRuntimeStartGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000013 /* WatchRuntimeStartGate.swift */; };
 		A80000000000000000000004 /* SyntheticPreflightProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000014 /* SyntheticPreflightProvider.swift */; };
 		A80000000000000000000005 /* WatchRuntimePreflightFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000015 /* WatchRuntimePreflightFixtures.swift */; };
+		A90000000000000000000001 /* WatchCurrentSessionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000011 /* WatchCurrentSessionIndex.swift */; };
+		B71000000000000000000001 /* LucidTLRWatchTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000011 /* LucidTLRWatchTransport.swift */; };
+		B71000000000000000000002 /* LucidTLRWatchTransportBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = B71000000000000000000012 /* LucidTLRWatchTransportBridge.m */; };
+		B72000000000000000000001 /* WatchTransportMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000011 /* WatchTransportMessages.swift */; };
+		B72000000000000000000002 /* WatchTransportPackageBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000012 /* WatchTransportPackageBuilder.swift */; };
+		B72000000000000000000003 /* WatchTransportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000013 /* WatchTransportCoordinator.swift */; };
+		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		C30000000000000000000001 /* RealtimeWatchClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000011 /* RealtimeWatchClock.swift */; };
 		C30000000000000000000002 /* RealBatteryProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000012 /* RealBatteryProvider.swift */; };
 		C30000000000000000000003 /* RealPowerModeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000013 /* RealPowerModeProvider.swift */; };
@@ -70,28 +92,6 @@
 		C31000000000000000000003 /* sci_fi_confirmation.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */; };
 		C31000000000000000000004 /* harp_flourish.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0048B754B4A9CF00001 /* harp_flourish.mp3 */; };
 		C31000000000000000000005 /* dx_harp_c5.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AFEC0058B754B4A9CF00001 /* dx_harp_c5.mp3 */; };
-		A50000000000000000000001 /* SleepShieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* SleepShieldView.swift */; };
-		A50000000000000000000002 /* SleepShieldViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* SleepShieldViewModel.swift */; };
-		A50000000000000000000003 /* DimRuntimeControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000013 /* DimRuntimeControlsView.swift */; };
-		A50000000000000000000004 /* WatchModeBedtimeInstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000014 /* WatchModeBedtimeInstructionsView.swift */; };
-		A60000000000000000000001 /* WatchStorageErrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* WatchStorageErrors.swift */; };
-		A60000000000000000000002 /* WatchStoragePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* WatchStoragePaths.swift */; };
-		A60000000000000000000003 /* WatchSessionDirectoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000013 /* WatchSessionDirectoryStore.swift */; };
-		A60000000000000000000004 /* WatchFileBackedLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000014 /* WatchFileBackedLogStore.swift */; };
-		A60000000000000000000005 /* WatchPackageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000015 /* WatchPackageStore.swift */; };
-		A60000000000000000000006 /* WatchPackageAckStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000016 /* WatchPackageAckStore.swift */; };
-		A60000000000000000000007 /* WatchSyntheticStorageFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */; };
-		A90000000000000000000001 /* WatchCurrentSessionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000011 /* WatchCurrentSessionIndex.swift */; };
-		B72000000000000000000001 /* WatchTransportMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000011 /* WatchTransportMessages.swift */; };
-		B72000000000000000000002 /* WatchTransportPackageBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000012 /* WatchTransportPackageBuilder.swift */; };
-		B72000000000000000000003 /* WatchTransportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72000000000000000000013 /* WatchTransportCoordinator.swift */; };
-		A70000000000000000000001 /* WatchModeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000011 /* WatchModeLabView.swift */; };
-		A70000000000000000000002 /* WatchModeLabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000012 /* WatchModeLabViewModel.swift */; };
-		A71000000000000000000001 /* WatchBaselineLoopRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000011 /* WatchBaselineLoopRunner.swift */; };
-		A71000000000000000000002 /* WatchAutoBaselineController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000012 /* WatchAutoBaselineController.swift */; };
-		A72000000000000000000001 /* WatchNightSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72000000000000000000011 /* WatchNightSessionController.swift */; };
-		A72000000000000000000002 /* WatchModeProductView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72000000000000000000012 /* WatchModeProductView.swift */; };
-		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -130,8 +130,6 @@
 		4AFEA00A8B754B4A9CF00001 /* lucidtlr_feasibility_high.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; name = lucidtlr_feasibility_high.wav; path = LucidTLR/FeasibilityAudioSegments/lucidtlr_feasibility_high.wav; sourceTree = "<group>"; };
 		4AFEB0018B754B4A9CF00001 /* LucidTLRPhoneRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LucidTLRPhoneRuntime.swift; path = LucidTLR/LucidTLRPhoneRuntime.swift; sourceTree = "<group>"; };
 		4AFEB0028B754B4A9CF00001 /* LucidTLRPhoneRuntimeBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LucidTLRPhoneRuntimeBridge.m; path = LucidTLR/LucidTLRPhoneRuntimeBridge.m; sourceTree = "<group>"; };
-		B71000000000000000000011 /* LucidTLRWatchTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LucidTLRWatchTransport.swift; path = LucidTLR/LucidTLRWatchTransport.swift; sourceTree = "<group>"; };
-		B71000000000000000000012 /* LucidTLRWatchTransportBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LucidTLRWatchTransportBridge.m; path = LucidTLR/LucidTLRWatchTransportBridge.m; sourceTree = "<group>"; };
 		4AFEC0018B754B4A9CF00001 /* clear_bell_chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = clear_bell_chime.mp3; path = LucidTLR/CueAudio/clear_bell_chime.mp3; sourceTree = "<group>"; };
 		4AFEC0028B754B4A9CF00001 /* ui_success_chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; name = ui_success_chime.mp3; path = LucidTLR/CueAudio/ui_success_chime.mp3; sourceTree = "<group>"; };
 		4AFEC0038B754B4A9CF00001 /* sci_fi_confirmation.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; name = sci_fi_confirmation.wav; path = LucidTLR/CueAudio/sci_fi_confirmation.wav; sourceTree = "<group>"; };
@@ -169,18 +167,6 @@
 		A4000000000000000000001C /* WatchRuntimeLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeLogStore.swift; sourceTree = "<group>"; };
 		A4000000000000000000001D /* WatchPackageSealer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageSealer.swift; sourceTree = "<group>"; };
 		A4000000000000000000001E /* WatchSyntheticRuntimeFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyntheticRuntimeFixtures.swift; sourceTree = "<group>"; };
-		A80000000000000000000011 /* WatchRuntimeCapabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeCapabilities.swift; sourceTree = "<group>"; };
-		A80000000000000000000012 /* WatchRuntimePreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePreflight.swift; sourceTree = "<group>"; };
-		A80000000000000000000013 /* WatchRuntimeStartGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeStartGate.swift; sourceTree = "<group>"; };
-		A80000000000000000000014 /* SyntheticPreflightProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticPreflightProvider.swift; sourceTree = "<group>"; };
-		A80000000000000000000015 /* WatchRuntimePreflightFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePreflightFixtures.swift; sourceTree = "<group>"; };
-		C30000000000000000000011 /* RealtimeWatchClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeWatchClock.swift; sourceTree = "<group>"; };
-		C30000000000000000000012 /* RealBatteryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealBatteryProvider.swift; sourceTree = "<group>"; };
-		C30000000000000000000013 /* RealPowerModeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealPowerModeProvider.swift; sourceTree = "<group>"; };
-		C30000000000000000000014 /* CoreMotionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMotionProvider.swift; sourceTree = "<group>"; };
-		C30000000000000000000015 /* HealthKitHeartRateProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitHeartRateProvider.swift; sourceTree = "<group>"; };
-		C30000000000000000000016 /* RealCueOutputProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealCueOutputProvider.swift; sourceTree = "<group>"; };
-		C30000000000000000000017 /* RealWatchRuntimePreflightProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealWatchRuntimePreflightProvider.swift; sourceTree = "<group>"; };
 		A50000000000000000000011 /* SleepShieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepShieldView.swift; sourceTree = "<group>"; };
 		A50000000000000000000012 /* SleepShieldViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepShieldViewModel.swift; sourceTree = "<group>"; };
 		A50000000000000000000013 /* DimRuntimeControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimRuntimeControlsView.swift; sourceTree = "<group>"; };
@@ -192,19 +178,33 @@
 		A60000000000000000000015 /* WatchPackageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageStore.swift; sourceTree = "<group>"; };
 		A60000000000000000000016 /* WatchPackageAckStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPackageAckStore.swift; sourceTree = "<group>"; };
 		A60000000000000000000017 /* WatchSyntheticStorageFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyntheticStorageFixtures.swift; sourceTree = "<group>"; };
-		A90000000000000000000011 /* WatchCurrentSessionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCurrentSessionIndex.swift; sourceTree = "<group>"; };
-		B72000000000000000000011 /* WatchTransportMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportMessages.swift; sourceTree = "<group>"; };
-		B72000000000000000000012 /* WatchTransportPackageBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportPackageBuilder.swift; sourceTree = "<group>"; };
-		B72000000000000000000013 /* WatchTransportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportCoordinator.swift; sourceTree = "<group>"; };
 		A70000000000000000000011 /* WatchModeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabView.swift; sourceTree = "<group>"; };
 		A70000000000000000000012 /* WatchModeLabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeLabViewModel.swift; sourceTree = "<group>"; };
 		A71000000000000000000011 /* WatchBaselineLoopRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBaselineLoopRunner.swift; sourceTree = "<group>"; };
 		A71000000000000000000012 /* WatchAutoBaselineController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAutoBaselineController.swift; sourceTree = "<group>"; };
 		A72000000000000000000011 /* WatchNightSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchNightSessionController.swift; sourceTree = "<group>"; };
 		A72000000000000000000012 /* WatchModeProductView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModeProductView.swift; sourceTree = "<group>"; };
+		A80000000000000000000011 /* WatchRuntimeCapabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeCapabilities.swift; sourceTree = "<group>"; };
+		A80000000000000000000012 /* WatchRuntimePreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePreflight.swift; sourceTree = "<group>"; };
+		A80000000000000000000013 /* WatchRuntimeStartGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimeStartGate.swift; sourceTree = "<group>"; };
+		A80000000000000000000014 /* SyntheticPreflightProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticPreflightProvider.swift; sourceTree = "<group>"; };
+		A80000000000000000000015 /* WatchRuntimePreflightFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRuntimePreflightFixtures.swift; sourceTree = "<group>"; };
 		A8BBD6277F2463C5942C8ED5 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = LucidTLR/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A90000000000000000000011 /* WatchCurrentSessionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCurrentSessionIndex.swift; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = LucidTLR/SplashScreen.storyboard; sourceTree = "<group>"; };
+		B71000000000000000000011 /* LucidTLRWatchTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LucidTLRWatchTransport.swift; path = LucidTLR/LucidTLRWatchTransport.swift; sourceTree = "<group>"; };
+		B71000000000000000000012 /* LucidTLRWatchTransportBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LucidTLRWatchTransportBridge.m; path = LucidTLR/LucidTLRWatchTransportBridge.m; sourceTree = "<group>"; };
+		B72000000000000000000011 /* WatchTransportMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportMessages.swift; sourceTree = "<group>"; };
+		B72000000000000000000012 /* WatchTransportPackageBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportPackageBuilder.swift; sourceTree = "<group>"; };
+		B72000000000000000000013 /* WatchTransportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransportCoordinator.swift; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C30000000000000000000011 /* RealtimeWatchClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeWatchClock.swift; sourceTree = "<group>"; };
+		C30000000000000000000012 /* RealBatteryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealBatteryProvider.swift; sourceTree = "<group>"; };
+		C30000000000000000000013 /* RealPowerModeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealPowerModeProvider.swift; sourceTree = "<group>"; };
+		C30000000000000000000014 /* CoreMotionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMotionProvider.swift; sourceTree = "<group>"; };
+		C30000000000000000000015 /* HealthKitHeartRateProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitHeartRateProvider.swift; sourceTree = "<group>"; };
+		C30000000000000000000016 /* RealCueOutputProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealCueOutputProvider.swift; sourceTree = "<group>"; };
+		C30000000000000000000017 /* RealWatchRuntimePreflightProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealWatchRuntimePreflightProvider.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = LucidTLR/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* LucidTLR-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "LucidTLR-Bridging-Header.h"; path = "LucidTLR/LucidTLR-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -650,9 +650,11 @@
 			);
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-LucidTLR/Pods-LucidTLR-resources.sh",
+				"${PODS_CONFIGURATION_BUILD_DIR}/EXApplication/ExpoApplication_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoNotifications/ExpoNotifications_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNSVG/RNSVGFilters.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
@@ -661,9 +663,11 @@
 			);
 			name = "[CP] Copy Pods Resources";
 			outputPaths = (
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoApplication_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoNotifications_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNSVGFilters.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",

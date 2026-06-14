@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import { AlarmClock, Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
+import { Eye, Moon, NotebookPen, Settings, Sparkles } from "lucide-react-native";
 import React from "react";
 import { Alert, Switch, Text, View } from "react-native";
 
@@ -19,6 +19,10 @@ import {
   saveArchivedPhoneRuntimeLogs,
 } from "@/src/data/local/fullDataBackup";
 import { getLocalDb } from "@/src/data/local/expoSqliteDb";
+import {
+  loadWatchEpochsForSession,
+  loadWatchRuntimeEventsForSession,
+} from "@/src/data/local/repositories";
 import { formatSessionLength } from "@/src/features/sessions/sessionLength";
 import type { TlrOptionsPatch } from "@/src/features/tlrOptions/tlrOptions";
 import {
@@ -35,7 +39,8 @@ import {
 } from "@/src/native/phoneRuntime";
 import { useAppState } from "@/src/state/AppState";
 import { colors, spacing, typography } from "@/src/theme/tokens";
-import type { SessionType } from "@/src/domain/types";
+import type { SessionType, WatchEpoch } from "@/src/domain/types";
+import type { WatchRuntimeEvent } from "@/src/features/watchHistory/watchHistoryTypes";
 
 const labelToCardGap = 6;
 const actionRowGap = 10;
@@ -131,6 +136,10 @@ export function HomeScreen() {
     requestedAt: number;
   } | null>(null);
   const [isStartingWatchMode, setIsStartingWatchMode] = React.useState(false);
+  const [watchEpochs, setWatchEpochs] = React.useState<WatchEpoch[]>([]);
+  const [watchRuntimeEvents, setWatchRuntimeEvents] = React.useState<
+    WatchRuntimeEvent[]
+  >([]);
   const {
     engineSettings,
     participantId,
@@ -343,6 +352,42 @@ export function HomeScreen() {
     };
   }, [lastSession]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadLastWatchData() {
+      if (!lastSession || lastSession.mode !== "watch") {
+        setWatchEpochs([]);
+        setWatchRuntimeEvents([]);
+        return;
+      }
+
+      try {
+        const db = await getLocalDb();
+        const [epochs, runtimeEvents] = await Promise.all([
+          loadWatchEpochsForSession({ db, sessionId: lastSession.id }),
+          loadWatchRuntimeEventsForSession({ db, sessionId: lastSession.id }),
+        ]);
+
+        if (!cancelled) {
+          setWatchEpochs(epochs);
+          setWatchRuntimeEvents(runtimeEvents);
+        }
+      } catch {
+        if (!cancelled) {
+          setWatchEpochs([]);
+          setWatchRuntimeEvents([]);
+        }
+      }
+    }
+
+    void loadLastWatchData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lastSession]);
+
   return (
     <Screen>
       <View style={{ gap: labelToCardGap }}>
@@ -381,32 +426,49 @@ export function HomeScreen() {
                   );
                 }}
               />
-              <WatchCueToggleRow
-                disabled
-                label="watch haptic cue"
-                value={tlrOptions.watchHapticCueEnabled}
-                onValueChange={(watchHapticCueEnabled) => {
-                  void updateTlrOptions(
-                    watchCueTogglePatch(
-                      "haptic",
-                      watchHapticCueEnabled,
-                      tlrOptions,
-                    ),
-                  );
-                }}
-              />
-              <Text
-                selectable
+              <View
                 style={{
-                  color: colors.textSecondary,
-                  fontSize: typography.label.fontSize,
-                  lineHeight: typography.label.lineHeight,
+                  minHeight: 34,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
                 }}
               >
-                {isWatchModeProductFlowAvailable()
-                  ? "Internal lab build: Watch Mode starts the gated validation flow. Public builds remain disabled."
-                  : WATCH_MODE_DISABLED_MESSAGE}
-              </Text>
+                <Text
+                  selectable
+                  style={{
+                    color: colors.textMuted,
+                    flexShrink: 1,
+                    fontSize: typography.body.fontSize,
+                    lineHeight: typography.body.lineHeight,
+                  }}
+                >
+                  watch haptic cue
+                </Text>
+                <Text
+                  selectable
+                  style={{
+                    color: colors.textDim,
+                    fontSize: typography.label.fontSize,
+                    lineHeight: typography.label.lineHeight,
+                  }}
+                >
+                  Coming soon
+                </Text>
+              </View>
+              {!isWatchModeProductFlowAvailable() ? (
+                <Text
+                  selectable
+                  style={{
+                    color: colors.textSecondary,
+                    fontSize: typography.label.fontSize,
+                    lineHeight: typography.label.lineHeight,
+                  }}
+                >
+                  {WATCH_MODE_DISABLED_MESSAGE}
+                </Text>
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -424,9 +486,9 @@ export function HomeScreen() {
         <View style={{ flexDirection: "row", gap: actionRowGap }}>
           <PrimaryPillButton
             flex={1}
-            icon={AlarmClock}
-            label="Set Alarm"
-            onPress={() => router.push("/settings")}
+            icon={Eye}
+            label="Reality Check"
+            onPress={() => router.push("/settings/reality-check")}
           />
           <PrimaryPillButton
             flex={1}
@@ -458,6 +520,8 @@ export function HomeScreen() {
                   startAt={
                     lastSession.trainingStartedAt ?? lastSession.startedAt
                   }
+                  watchEpochs={watchEpochs}
+                  watchRuntimeEvents={watchRuntimeEvents}
                 />
                 <InfoRow label="type" value={lastSession.sessionType} />
                 <InfoRow label="length" value={formatSessionLength(lastSession)} />

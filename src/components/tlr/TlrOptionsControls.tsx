@@ -244,54 +244,56 @@ export function TlrOptionsControls({
         ) : null}
       </View>
 
-      <View style={{ gap: 7 }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Choose background noise"
-          onPress={() => setNoiseOpen((open) => !open)}
-          style={({ pressed }) => ({
-            minHeight: 34,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            opacity: pressed ? 0.72 : 1,
-          })}
-        >
-          <RowLabel>background noise</RowLabel>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Text
-              selectable
-              style={{
-                color: colors.textPrimary,
-                flexShrink: 1,
-                textAlign: "right",
-                fontSize: typography.body.fontSize,
-                lineHeight: typography.body.lineHeight,
-              }}
-            >
-              {formatBackgroundNoiseOption(tlrOptions.backgroundNoise)}
-            </Text>
-            <ChevronDown color={colors.textMuted} size={16} strokeWidth={1.8} />
-          </View>
-        </Pressable>
-        {noiseOpen ? (
-          <View style={{ gap: 7 }}>
-            {backgroundNoiseOptions.map((option) => (
-              <SegmentButton
-                key={option.value}
-                active={tlrOptions.backgroundNoise === option.value}
-                fill={false}
-                label={option.label}
-                onPress={() => {
-                  onOptionsChange({ backgroundNoise: option.value });
-                  setNoiseOpen(false);
+      {selectedMode === "phone" ? (
+        <View style={{ gap: 7 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Choose background noise"
+            onPress={() => setNoiseOpen((open) => !open)}
+            style={({ pressed }) => ({
+              minHeight: 34,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              opacity: pressed ? 0.72 : 1,
+            })}
+          >
+            <RowLabel>background noise</RowLabel>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text
+                selectable
+                style={{
+                  color: colors.textPrimary,
+                  flexShrink: 1,
+                  textAlign: "right",
+                  fontSize: typography.body.fontSize,
+                  lineHeight: typography.body.lineHeight,
                 }}
-              />
-            ))}
-          </View>
-        ) : null}
-      </View>
+              >
+                {formatBackgroundNoiseOption(tlrOptions.backgroundNoise)}
+              </Text>
+              <ChevronDown color={colors.textMuted} size={16} strokeWidth={1.8} />
+            </View>
+          </Pressable>
+          {noiseOpen ? (
+            <View style={{ gap: 7 }}>
+              {backgroundNoiseOptions.map((option) => (
+                <SegmentButton
+                  key={option.value}
+                  active={tlrOptions.backgroundNoise === option.value}
+                  fill={false}
+                  label={option.label}
+                  onPress={() => {
+                    onOptionsChange({ backgroundNoise: option.value });
+                    setNoiseOpen(false);
+                  }}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       <ToggleRow
         label="skip training"
