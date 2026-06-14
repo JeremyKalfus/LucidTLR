@@ -12,7 +12,10 @@ import {
   buildSyntheticSleepLogWatchPackageFixture,
   buildSyntheticTlrWatchPackageFixture,
 } from "@/src/features/watchHistory/watchPackageFixtures";
-import { validateWatchPackageForImport } from "@/src/features/watchHistory/validateWatchPackageManifest";
+import {
+  validateWatchPackageForImport,
+  watchPackageUtf8ByteLength,
+} from "@/src/features/watchHistory/validateWatchPackageManifest";
 import { importSyntheticWatchModeLabPackage } from "@/src/features/watchModeLab/watchModeLab";
 import {
   withWatchPackageManifestHash,
@@ -489,6 +492,62 @@ describe("Watch package phone importer", () => {
     expect(db.epochs.size).toBe(2);
     expect(db.cueEvents.size).toBe(0);
     expect(packageStatus(db, sealedPackage.manifest.packageId)).toBe("imported");
+  });
+
+  it("keeps large epoch-gap packages importable but marks them diagnostically", async () => {
+    const basePackage = buildSyntheticSleepLogWatchPackageFixture();
+    const gapPackage = {
+      ...basePackage,
+      files: basePackage.files.map((file) => {
+        if (file.relativePath !== "epochs.jsonl") {
+          return file;
+        }
+
+        const lines = file.contents.trim().split("\n").map((line) => JSON.parse(line));
+        lines[1] = {
+          ...lines[1],
+          epochStart: "2026-06-07T08:00:30.000Z",
+          epochEnd: "2026-06-07T08:01:00.000Z",
+        };
+
+        return {
+          ...file,
+          contents: `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+        };
+      }),
+    };
+    const remanifestedPackage = {
+      ...gapPackage,
+      manifest: withManifest({
+        ...gapPackage.manifest,
+        files: gapPackage.files.map((file) => ({
+          relativePath: file.relativePath,
+          byteLength: watchPackageUtf8ByteLength(file.contents),
+          sha256: require("crypto")
+            .createHash("sha256")
+            .update(file.contents)
+            .digest("hex"),
+        })),
+      }),
+    };
+    const db = new FakePackageImportDb();
+
+    const result = await importWatchPackage({
+      db,
+      sealedPackage: remanifestedPackage,
+      importedAt: WATCH_PACKAGE_FIXTURE_IMPORTED_AT,
+    });
+
+    expect(result).toMatchObject({
+      ackEligible: true,
+      diagnostics: {
+        epochGaps: 1,
+        hasLargeEpochGap: true,
+      },
+    });
+    expect(packageStatus(db, remanifestedPackage.manifest.packageId)).toBe(
+      "imported",
+    );
   });
 
   it("lets the synthetic phone lab import and re-import a TLR package idempotently", async () => {

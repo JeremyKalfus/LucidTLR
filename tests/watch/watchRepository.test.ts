@@ -157,7 +157,35 @@ describe("watch epoch repository helpers", () => {
       usableEpochs: 2,
       likelyRemEpochs: 1,
       connectivityGaps: 1,
+      epochGaps: 0,
+      maxEpochGapSeconds: 0,
+      hasLargeEpochGap: false,
       classifierVersions: ["historical-watch-rem"],
+    });
+  });
+
+  it("flags large Watch epoch continuity gaps", async () => {
+    const db = new FakeWatchDb();
+
+    await saveWatchEpochs({
+      db,
+      records: [
+        epoch(),
+        epoch({
+          id: "epoch-gap",
+          epochStart: "2026-01-01T08:00:00.000Z",
+          epochEnd: "2026-01-01T08:00:30.000Z",
+          elapsedSessionSeconds: 10830,
+        }),
+      ],
+    });
+
+    await expect(
+      summarizeWatchSession({ db, sessionId: "session-1" }),
+    ).resolves.toMatchObject({
+      epochGaps: 1,
+      maxEpochGapSeconds: 10770,
+      hasLargeEpochGap: true,
     });
   });
 });

@@ -144,6 +144,11 @@ export interface WatchPackageImportResult {
   packageHash: string;
   importedAt: string;
   ackEligible: true;
+  diagnostics: {
+    epochGaps: number;
+    maxEpochGapSeconds: number;
+    hasLargeEpochGap: boolean;
+  };
   counts: {
     events: number;
     epochs: number;

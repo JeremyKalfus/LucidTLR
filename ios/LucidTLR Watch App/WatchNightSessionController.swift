@@ -52,6 +52,7 @@ final class WatchNightSessionController: ObservableObject {
   private var cueOutputProvider: RealCueOutputProvider?
   private var epochTimer: Timer?
   private var statusTimer: Timer?
+  private var lastEpochTimerFireAt: Date?
 
   private init() {
     transportCoordinator.onAckRecorded = { [weak self] rootDirectory in
@@ -151,6 +152,21 @@ final class WatchNightSessionController: ObservableObject {
     surface = .waitingForPlan
     statusMessage = "Waiting for plan from phone."
     refreshRows()
+  }
+
+  func recordAppLifecycle(phase: String) {
+    guard let coordinator else {
+      return
+    }
+
+    coordinator.recordRuntimeDiagnostic(
+      .watchAppLifecycleChanged,
+      payload: [
+        "phase": .stringValue(phase),
+        "surface": .stringValue(surfaceLabel(surface)),
+        "sessionId": .stringValue(activePlan?.sessionId ?? "none"),
+      ]
+    )
   }
 
   func startProductSession(_ stagedPlan: WatchTransportStagedPlan) {
@@ -368,7 +384,13 @@ final class WatchNightSessionController: ObservableObject {
         )
       }
 
-      try prepared.heartRateProvider.startWorkoutRuntime(at: startDate)
+      let activeCoordinator = prepared.coordinator
+      prepared.heartRateProvider.diagnosticSink = { type, payload in
+        Task { @MainActor in
+          activeCoordinator.recordRuntimeDiagnostic(type, payload: payload)
+        }
+      }
+      try await prepared.heartRateProvider.startWorkoutRuntime(at: startDate)
       try prepared.motionProvider.start(sampleHz: plan.epoching.motionSampleHz)
       try prepared.coordinator.startCommittedPlan()
       runtimeStarted = true
@@ -487,6 +509,7 @@ final class WatchNightSessionController: ObservableObject {
 
   private func startTimers(plan: WatchRuntimePlanV3) {
     invalidateTimers()
+    lastEpochTimerFireAt = Date()
 
     epochTimer = Timer.scheduledTimer(
       withTimeInterval: TimeInterval(plan.epoching.epochSeconds),
@@ -508,6 +531,22 @@ final class WatchNightSessionController: ObservableObject {
     guard let coordinator, let activePlan else {
       return
     }
+
+    let detectedAt = Date()
+    if let previousFireAt = lastEpochTimerFireAt {
+      let expectedInterval = TimeInterval(activePlan.epoching.epochSeconds)
+      let actualInterval = detectedAt.timeIntervalSince(previousFireAt)
+
+      if actualInterval >= expectedInterval * 2 {
+        coordinator.recordEpochGap(
+          expectedIntervalSeconds: expectedInterval,
+          actualIntervalSeconds: actualInterval,
+          previousTimerFireAt: previousFireAt,
+          detectedAt: detectedAt
+        )
+      }
+    }
+    lastEpochTimerFireAt = detectedAt
 
     do {
       _ = try coordinator.stepEpoch()
@@ -543,6 +582,7 @@ final class WatchNightSessionController: ObservableObject {
     epochTimer = nil
     statusTimer?.invalidate()
     statusTimer = nil
+    lastEpochTimerFireAt = nil
   }
 
   private func stopRealProviders() {
@@ -643,6 +683,21 @@ final class WatchNightSessionController: ObservableObject {
     }
 
     statusRows = rows
+  }
+
+  private func surfaceLabel(_ surface: WatchNightSessionSurface) -> String {
+    switch surface {
+    case .waitingForPlan:
+      return "waiting_for_plan"
+    case .blocked:
+      return "blocked"
+    case .sleepShield:
+      return "sleep_shield"
+    case .syncPending:
+      return "sync_pending"
+    case .interrupted:
+      return "interrupted"
+    }
   }
 
   private func preflightRows(from result: WatchRuntimePreflightResult) -> [WatchNightSessionStatusRow] {

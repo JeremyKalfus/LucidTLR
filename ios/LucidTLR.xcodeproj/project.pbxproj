@@ -144,6 +144,7 @@
 		4AFEF0078B754B4A9CF00001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4AFEF0098B754B4A9CF00001 /* LucidTLR Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LucidTLR Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4AFEF00B8B754B4A9CF00001 /* LucidTLRWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LucidTLRWatch.entitlements; sourceTree = "<group>"; };
+		4AFEF00C8B754B4A9CF00001 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		77DCF48682FC1CF275A85758 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-LucidTLR/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		7DD843155625942B85B99783 /* Pods-LucidTLR.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LucidTLR.release.xcconfig"; path = "Target Support Files/Pods-LucidTLR/Pods-LucidTLR.release.xcconfig"; sourceTree = "<group>"; };
 		8C62D26F77A8CCE4C01DF72D /* libPods-LucidTLR.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-LucidTLR.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -310,6 +311,7 @@
 				A30000000000000000000020 /* Runtime */,
 				A60000000000000000000020 /* Storage */,
 				4AFEF0078B754B4A9CF00001 /* Assets.xcassets */,
+				4AFEF00C8B754B4A9CF00001 /* Info.plist */,
 				4AFEF00B8B754B4A9CF00001 /* LucidTLRWatch.entitlements */,
 			);
 			path = "LucidTLR Watch App";
@@ -805,7 +807,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = LucidTLR/LucidTLR.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = 974MR49FHZ;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -844,7 +846,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = LucidTLR/LucidTLR.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = 974MR49FHZ;
 				INFOPLIST_FILE = LucidTLR/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -876,15 +878,11 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = "LucidTLR Watch App/LucidTLRWatch.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = 974MR49FHZ;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "LucidTLR Watch";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "LucidTLR uses your heart rate during sleep sessions to estimate sleep stages for cue timing. Your data stays on your devices unless you explicitly choose to share it for research.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "LucidTLR does not write data to Apple Health. HealthKit access is read-only for heart rate during sleep sessions to support cue timing.";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jeremykalfus.lucidtlr;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "LucidTLR Watch App/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -910,15 +908,11 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = "LucidTLR Watch App/LucidTLRWatch.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = 974MR49FHZ;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "LucidTLR Watch";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "LucidTLR uses your heart rate during sleep sessions to estimate sleep stages for cue timing. Your data stays on your devices unless you explicitly choose to share it for research.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "LucidTLR does not write data to Apple Health. HealthKit access is read-only for heart rate during sleep sessions to support cue timing.";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jeremykalfus.lucidtlr;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "LucidTLR Watch App/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
