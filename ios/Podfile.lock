@@ -1,5 +1,7 @@
 PODS:
-  - EXConstants (56.0.16):
+  - EXApplication (56.0.3):
+    - ExpoModulesCore
+  - EXConstants (56.0.18):
     - ExpoModulesCore
   - EXJSONUtils (56.0.0)
   - EXManifests (56.0.4):
@@ -235,6 +237,8 @@ PODS:
     - ExpoModulesJSI
     - ExpoModulesWorklets
     - RNWorklets
+  - ExpoNotifications (56.0.17):
+    - ExpoModulesCore
   - ExpoRouter (56.2.8):
     - ExpoModulesCore
     - RNScreens
@@ -2411,6 +2415,7 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
+  - EXApplication (from `../node_modules/expo-application/ios`)
   - EXConstants (from `../node_modules/expo-constants/ios`)
   - EXJSONUtils (from `../node_modules/expo-json-utils/ios`)
   - EXManifests (from `../node_modules/expo-manifests/ios`)
@@ -2434,6 +2439,7 @@ DEPENDENCIES:
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo/node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
   - ExpoModulesWorkletsAdapter (from `../node_modules/expo/node_modules/expo-modules-core`)
+  - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
   - ExpoRouter (from `../node_modules/expo-router/ios`)
   - ExpoSQLite (from `../node_modules/expo-sqlite/ios`)
   - ExpoSymbols (from `../node_modules/expo-symbols/ios`)
@@ -2524,6 +2530,8 @@ DEPENDENCIES:
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 EXTERNAL SOURCES:
+  EXApplication:
+    :path: "../node_modules/expo-application/ios"
   EXConstants:
     :path: "../node_modules/expo-constants/ios"
   EXJSONUtils:
@@ -2570,6 +2578,8 @@ EXTERNAL SOURCES:
     :podspec: "../node_modules/expo/node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
   ExpoModulesWorkletsAdapter:
     :path: "../node_modules/expo/node_modules/expo-modules-core"
+  ExpoNotifications:
+    :path: "../node_modules/expo-notifications/ios"
   ExpoRouter:
     :path: "../node_modules/expo-router/ios"
   ExpoSQLite:
@@ -2747,7 +2757,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  EXConstants: 1c400bb9969f4c9e5ab324553138b74ae47b9efe
+  EXApplication: e6040c92edc5522accd62852342e6b14742d42c0
+  EXConstants: e836b478e4f5c835f3c77921d8162e1918e2c06e
   EXJSONUtils: dba2755f4e24009eaf87a876b2d615ea06c16e42
   EXManifests: 7e19be8df665a338493060a419847dae76ffcd43
   Expo: c82930e1c8b6f2e26308e364499773d3de12d55d
@@ -2770,6 +2781,7 @@ SPEC CHECKSUMS:
   ExpoModulesJSI: f25a013ea9a79904bdd535e4bea0872e155cde09
   ExpoModulesWorklets: 3f847eb6ba544bd4b55d585f89b3b18f8cd73a72
   ExpoModulesWorkletsAdapter: a538403990508224d8401ff2ac544ca83df52eb6
+  ExpoNotifications: 261ea4618d5e266647dd7c294a78a38e7f92131c
   ExpoRouter: 806ab2bc2124594c624ffe6fde15c28e4c4f0b03
   ExpoSQLite: 38a35f67bbb3370d9bb859aa65d106909c4e3b19
   ExpoSymbols: f83c91f2897d37102b98b9224c603095630be9d0

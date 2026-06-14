@@ -7,6 +7,11 @@ import {
   isWatchModeProductFlowAvailable,
   loadWatchModeProductLockState,
 } from "@/src/features/watchMode/watchModeProductFlow";
+import {
+  configureRealityCheckNotificationHandler,
+  loadRealityCheckSettings,
+  rescheduleRealityCheckReminders,
+} from "@/src/features/realityCheck/realityCheckNotifications";
 import { useAppState } from "@/src/state/AppState";
 import { colors, typography } from "@/src/theme/tokens";
 
@@ -80,6 +85,37 @@ function WatchModeProductLockGate() {
   return null;
 }
 
+function RealityCheckScheduleGate() {
+  React.useEffect(() => {
+    let cancelled = false;
+    configureRealityCheckNotificationHandler();
+
+    async function sync() {
+      try {
+        const db = await getLocalDb();
+        const settings = await loadRealityCheckSettings(db);
+
+        if (!cancelled && settings.enabled) {
+          await rescheduleRealityCheckReminders({
+            settings,
+            requestPermission: false,
+          });
+        }
+      } catch {
+        // Non-fatal; the reality-check screen reschedules on the next edit.
+      }
+    }
+
+    void sync();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return null;
+}
+
 export default function MainLayout() {
   const { isHydrated, onboardingComplete } = useAppState();
 
@@ -94,6 +130,7 @@ export default function MainLayout() {
   return (
     <>
       <WatchModeProductLockGate />
+      <RealityCheckScheduleGate />
       <Stack
         screenOptions={{
           headerShown: false,

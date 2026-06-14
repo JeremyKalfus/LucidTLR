@@ -59,6 +59,12 @@ const TRAINING_ASSET_METADATA = {
   byteLength: 10068223,
 } as const;
 
+// Minimum cue window length. Guarantees the TLR interval is never empty even
+// when the configured sleep duration is shorter than the cue-start delay,
+// which would otherwise invert the window (earliest after latest) so no cue
+// ever fires for the whole night.
+const WATCH_MIN_CUE_WINDOW_SECONDS = 2 * 3600;
+
 export interface BuildWatchRuntimePlanInput {
   sessionId: string;
   participantId: string;
@@ -147,16 +153,22 @@ export function buildWatchRuntimePlan(
   const plannedTrainingEndAt = trainingEnabled
     ? addSeconds(input.createdAt, FINAL_LUCID_TRAINING_DURATION_SECONDS)
     : input.createdAt;
+  const cueStartDelaySeconds = Math.round(
+    input.engineSettings.cueStartDelayHoursAfterTraining * 3600,
+  );
   const earliestCueAt = isTlr
-    ? addSeconds(
-        plannedTrainingEndAt,
-        Math.round(input.engineSettings.cueStartDelayHoursAfterTraining * 3600),
-      )
+    ? addSeconds(plannedTrainingEndAt, cueStartDelaySeconds)
     : input.createdAt;
+  // Floor the window end at the cue start plus a minimum window so the TLR
+  // interval can never invert (earliest after latest) and silently disable
+  // cueing for the whole night when sleep duration < cue-start delay.
   const latestCueAt = isTlr
     ? addSeconds(
         plannedTrainingEndAt,
-        Math.round(input.engineSettings.typicalSleepDurationHours * 3600),
+        Math.max(
+          Math.round(input.engineSettings.typicalSleepDurationHours * 3600),
+          cueStartDelaySeconds + WATCH_MIN_CUE_WINDOW_SECONDS,
+        ),
       )
     : input.createdAt;
   const audioEnabled =

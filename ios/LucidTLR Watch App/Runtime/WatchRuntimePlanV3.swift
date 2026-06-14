@@ -64,6 +64,18 @@ struct WatchRuntimePlanV3: Codable, Equatable {
       errors.append("TLR Watch plans require haptic or audio cue output.")
     }
 
+    if sessionType == "tlr" && tlrInterval.enabled {
+      if let earliest = WatchRuntimeDateFormat.date(from: tlrInterval.earliestCueAt),
+        let latest = WatchRuntimeDateFormat.date(from: tlrInterval.latestCueAt) {
+        if earliest >= latest {
+          errors.append(
+            "TLR Watch plans require a non-empty cue window (earliestCueAt must be before latestCueAt).")
+        }
+      } else {
+        errors.append("TLR Watch plans require parseable cue window timestamps.")
+      }
+    }
+
     if cueOutput.audioEnabled && !cueOutput.audioRequiresPreflight {
       errors.append("Audio-enabled Watch plans require same-night audio preflight.")
     }

@@ -24,6 +24,8 @@
 	<string>LucidTLR uses your heart rate during sleep sessions to estimate sleep stages for cue timing. Your data stays on your devices unless you explicitly choose to share it for research.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>LucidTLR uses temporary workout permission to keep Watch sleep sessions running in the background. These sleep-session workouts are discarded and not saved to Apple Health.</string>
+	<key>RCTNewArchEnabled</key>
+	<true/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

@@ -9,6 +9,10 @@ import {
   buildWatchRuntimePlan,
   buildWatchRuntimePlanFromSession,
 } from "@/src/native/watchRuntime";
+import {
+  validateWatchRuntimePlan,
+  withWatchRuntimePlanHash,
+} from "@/src/native/watchRuntime/validateWatchRuntimePlan";
 
 declare const require: (moduleName: string) => any;
 
@@ -221,5 +225,58 @@ describe("buildWatchRuntimePlan", () => {
     expect(plan.training.enabled).toBe(false);
     expect(plan.assets.map((asset) => asset.kind)).toEqual(["cue"]);
     expect(plan.assets.map((asset) => asset.owner)).toEqual(["watch"]);
+  });
+
+  it("floors the cue window end so a short sleep duration never inverts it", () => {
+    const createdAt = "2026-06-07T04:00:00.000Z";
+    // Cue-start delay (6h) deliberately exceeds sleep duration (5.5h); without
+    // a floor this inverts the window and no cue can ever fire all night.
+    const settings = {
+      ...createDefaultEngineSettings(),
+      typicalSleepDurationHours: 5.5,
+      cueStartDelayHoursAfterTraining: 6,
+    };
+    const plan = buildWatchRuntimePlan({
+      sessionId: "session-short-sleep",
+      participantId: "participant-1",
+      sessionType: "tlr",
+      createdAt,
+      selectedCueId: "dx-harp-c5",
+      tlrOptions: createDefaultTlrOptions(),
+      engineSettings: settings,
+    });
+    const earliestMs = Date.parse(plan.tlrInterval.earliestCueAt);
+    const latestMs = Date.parse(plan.tlrInterval.latestCueAt);
+
+    expect(latestMs).toBeGreaterThan(earliestMs);
+    expect(latestMs - earliestMs).toBeGreaterThanOrEqual(2 * 3600 * 1000);
+    expect(validateWatchRuntimePlan(plan)).toEqual([]);
+  });
+
+  it("rejects a TLR plan whose cue window is inverted", () => {
+    const plan = buildWatchRuntimePlan({
+      sessionId: "session-inverted",
+      participantId: "participant-1",
+      sessionType: "tlr",
+      createdAt: "2026-06-07T04:00:00.000Z",
+      selectedCueId: "dx-harp-c5",
+      tlrOptions: createDefaultTlrOptions(),
+      engineSettings: createDefaultEngineSettings(),
+    });
+    // Swap earliest/latest to force an inverted window, then re-hash so the
+    // hash check passes and the cue-window guard is what fires.
+    const inverted = withWatchRuntimePlanHash({
+      ...plan,
+      planHash: "",
+      tlrInterval: {
+        ...plan.tlrInterval,
+        earliestCueAt: plan.tlrInterval.latestCueAt,
+        latestCueAt: plan.tlrInterval.earliestCueAt,
+      },
+    });
+
+    expect(validateWatchRuntimePlan(inverted)).toContain(
+      "TLR Watch plans require a non-empty cue window (earliestCueAt must be before latestCueAt).",
+    );
   });
 });

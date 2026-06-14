@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Cpu,
+  Eye,
   History,
   RefreshCw,
   SlidersHorizontal,
@@ -51,6 +52,7 @@ import { useAppState } from "@/src/state/AppState";
 import { borders, colors, radii, typography } from "@/src/theme/tokens";
 
 type SettingsRoute =
+  | "/settings/reality-check"
   | "/settings/ios-phone-mode"
   | "/settings/android-phone-mode"
   | "/settings/watch-mode"
@@ -533,6 +535,12 @@ export function SettingsScreen() {
 
       <Card>
         <SettingsNavRow
+          detail="Daytime reminders to question whether you're dreaming."
+          icon={Eye}
+          route="/settings/reality-check"
+          title="Reality checks"
+        />
+        <SettingsNavRow
           detail="iPhone runtime, audio bed, alarm, and TLR options."
           icon={Smartphone}
           route="/settings/ios-phone-mode"
@@ -718,16 +726,7 @@ export function WatchModeSettingsScreen() {
             );
           }}
         />
-        <SettingsToggleRow
-          disabled
-          label="Watch haptic cue"
-          value={tlrOptions.watchHapticCueEnabled}
-          onValueChange={(watchHapticCueEnabled) => {
-            void updateTlrOptions(
-              watchCueTogglePatch("haptic", watchHapticCueEnabled, tlrOptions),
-            );
-          }}
-        />
+        <InfoRow label="Watch haptic cue" value="Coming soon" />
         <SettingsNote>
           {WATCH_MODE_DISABLED_MESSAGE}
         </SettingsNote>
