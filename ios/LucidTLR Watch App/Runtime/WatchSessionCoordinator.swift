@@ -184,6 +184,37 @@ final class WatchSessionCoordinator {
     )
   }
 
+  func recordRuntimeDiagnostic(
+    _ type: WatchRuntimeEventType,
+    payload: [String: WatchRuntimeJSONValue] = [:]
+  ) {
+    appendEvent(type, payload: payload)
+  }
+
+  func recordEpochGap(
+    expectedIntervalSeconds: TimeInterval,
+    actualIntervalSeconds: TimeInterval,
+    previousTimerFireAt: Date?,
+    detectedAt: Date
+  ) {
+    let missedEpochEstimate = max(
+      0,
+      Int(floor(actualIntervalSeconds / max(1, expectedIntervalSeconds))) - 1
+    )
+    appendEvent(
+      .epochGapDetected,
+      payload: [
+        "expectedIntervalSeconds": .doubleValue(expectedIntervalSeconds),
+        "actualIntervalSeconds": .doubleValue(actualIntervalSeconds),
+        "missedEpochEstimate": .intValue(missedEpochEstimate),
+        "previousTimerFireAt": previousTimerFireAt
+          .map { .stringValue(WatchRuntimeDateFormat.string(from: $0)) } ?? .null,
+        "detectedAt": .stringValue(WatchRuntimeDateFormat.string(from: detectedAt)),
+        "largeGap": .boolValue(actualIntervalSeconds >= expectedIntervalSeconds * 3),
+      ]
+    )
+  }
+
   func deferTlrInterval(by seconds: TimeInterval) throws {
     guard plan?.sessionType == "tlr" else {
       throw WatchSessionCoordinatorError.runtimeNotActive

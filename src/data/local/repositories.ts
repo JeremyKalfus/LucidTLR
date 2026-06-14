@@ -30,6 +30,7 @@ import type {
   WatchMovementRecordDraft,
   WatchRuntimeEvent,
 } from "@/src/features/watchHistory/watchHistoryTypes";
+import { summarizeWatchEpochContinuity } from "@/src/features/watchHistory/watchEpochContinuity";
 import { ONBOARDING_FORM_ID, onboardingSteps } from "@/src/features/onboarding/onboardingSteps";
 
 export const ONBOARDING_COMPLETED_AT_SETTING = "onboarding_completed_at";
@@ -952,9 +953,13 @@ export async function summarizeWatchSession(input: {
   usableEpochs: number;
   likelyRemEpochs: number;
   connectivityGaps: number;
+  epochGaps: number;
+  maxEpochGapSeconds: number;
+  hasLargeEpochGap: boolean;
   classifierVersions: string[];
 }> {
   const epochs = await loadWatchEpochsForSession(input);
+  const epochContinuity = summarizeWatchEpochContinuity(epochs);
   const classifierVersions = new Set(
     epochs
       .map((epoch) => epoch.classifierVersion)
@@ -970,6 +975,9 @@ export async function summarizeWatchSession(input: {
         epoch.watchConnectivityState === "delayed" ||
         epoch.watchConnectivityState === "disconnected",
     ).length,
+    epochGaps: epochContinuity.epochGaps,
+    maxEpochGapSeconds: epochContinuity.maxEpochGapSeconds,
+    hasLargeEpochGap: epochContinuity.hasLargeEpochGap,
     classifierVersions: [...classifierVersions],
   };
 }

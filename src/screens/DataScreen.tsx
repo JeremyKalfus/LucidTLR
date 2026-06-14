@@ -160,8 +160,12 @@ function watchRuntimeEventLabel(event: WatchRuntimeEvent): string {
     typeof event.payload.reason === "string" ? ` / ${event.payload.reason}` : "";
   const epochId =
     typeof event.payload.epochId === "string" ? ` / ${event.payload.epochId}` : "";
+  const actualGap =
+    typeof event.payload.actualIntervalSeconds === "number"
+      ? ` / ${Math.round(event.payload.actualIntervalSeconds)}s`
+      : "";
 
-  return `${new Date(event.timestamp).toLocaleTimeString()} / ${event.eventType}${reason}${epochId}`;
+  return `${new Date(event.timestamp).toLocaleTimeString()} / ${event.eventType}${reason}${epochId}${actualGap}`;
 }
 
 function localSessionRecords(
@@ -1572,13 +1576,9 @@ export function WatchModeDataScreen() {
   const { activeSession, sessionHistory } = useAppState();
   const [epochs, setEpochs] = React.useState<WatchEpoch[]>([]);
   const [runtimeEvents, setRuntimeEvents] = React.useState<WatchRuntimeEvent[]>([]);
-  const [summary, setSummary] = React.useState<{
-    epochsReceived: number;
-    usableEpochs: number;
-    likelyRemEpochs: number;
-    connectivityGaps: number;
-    classifierVersions: string[];
-  } | null>(null);
+  const [summary, setSummary] = React.useState<
+    Awaited<ReturnType<typeof summarizeWatchSession>> | null
+  >(null);
   const [runtimeSummary, setRuntimeSummary] =
     React.useState<WatchRuntimeLogSummary | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -1704,6 +1704,18 @@ export function WatchModeDataScreen() {
         <InfoRow
           label="sync gaps"
           value={summary ? String(summary.connectivityGaps) : "0"}
+        />
+        <InfoRow
+          label="epoch continuity"
+          value={summary?.hasLargeEpochGap ? "gap detected" : "continuous"}
+        />
+        <InfoRow
+          label="epoch gaps"
+          value={summary ? String(summary.epochGaps) : "0"}
+        />
+        <InfoRow
+          label="max epoch gap"
+          value={summary ? `${Math.round(summary.maxEpochGapSeconds)}s` : "0s"}
         />
         <InfoRow
           label="cue deliveries"

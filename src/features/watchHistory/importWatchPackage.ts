@@ -16,6 +16,7 @@ import type {
   WatchMovementRecordDraft,
   WatchRuntimeEvent,
 } from "./watchHistoryTypes";
+import { summarizeWatchEpochContinuity } from "./watchEpochContinuity";
 import {
   decodeValidWatchPackageForImport,
   encodeWatchPackageJson,
@@ -36,6 +37,7 @@ function buildImportResult(input: {
   importedAt: string;
 }): WatchPackageImportResult {
   const { manifest } = input.decoded;
+  const epochContinuity = summarizeWatchEpochContinuity(input.decoded.epochs);
 
   return {
     status: input.status,
@@ -44,6 +46,11 @@ function buildImportResult(input: {
     packageHash: manifest.packageHash,
     importedAt: input.importedAt,
     ackEligible: true,
+    diagnostics: {
+      epochGaps: epochContinuity.epochGaps,
+      maxEpochGapSeconds: epochContinuity.maxEpochGapSeconds,
+      hasLargeEpochGap: epochContinuity.hasLargeEpochGap,
+    },
     counts: {
       events: manifest.eventCount,
       epochs: manifest.epochCount,

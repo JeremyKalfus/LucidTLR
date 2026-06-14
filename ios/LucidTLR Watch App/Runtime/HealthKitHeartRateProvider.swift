@@ -19,14 +19,16 @@ final class HealthKitHeartRateProvider: NSObject,
   private var queryAnchor: HKQueryAnchor?
   private var anchoredQuery: HKAnchoredObjectQuery?
   private var workoutSession: HKWorkoutSession?
+  private var liveWorkoutBuilder: HKLiveWorkoutBuilder?
   private var authorizationGranted = false
   private var latestSampleAt: Date?
   private var latestBpmValue: Double?
   private var lastErrorMessage: String?
   private var workoutStateLabel = "not_started"
+  var diagnosticSink: ((WatchRuntimeEventType, [String: WatchRuntimeJSONValue]) -> Void)?
 
   var healthKitAuthorization: WatchHealthKitAuthorization {
-    guard HKHealthStore.isHealthDataAvailable(), let heartRateType else {
+    guard HKHealthStore.isHealthDataAvailable(), heartRateType != nil else {
       return .unavailable
     }
 
@@ -34,7 +36,7 @@ final class HealthKitHeartRateProvider: NSObject,
       return .authorized
     }
 
-    switch healthStore.authorizationStatus(for: heartRateType) {
+    switch healthStore.authorizationStatus(for: workoutType) {
     case .notDetermined:
       return .notDetermined
     case .sharingDenied:
@@ -70,6 +72,10 @@ final class HealthKitHeartRateProvider: NSObject,
     HKObjectType.quantityType(forIdentifier: .heartRate)
   }
 
+  private var workoutType: HKWorkoutType {
+    HKObjectType.workoutType()
+  }
+
   func requestAuthorization() async throws -> WatchHealthKitAuthorization {
     guard HKHealthStore.isHealthDataAvailable() else {
       throw HealthKitHeartRateProviderError.healthDataUnavailable
@@ -79,14 +85,17 @@ final class HealthKitHeartRateProvider: NSObject,
       throw HealthKitHeartRateProviderError.heartRateTypeUnavailable
     }
 
+    let workoutType = self.workoutType
     return try await withCheckedThrowingContinuation { continuation in
-      healthStore.requestAuthorization(toShare: [], read: [heartRateType]) { [weak self] success, error in
+      healthStore.requestAuthorization(toShare: [workoutType], read: [heartRateType]) { [weak self] success, error in
+        let workoutAuthorized = self?.healthStore.authorizationStatus(for: workoutType)
+          == .sharingAuthorized
         self?.stateQueue.async {
-          self?.authorizationGranted = success && error == nil
+          self?.authorizationGranted = success && error == nil && workoutAuthorized
           self?.lastErrorMessage = error?.localizedDescription
         }
 
-        if success, error == nil {
+        if success, error == nil, workoutAuthorized {
           continuation.resume(returning: .authorized)
         } else {
           continuation.resume(
@@ -99,7 +108,7 @@ final class HealthKitHeartRateProvider: NSObject,
     }
   }
 
-  func startWorkoutRuntime(at startDate: Date) throws {
+  func startWorkoutRuntime(at startDate: Date) async throws {
     guard workoutRuntimeAvailable else {
       throw HealthKitHeartRateProviderError.healthDataUnavailable
     }
@@ -115,9 +124,39 @@ final class HealthKitHeartRateProvider: NSObject,
 
     do {
       let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+      let builder = session.associatedWorkoutBuilder()
+      builder.dataSource = HKLiveWorkoutDataSource(
+        healthStore: healthStore,
+        workoutConfiguration: configuration
+      )
       session.delegate = self
       workoutSession = session
+      liveWorkoutBuilder = builder
       session.startActivity(with: startDate)
+      do {
+        try await builder.beginCollection(at: startDate)
+        emitDiagnostic(
+          .workoutBuilderCollectionStarted,
+          payload: [
+            "startedAt": .stringValue(WatchRuntimeDateFormat.string(from: startDate)),
+          ]
+        )
+      } catch {
+        stateQueue.async {
+          self.lastErrorMessage = error.localizedDescription
+        }
+        emitDiagnostic(
+          .workoutBuilderCollectionFailed,
+          payload: [
+            "error": .stringValue(error.localizedDescription),
+            "startedAt": .stringValue(WatchRuntimeDateFormat.string(from: startDate)),
+          ]
+        )
+        session.end()
+        workoutSession = nil
+        liveWorkoutBuilder = nil
+        throw HealthKitHeartRateProviderError.workoutRuntimeUnavailable(error.localizedDescription)
+      }
       startHeartRateQuery(startDate: startDate)
     } catch {
       stateQueue.async {
@@ -133,8 +172,34 @@ final class HealthKitHeartRateProvider: NSObject,
     }
 
     anchoredQuery = nil
+    let builder = liveWorkoutBuilder
+    liveWorkoutBuilder = nil
     workoutSession?.end()
     workoutSession = nil
+
+    if let builder {
+      builder.endCollection(withEnd: endDate) { [weak self] _, error in
+        if let error {
+          self?.stateQueue.async {
+            self?.lastErrorMessage = error.localizedDescription
+          }
+        }
+        self?.emitDiagnostic(
+          .workoutBuilderCollectionEnded,
+          payload: [
+            "endedAt": .stringValue(WatchRuntimeDateFormat.string(from: endDate)),
+            "error": error.map { .stringValue($0.localizedDescription) } ?? .null,
+          ]
+        )
+        builder.discardWorkout()
+        self?.emitDiagnostic(
+          .workoutBuilderDiscarded,
+          payload: [
+            "discardedAt": .stringValue(WatchRuntimeDateFormat.string(from: Date())),
+          ]
+        )
+      }
+    }
   }
 
   func lastSampleFreshnessSeconds(at date: Date) -> TimeInterval? {
@@ -158,6 +223,14 @@ final class HealthKitHeartRateProvider: NSObject,
     stateQueue.async {
       self.workoutStateLabel = Self.label(for: toState)
     }
+    emitDiagnostic(
+      .workoutSessionStateChanged,
+      payload: [
+        "fromState": .stringValue(Self.label(for: fromState)),
+        "toState": .stringValue(Self.label(for: toState)),
+        "stateChangedAt": .stringValue(WatchRuntimeDateFormat.string(from: date)),
+      ]
+    )
   }
 
   func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
@@ -165,6 +238,17 @@ final class HealthKitHeartRateProvider: NSObject,
       self.lastErrorMessage = error.localizedDescription
       self.workoutStateLabel = "failed"
     }
+    emitDiagnostic(
+      .workoutSessionFailed,
+      payload: ["error": .stringValue(error.localizedDescription)]
+    )
+  }
+
+  private func emitDiagnostic(
+    _ type: WatchRuntimeEventType,
+    payload: [String: WatchRuntimeJSONValue]
+  ) {
+    diagnosticSink?(type, payload)
   }
 
   private func startHeartRateQuery(startDate: Date) {
